@@ -204,7 +204,7 @@ class PlainOpenVPN extends BaseExporter implements IExportProvider
                     throw new UserException(gettext('Failed to generate tls-crypt-v2 client key'));
                 }
                 $conf[] = "<tls-crypt-v2>";
-                $conf = array_merge($conf, explode("\n", trim(base64_decode($clientKey, true))));
+                $conf = array_merge($conf, explode("\n", $clientKey, true));
                 $conf[] = "</tls-crypt-v2>";
             } elseif ($this->config['tlsmode'] === 'crypt') {
                 $conf[] = "<tls-crypt>";

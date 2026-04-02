@@ -106,7 +106,7 @@ class ArchiveOpenVPN extends PlainOpenVPN
                 if (empty($clientKey)) {
                     throw new UserException(gettext('Failed to generate tls-crypt-v2 client key'));
                 }
-                file_put_contents("{$content_dir}/{$keyfile}", trim(base64_decode($clientKey, true)));
+                file_put_contents("{$content_dir}/{$keyfile}", $clientKey);
                 $conf[] = "tls-crypt-v2 {$keyfile}";
             } elseif ($this->config['tlsmode'] === 'crypt') {
                 file_put_contents("{$content_dir}/{$keyfile}", trim(base64_decode($this->config['tls'])));
