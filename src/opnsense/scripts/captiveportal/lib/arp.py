@@ -26,6 +26,7 @@
 
 """
 import subprocess
+import syslog
 import ujson
 from datetime import datetime
 
@@ -40,14 +41,28 @@ class ARP(object):
     def reload(self):
         """ reload / parse arp and ndp tables
         """
-        self._table.clear()
 
-        # fetch addresses, no IPv6 if hostwatch disabled
-        out = ujson.loads(subprocess.run(
-            ['/usr/local/opnsense/scripts/interfaces/list_hosts.py', '--last-seen-window', '86400', '-v'],
-            capture_output=True,
-            text=True
-        ).stdout)
+        try:
+            # fetch addresses, no IPv6 if hostwatch disabled
+            p = subprocess.run(
+                ['/usr/local/opnsense/scripts/interfaces/list_hosts.py', '--last-seen-window', '86400', '-v'],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+
+            out = ujson.loads(p.stdout)
+        except (subprocess.CalledProcessError, ujson.JSONDecodeError) as e:
+            syslog.syslog(syslog.LOG_ERR, f"""
+                unable to parse list_hosts.py output:\n
+                stdout={getattr(e, 'stdout', None)}\n
+                stderr={getattr(e, 'stderr', None)}\n
+                error={e}
+            """.strip())
+            # keep old data
+            return
+
+        self._table.clear()
 
         source = out.get("source")
         rows = out.get("rows", [])
