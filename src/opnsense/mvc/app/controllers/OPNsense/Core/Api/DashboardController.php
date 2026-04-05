@@ -33,7 +33,6 @@ use OPNsense\Core\ACL;
 use OPNsense\Auth\User;
 use OPNsense\Core\Config;
 
-
 class DashboardController extends ApiControllerBase
 {
     private $metadataFileLocation = "/usr/local/opnsense/www/js/widgets/Metadata";
@@ -104,7 +103,7 @@ class DashboardController extends ApiControllerBase
         $result = [];
         $dashboard = null;
 
-        if ( ($node = $this->usermdl->getUserByName($this->getUserName())) !== null) {
+        if (($node = $this->usermdl->getUserByName($this->getUserName())) !== null) {
             $dashboard = json_decode(base64_decode($node->dashboard->getValue()), true);
         }
 

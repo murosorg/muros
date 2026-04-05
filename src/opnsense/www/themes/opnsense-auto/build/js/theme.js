@@ -20,7 +20,7 @@
         /* D3 needs a resize event, but it likely doesn't harm to fire one in all cases after changing references */
         window.dispatchEvent(new Event('resize'));
     }
-    
+
     if (window.matchMedia) {
         document.addEventListener('DOMContentLoaded',themeSwitcher);
         window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', themeSwitcher);

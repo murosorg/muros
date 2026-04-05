@@ -91,6 +91,6 @@ if __name__ == '__main__':
             "if_descr": "",
             "is_reserved": ""
         })
-    
+
     if records:
         print(ujson.dumps({"records": records}))

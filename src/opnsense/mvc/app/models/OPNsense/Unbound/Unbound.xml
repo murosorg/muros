@@ -63,8 +63,8 @@
             <prefetchkey type="BooleanField"/>
             <dnssecstripped type="BooleanField"/>
             <belownxdomain type="BooleanField">
-                    <Required>Y</Required>
-                    <Default>1</Default>
+                <Required>Y</Required>
+                <Default>1</Default>
             </belownxdomain>
             <aggressivensec type="BooleanField">
                 <Required>Y</Required>
