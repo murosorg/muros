@@ -2209,6 +2209,7 @@
 /usr/local/opnsense/www/js/opnsense.js
 /usr/local/opnsense/www/js/opnsense_bootgrid.js
 /usr/local/opnsense/www/js/opnsense_health.js
+/usr/local/opnsense/www/js/opnsense_menusystem.js
 /usr/local/opnsense/www/js/opnsense_status.js
 /usr/local/opnsense/www/js/opnsense_theme.js
 /usr/local/opnsense/www/js/opnsense_ui.js
