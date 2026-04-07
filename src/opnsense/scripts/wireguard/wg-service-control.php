@@ -2,7 +2,7 @@
 <?php
 
 /*
- * Copyright (C) 2023 Deciso B.V.
+ * Copyright (C) 2023-2026 Deciso B.V.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -72,18 +72,18 @@ function wg_start($server, $fhandle, $ifcfgflag = 'up', $reload = false)
 
     mwexecf('/usr/bin/wg syncconf %s %s', [$server->interface, $server->cnfFilename]);
 
-    /* The tunneladdress can be empty, so array_filter without callback filters empty strings out. */
-    foreach (array_filter(explode(',', (string)$server->tunneladdress)) as $alias) {
-        $proto = strpos($alias, ':') === false ? "inet" : "inet6";
+    foreach ($server->tunneladdress->getValues() as $alias) {
+        $proto = strpos($alias, ':') === false ? 'inet' : 'inet6';
         mwexecf('/sbin/ifconfig %s %s %s alias', [$server->interface, $proto, $alias]);
     }
-    if (!empty((string)$server->mtu)) {
+
+    if (!$server->mtu->isEmpty()) {
         mwexecf('/sbin/ifconfig %s mtu %s', [$server->interface, $server->mtu]);
     }
 
-    mwexecf('/sbin/ifconfig %s %sdebug', [$server->interface->getValue(), $server->debug->getValue() === '1' ? '' : '-']);
+    mwexecf('/sbin/ifconfig %s %sdebug', [$server->interface->getValue(), $server->debug->isEqual('1') ? '' : '-']);
 
-    if (empty((string)$server->disableroutes)) {
+    if ($server->disableroutes->isEmpty()) {
         /**
          * Add routes for all configured peers, wg-quick seems to parse 'wg show wgX allowed-ips' for this,
          * but this should logically congtain the same networks.
@@ -92,11 +92,11 @@ function wg_start($server, $fhandle, $ifcfgflag = 'up', $reload = false)
          *      In the long run it might make sense to have some sort of pluggable model facility
          *      where these (and maybe other) static routes hook into.
          **/
-        $peers = explode(',', $server->peers);
         $routes_to_add = $routes_to_skip = ['inet' => [], 'inet6' => []];
+        $peers = $server->peers->getValues();
 
         /* calculate subnets to skip because these are automatically attached by instance address */
-        foreach (array_filter(explode(',', (string)$server->tunneladdress)) as $alias) {
+        foreach ($server->tunneladdress->getValues() as $alias) {
             $ipproto = strpos($alias, ':') === false ? 'inet' : 'inet6';
             $alias = explode('/', $alias);
             $alias = ($ipproto == 'inet' ? gen_subnet($alias[0], $alias[1]) :
@@ -105,11 +105,11 @@ function wg_start($server, $fhandle, $ifcfgflag = 'up', $reload = false)
         }
 
         foreach ((new OPNsense\Wireguard\Client())->clients->client->iterateItems() as $key => $client) {
-            if (empty((string)$client->enabled) || !in_array($key, $peers)) {
+            if ($client->enabled->isEmpty() || !in_array($key, $peers)) {
                 continue;
             }
-            foreach (explode(',', (string)$client->tunneladdress) as $address) {
-                $ipproto = strpos($address, ":") === false ? "inet" :  "inet6";
+            foreach ($client->tunneladdress->getValues() as $address) {
+                $ipproto = strpos($address, ':') === false ? 'inet' : 'inet6';
                 $address = explode('/', $address);
                 $address = ($ipproto == 'inet' ? gen_subnet($address[0], $address[1]) :
                     gen_subnetv6($address[0], $address[1])) . "/{$address[1]}";
@@ -125,27 +125,28 @@ function wg_start($server, $fhandle, $ifcfgflag = 'up', $reload = false)
                 }
             }
         }
+
         foreach ($routes_to_add as $ipproto => $routes) {
             foreach (array_unique($routes) as $route) {
                 mwexecf('/sbin/route -q -n add -%s %s -interface %s', [$ipproto,  $route, $server->interface]);
             }
         }
-    } elseif (!empty((string)$server->gateway)) {
-        /* Only bind the gateway ip to the tunnel */
-        $ipprefix = strpos($server->gateway, ":") === false ? "-4" :  "-6";
+    } elseif (!$server->gateway->isEmpty()) {
+        /* only bind the gateway IP to the tunnel */
+        $ipprefix = strpos($server->gateway, ':') === false ? '-4' : '-6';
         mwexecf('/sbin/route -q -n add %s %s -iface %s', [$ipprefix, $server->gateway, $server->interface]);
     }
 
     if ($reload) {
-        interfaces_restart_by_device(false, [(string)$server->interface]);
+        interfaces_restart_by_device(false, [$server->interface->getValue()]);
     }
 
     mwexecf('/sbin/ifconfig %s %s', [$server->interface, $ifcfgflag]);
 
-    // flush checksum to ease change detection
+    /* flush checksum to ease change detection */
     fseek($fhandle, 0);
     ftruncate($fhandle, 0);
-    fwrite($fhandle, @md5_file($server->cnfFilename) . "|" . wg_reconfigure_hash($server));
+    fwrite($fhandle, @md5_file($server->cnfFilename) . '|' . wg_reconfigure_hash($server));
 
     syslog(LOG_NOTICE, "wireguard instance {$server->name} ({$server->interface}) started");
 }
