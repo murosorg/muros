@@ -27,21 +27,15 @@
 
 RET=0
 
-cd "${1}" || exit ${RET}
-
 if [ ! -d src ]; then
 	exit ${RET}
 fi
 
 for FILE in $(find src -name "*.php"); do
-	for LINE in $(grep '^use ' ${FILE} || true); do
-		IMPORT=$(echo "${LINE}" | sed 's/^use //; s/;//')
+	for IMPORT in $(grep -iE 'use [a-z0-9_\\]+\\[^;\\]+;' ${FILE} | awk '{ print $2 }' | tr -d ';'); do
 		CLASS=${IMPORT##*\\}
-
-		COUNT=$(grep -w "${CLASS}" ${FILE} | wc -l)
-
-		if [ "${COUNT}" -le 1 ]; then
-			echo "${FILE}: warning: stale import use ${IMPORT}"
+		if [ "$(grep -c -e "new ${CLASS}" -e "${CLASS}::" -e "extends ${CLASS}" ${FILE})" = "0" ]; then
+			echo "${FILE}: warning: stale import \`${IMPORT}'"
 		fi
 	done
 done
