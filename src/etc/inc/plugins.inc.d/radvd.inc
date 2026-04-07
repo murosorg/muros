@@ -146,21 +146,23 @@ function radvd_configure_do($verbose = false, $ignorelist = [])
             continue;
         }
 
+        $target_dev = $dhcpv6if;
         $carp_mode = false;
-        $src_addr = false;
-        $ifcfgipv6 = null;
+        $src_addr = null;
+        $stanzas = [];
+
+        if (!$entry->Base6Interface->isEmpty()) {
+            $target_dev = $entry->Base6Interface->getValue();
+            $stanzas[] = 'base6';
+        }
+
+        list ($ifcfgipv6, $networkv6) = interfaces_primary_address6($target_dev, $ifconfig_details);
+        if (is_subnetv6($networkv6) && !count($stanzas)) {
+            $stanzas[] = $networkv6;
+        }
 
         if (!$entry->AdvRASrcAddress->isEmpty()) {
             $ifcfgipv6 = $entry->AdvRASrcAddress->getValue();
-        } elseif (!$entry->Base6Interface->isEmpty()) {
-            $ifcfgipv6 = get_interface_ipv6($entry->Base6Interface->getValue());
-        } else {
-            $ifcfgipv6 = get_interface_ipv6($dhcpv6if);
-        }
-
-        if (!is_ipaddrv6($ifcfgipv6)) {
-            $radvdconf .= "# Skipping addressless interface {$dhcpv6if}\n";
-            continue;
         }
 
         $device = get_real_interface($dhcpv6if, 'inet6');
@@ -186,6 +188,7 @@ function radvd_configure_do($verbose = false, $ignorelist = [])
                 log_msg("Skipping AdvLinkMTU configuration since it cannot be applied on {$dhcpv6if}", LOG_WARNING);
             }
         }
+
         $radvdconf .= "# Generated RADVD config for manual assignment on {$dhcpv6if}\n";
         $radvdconf .= "interface {$device} {\n";
         $radvdconf .= "    AdvSendAdvert on;\n";
@@ -211,17 +214,6 @@ function radvd_configure_do($verbose = false, $ignorelist = [])
                 break;
         }
 
-        $stanzas = [];
-
-        if (!$entry->Base6Interface->isEmpty()) {
-            $stanzas[] = 'base6';
-        } else {
-            list (, $networkv6) = interfaces_primary_address6($dhcpv6if, $ifconfig_details);
-            if (is_subnetv6($networkv6)) {
-                $stanzas[] = $networkv6;
-            }
-        }
-
         foreach (config_read_array('virtualip', 'vip', false) as $vip) {
             if ($vip['interface'] != $dhcpv6if || !is_ipaddrv6($vip['subnet'])) {
                 continue;
@@ -230,7 +222,7 @@ function radvd_configure_do($verbose = false, $ignorelist = [])
             if (is_linklocal($vip['subnet'])) {
                 if ($ifcfgipv6 == $vip['subnet']) {
                     $carp_mode = !empty($vip['vhid']);
-                    $src_addr = true;
+                    $src_addr = $ifcfgipv6;
                 }
                 continue;
             }
@@ -247,7 +239,7 @@ function radvd_configure_do($verbose = false, $ignorelist = [])
         if ($src_addr) {
             /* inject configured link-local address into the RA message */
             $radvdconf .= "    AdvRASrcAddress {\n";
-            $radvdconf .= "        {$ifcfgipv6};\n";
+            $radvdconf .= "        {$src_addr};\n";
             $radvdconf .= "    };\n";
         }
 
