@@ -123,7 +123,8 @@ function radvd_configure_do($verbose = false, $ignorelist = [])
     $ifconfig_details = legacy_interfaces_details();
     $radvdconf = "# Automatically generated, do not edit\n";
 
-    /* Process all links which need the router advertise daemon */
+    /* process all links which need the router advertise daemon */
+    $manuallist = [];
     $radvdifs = [];
 
     /* handle manually configured DHCP6 server settings first */
@@ -139,7 +140,7 @@ function radvd_configure_do($verbose = false, $ignorelist = [])
         }
 
         /* disable for automatic case below */
-        $ignorelist[$dhcpv6if] = '1';
+        $manuallist[$dhcpv6if] = '1';
 
         if ($entry->enabled->isEmpty()) {
             $radvdconf .= "# Skipping unset interface {$dhcpv6if}\n";
@@ -365,7 +366,7 @@ function radvd_configure_do($verbose = false, $ignorelist = [])
 
     /* handle DHCP-PD prefixes and 6RD dynamic interfaces */
     foreach (array_keys(get_configured_interface_with_descr()) as $if) {
-        if (($config['interfaces'][$if]['ipaddrv6'] ?? 'none') != 'track6' || isset($config['interfaces'][$if]['dhcpd6track6allowoverride'])) {
+        if ($manuallist[$if]) {
             /* handled by manual case */
             continue;
         } elseif (empty($config['interfaces'][$config['interfaces'][$if]['track6-interface']])) {
