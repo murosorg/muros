@@ -1158,11 +1158,10 @@ function is_URL($url)
 
 function get_staticroutes($returnsubnetsonly = false)
 {
-    global $aliastable;
-
     $allstaticroutes = [];
     $allsubnets = [];
-    foreach (config_read_array('staticroutes', 'route') as $route) {
+
+    foreach (config_read_array('staticroutes', 'route', false) as $route) {
         if (is_subnet($route['network'])) {
             $allstaticroutes[] = $route;
             $allsubnets[] = $route['network'];
