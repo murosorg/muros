@@ -34,7 +34,10 @@ fi
 for FILE in $(find src -name "*.php"); do
 	for IMPORT in $(grep -iE 'use [a-z0-9_\\]+\\[^;\\]+;' ${FILE} | awk '{ print $2 }' | tr -d ';'); do
 		CLASS=${IMPORT##*\\}
-		if [ "$(grep -c -e "new ${CLASS}" -e "${CLASS}::" -e "extends ${CLASS}" ${FILE})" = "0" ]; then
+		if [ "$(grep -c -e "instanceof ${CLASS}" \
+		    -e "new ${CLASS}" \
+		    -e "${CLASS}::" \
+		    -e "extends ${CLASS}" ${FILE})" = "0" ]; then
 			echo "${FILE}: warning: stale import \`${IMPORT}'"
 		fi
 	done
