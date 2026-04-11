@@ -392,7 +392,7 @@ class LDAP extends Base implements IAuthConnector
 
     /**
      * search user by name or expression
-     * @param string $username username(s) to search
+     * @param string $username username(s) to search (unescaped ldap search)
      * @param string $userNameAttribute ldap attribute to use for the search
      * @param string|null $extendedQuery additional search criteria (narrow down search)
      * @return array|bool
@@ -405,12 +405,11 @@ class LDAP extends Base implements IAuthConnector
             // add $userNameAttribute to search results
             $this->addSearchAttribute($userNameAttribute);
             $result = [];
-            $username_safe = ldap_escape($username, '', LDAP_ESCAPE_FILTER);
             if (empty($extendedQuery)) {
-                $searchResults = $this->search("({$userNameAttribute}={$username_safe})");
+                $searchResults = $this->search("({$userNameAttribute}={$username})");
             } else {
                 // add additional search phrases
-                $searchResults = $this->search("(&({$userNameAttribute}={$username_safe})({$extendedQuery}))");
+                $searchResults = $this->search("(&({$userNameAttribute}={$username})({$extendedQuery}))");
             }
             if ($searchResults !== false) {
                 for ($i = 0; $i < $searchResults["count"]; $i++) {
@@ -509,7 +508,8 @@ class LDAP extends Base implements IAuthConnector
         } else {
             // we don't know this users distinguished name, try to find it
             if ($this->connect($this->ldapBindURL, $this->ldapBindDN, $this->ldapBindPassword)) {
-                $result = $this->searchUsers($username, $this->ldapAttributeUser, $this->ldapExtendedQuery);
+                $username_safe = ldap_escape($username, '', LDAP_ESCAPE_FILTER);
+                $result = $this->searchUsers($username_safe, $this->ldapAttributeUser, $this->ldapExtendedQuery);
                 if ($result !== false && count($result) > 0) {
                     $user_dn = $result[0]['dn'];
                     $ldap_is_connected = $this->connect($this->ldapBindURL, $result[0]['dn'], $password);
