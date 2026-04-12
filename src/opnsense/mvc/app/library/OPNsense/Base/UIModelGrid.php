@@ -135,7 +135,7 @@ class UIModelGrid
                 $row = ['uuid' => $record->getAttributes()['uuid']];
                 $reflen = strlen($record->__reference) + 1;
                 foreach ($record->getFlatNodes() as $key => $val) {
-                   $row[substr($key, $reflen)] = $val->getValue();
+                    $row[substr($key, $reflen)] = $val->getValue();
                 }
 
                 // if search tokens are provided, use them to search in all requested fields
