@@ -102,7 +102,7 @@ class FilterController extends FilterBaseController
         $allrules = [];
         foreach ($this->getModel()->rules->rule->iterateItems() as $uuid => $record) {
             $row = ['uuid' => $record->getAttributes()['uuid']];
-            $reflen = strlen($record->__reference)+1;
+            $reflen = strlen($record->__reference) + 1;
             foreach ($record->getFlatNodes() as $key => $val) {
                 $row[substr($key, $reflen)] = $val->getValue();
             }
