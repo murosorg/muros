@@ -30,7 +30,6 @@ namespace OPNsense\Auth;
 
 use OPNsense\Firewall\Util;
 
-
 /**
  * Class Radius connector
  * @package OPNsense\Auth
@@ -166,16 +165,17 @@ class Radius extends Base implements IAuthConnector
     public function setProperties($config)
     {
         // map properties to object
-        $confMap = array('host' => 'radiusHost',
-            'radius_secret' => 'sharedSecret',
-            'radius_timeout' => 'timeout',
-            'radius_auth_port' => 'authPort',
+        $confMap = [
+            'host' => 'radiusHost',
             'radius_acct_port' => 'acctPort',
-            'radius_protocol' => 'protocol',
-            'radius_stationid' => 'calledStationId',
+            'radius_auth_port' => 'authPort',
             'radius_nasipaddress' => 'nasIpAddress',
-            'refid' => 'nasIdentifier'
-        );
+            'radius_protocol' => 'protocol',
+            'radius_secret' => 'sharedSecret',
+            'radius_stationid' => 'calledStationId',
+            'radius_timeout' => 'timeout',
+            'refid' => 'nasIdentifier',
+        ];
 
         // map properties 1-on-1
         foreach ($confMap as $confSetting => $objectProperty) {
@@ -204,6 +204,7 @@ class Radius extends Base implements IAuthConnector
     public function getConfigurationOptions()
     {
         $options = [];
+
         $options['radius_protocol'] = [];
         $options['radius_protocol']['name'] = gettext('Protocol');
         $options['radius_protocol']['type'] = 'dropdown';
@@ -231,6 +232,7 @@ class Radius extends Base implements IAuthConnector
                 return [];
             }
         };
+
         return $options;
     }
 
