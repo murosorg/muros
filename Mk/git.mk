@@ -134,6 +134,10 @@ push:
 	@${GIT} push
 	@${GIT} checkout ${CORE_MAIN}
 
+merge: ${CORE_MAIN}
+	@${GIT} fetch community
+	@${GIT} merge community/${CORE_MAIN}
+
 checkout:
 .for DIR in ${.CURDIR}/src
 .if exists(${DIR})
