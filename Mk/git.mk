@@ -157,7 +157,6 @@ vim:
 	if [ -n "$${FOUND}" ]; then \
 		MATCH="$$(echo "$${FOUND}" | grep -i "/$$(basename '${vim_ARG}')$$")"; \
 		if [ -n "$${MATCH}" ]; then \
-			echo $${MATCH}; \
 			FOUND="$${MATCH}"; \
 		fi; \
 		if [ "$$(echo "$${FOUND}" | wc -l | awk '{ print $$1 }')" = "1" ]; then \
