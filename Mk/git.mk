@@ -135,8 +135,8 @@ push:
 	@${GIT} checkout ${CORE_MAIN}
 
 merge: ${CORE_MAIN}
-	@${GIT} fetch ${CORE_ORIGIN}
-	@${GIT} merge ${CORE_ORIGIN}/${CORE_MAIN}
+	@${GIT} fetch ${CORE_UPSTREAM}
+	@${GIT} merge ${CORE_UPSTREAM}/${CORE_MAIN}
 
 checkout:
 .for DIR in ${.CURDIR}/src
