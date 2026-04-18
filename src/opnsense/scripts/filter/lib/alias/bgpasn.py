@@ -64,7 +64,7 @@ class BGPASN(BaseContentParser):
             try:
                 req = requests.get(url=cls._asn_source, stream=True, timeout=20)
             except requests.RequestException  as e:
-                syslog.syslog(syslog.LOG_ERR, 'error fetching BGP ASN url %s [%s]' % e)
+                syslog.syslog(syslog.LOG_ERR, 'error fetching BGP ASN url [%s]' % e)
                 raise IOError('error fetching BGP ASN url %s' % cls._asn_source)
 
             if req.status_code == 200:
@@ -96,6 +96,7 @@ class BGPASN(BaseContentParser):
             self._update()
 
     def iter_addresses(self, asn):
+
         if len(self._asn_db) == 0:
             self._asn_fhandle.seek(0)
             for row in csv.reader(self._asn_fhandle, delimiter=',', quotechar='"'):
