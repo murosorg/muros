@@ -124,6 +124,5 @@ class Menu extends MenuContainer
                 'order' => $ordid++,
             ]);
         }
-
     }
 }

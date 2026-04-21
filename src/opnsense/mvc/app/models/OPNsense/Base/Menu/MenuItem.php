@@ -295,7 +295,7 @@ class MenuItem
             }
         }
         if ($this->Url != '') {
-            $css[] = 'menu_ref_'.md5($this->Url);
+            $css[] = 'menu_ref_' . md5($this->Url);
         }
         return implode(' ', $css) . " " . $this->LinkClass;
     }
