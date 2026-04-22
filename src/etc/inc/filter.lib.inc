@@ -184,13 +184,14 @@ function filter_core_get_default_nat_outbound_networks()
     // Add openvpn networks
     foreach (['server', 'client'] as $section) {
         if (openvpn_legacy($section)) {
-            foreach ($config['openvpn']["openvpn-{$section}"] as $ovpn) {
+            foreach (config_read_array('openvpn', "openvpn-{$section}", false) as $ovpn) {
                 if (!isset($ovpn['disable']) && !empty($ovpn['tunnel_network'])) {
                     $result[] = $ovpn['tunnel_network'];
                 }
             }
         }
     }
+
     // Add ipsec network pool if specified
     if (!empty($config['ipsec']['client']['pool_address']) && !empty($config['ipsec']['client']['pool_netbits'])) {
         $result[] = "{$config['ipsec']['client']['pool_address']}/{$config['ipsec']['client']['pool_netbits']}";
@@ -677,38 +678,35 @@ function filter_core_rules_system($fw, $defaults)
  */
 function filter_core_rules_user($fw)
 {
-    global $config;
-
     foreach ((new \OPNsense\Firewall\Group())->ifgroupentry->iterateItems() as $node) {
         $ifgroups[(string)$node->ifname] = !empty((string)$node->sequence) ? (string)$node->sequence : 0;
     }
 
-    if (isset($config['filter']['rule'])) {
-        // register user rules
-        foreach ($config['filter']['rule'] as $idx => $rule) {
-            if (!is_array($rule)) {
-                continue;
-            }
-            // calculate a hash for this area so we can track this rule, we should replace this
-            // with uuid's on the rules like the new style models do eventually.
-            $rule['label'] = OPNsense\Firewall\Util::calcRuleHash($rule);
-
-            $intf = !empty($rule['floating']) ? 'FloatingRules' : $rule['interface'];
-            $rule['#ref'] = sprintf('firewall_rules_edit.php?if=%s&id=%s', $intf, $idx);
-            $rule['seq'] = $idx;  // current rule sequence (used as id in firewall pages)
-
-            if (empty($rule['descr'])) {
-                $rule['descr'] = '';
-            }
-
-            if (isset($rule['floating'])) {
-                $prio = 200000;
-            } elseif (isset($ifgroups[$rule['interface']])) {
-                $prio = 300000 + $ifgroups[$rule['interface']];
-            } else {
-                $prio = 400000;
-            }
-            $fw->registerFilterRule($prio, $rule);
+    foreach (config_read_array('filter', 'rule', false) as $idx => $rule) {
+        if (!is_array($rule)) {
+            continue;
         }
+
+        // calculate a hash for this area so we can track this rule, we should replace this
+        // with uuid's on the rules like the new style models do eventually.
+        $rule['label'] = OPNsense\Firewall\Util::calcRuleHash($rule);
+
+        $intf = !empty($rule['floating']) ? 'FloatingRules' : $rule['interface'];
+        $rule['#ref'] = sprintf('firewall_rules_edit.php?if=%s&id=%s', $intf, $idx);
+        $rule['seq'] = $idx;  // current rule sequence (used as id in firewall pages)
+
+        if (empty($rule['descr'])) {
+            $rule['descr'] = '';
+        }
+
+        if (isset($rule['floating'])) {
+            $prio = 200000;
+        } elseif (isset($ifgroups[$rule['interface']])) {
+            $prio = 300000 + $ifgroups[$rule['interface']];
+        } else {
+            $prio = 400000;
+        }
+
+        $fw->registerFilterRule($prio, $rule);
     }
 }

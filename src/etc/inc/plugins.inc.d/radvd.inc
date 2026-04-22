@@ -417,8 +417,8 @@ function radvd_configure_do($verbose = false, $ignorelist = [])
             } else {
                 log_msg("radvd_configure_do(auto) found no suitable IPv6 address on {$if}({$device})", LOG_WARNING);
             }
-        } elseif (!empty($config['system']['dnsserver'])) {
-            foreach ($config['system']['dnsserver'] as $server) {
+        } else {
+            foreach (config_read_array('system', 'dnsserver', false) as $server) {
                 if (!is_ipaddrv6($server)) {
                     continue;
                 }
