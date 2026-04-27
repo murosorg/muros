@@ -138,6 +138,7 @@ class TextFieldTest extends Field_Framework_TestCase
         $field->setRequired("Y");
         $field->setValue("");
 
+        $this->assertEquals(0, $field->count());
         $this->validateThrow($field);
     }
 
