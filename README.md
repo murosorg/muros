@@ -107,13 +107,13 @@ the full NGFW catalogue.
 | SNMP / monitoring | yes | yes | yes | **yes** |
 | External auth (LDAP / RADIUS) | yes | yes | yes | planned |
 
-In practice: if you need OSPF / BGP, an HTTP proxy / web filter, a
-gateway antivirus or true SD-WAN with application steering, look at the
-incumbents. MurOS stays smaller in scope on purpose.
+Features still on the roadmap (OSPF / BGP, IDS / IPS, external auth) are
+marked as planned above. Everything that ships is built natively into the
+core, with no plugins to add.
 
-The differentiator vs pfSense / OPNsense is the Debian-native base:
-Linux admins debug with their existing tools instead of learning
-FreeBSD-specific paths.
+MurOS is a Linux-based alternative to pfSense and OPNsense, built on a
+Debian-native base: Linux admins debug with their existing tools instead
+of learning FreeBSD-specific paths.
 
 ## Modules
 
