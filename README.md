@@ -37,12 +37,6 @@ high availability, DHCP, recursive DNS, SNMP, monitoring.
   The UI listens on 443, and you only open the other ports the
   features you enable need (SSH, SNMP, VRRP, WireGuard, IPsec, ...).
 
-## Screenshots
-
-![MurOS dashboard](docs/screenshots/dashboard.png)
-
-More screenshots in [`docs/screenshots/`](docs/screenshots/).
-
 ## Tech stack
 
 `Debian 13`  ·  `Python 3.12 / FastAPI / SQLite`  ·  `React 18 / Vite / Tailwind`
