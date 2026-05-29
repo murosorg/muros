@@ -52,14 +52,18 @@ for s in muros-backend muros-watcher muros-boot; do
   systemctl disable "$s.service" 2>/dev/null || true
 done
 # Services optionnels qui n'ont de sens qu'avec MurOS (gere via l'UI).
-# On les arrete et disable, mais on laisse le paquet en place.
+# On les arrete et disable, mais on laisse le paquet en place. Le
+# reset-failed evite de laisser une unite en "failed" rouge apres coup
+# (ex dnsmasq/unbound qui se battaient pour le port 53).
 for s in keepalived conntrackd strongswan strongswan-starter \
-         snmpd muros-watcher; do
+         snmpd dnsmasq unbound muros-watcher; do
   systemctl stop "$s.service" 2>/dev/null || true
   systemctl disable "$s.service" 2>/dev/null || true
+  systemctl reset-failed "$s.service" 2>/dev/null || true
 done
 systemctl stop "wg-quick@wg0.service" 2>/dev/null || true
 systemctl disable "wg-quick@wg0.service" 2>/dev/null || true
+systemctl reset-failed "wg-quick@wg0.service" 2>/dev/null || true
 
 echo "[2/4] Purge du paquet muros (dpkg postrm s'occupe de /opt, /etc, DB)"
 export DEBIAN_FRONTEND=noninteractive
@@ -116,6 +120,7 @@ if [ "$PURGE_DEPS" = "1" ]; then
     libcharon-extra-plugins libstrongswan-extra-plugins
     wireguard-tools wireguard
     fail2ban snmpd snmp
+    dnsmasq unbound
   "
   for p in $DEPS; do
     if dpkg -l "$p" >/dev/null 2>&1; then
@@ -154,6 +159,13 @@ rm -f /etc/conntrackd/conntrackd.conf 2>/dev/null || true
 
 # SNMP : drop-in MurOS uniquement (laisse /etc/snmp/snmpd.conf du paquet)
 rm -f /etc/snmp/snmpd.conf.d/muros.conf
+
+# Services reseau V1.2 : drop-ins ecrits par MurOS a l'apply. dnsmasq
+# tourne en DHCP-only (port=0), unbound en resolver recursif. On retire
+# uniquement nos fichiers, les confs des paquets restent intactes.
+rm -f /etc/dnsmasq.d/muros.conf
+rm -f /var/lib/misc/dnsmasq.leases 2>/dev/null || true
+rm -f /etc/unbound/unbound.conf.d/muros.conf
 
 # DNS : MurOS ecrit /etc/resolv.conf directement et garde un backup
 # .muros-bak. Si l'admin avait une conf DNS pre-MurOS on la restaure.
