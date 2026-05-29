@@ -37,7 +37,7 @@ Reboot. Login as root via console or SSH.
 From the firewall, as root:
 
 ```bash
-curl -fsSL https://github.com/murosorg/muros/releases/latest/download/install.sh | sudo bash
+curl -fsSL https://apt.muros.org/install.sh | sudo bash
 ```
 
 At the end of the script you will see something like:

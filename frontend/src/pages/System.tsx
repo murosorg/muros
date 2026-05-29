@@ -1085,9 +1085,9 @@ function UpdatesTab() {
   const check = async () => {
     setChecking(true); setError(null)
     try {
-      // Un seul appel = un seul "apt update" + un seul re-fetch GitHub.
-      // Garantit que les deux flux affichent un etat coherent et un
-      // last_check_at commun.
+      // Un seul appel = un seul "apt update" + relecture du candidat apt
+      // (apt-cache policy). Garantit que les deux flux affichent un etat
+      // coherent et un last_check_at commun.
       const r = await api.updates.checkAll()
       setStatus(r.apt)
       setMuros(r.muros)
@@ -1201,7 +1201,7 @@ function UpdatesTab() {
             }
             mono={!!muros?.candidate && muros.upgrade_available}
           />
-          <Stat label="Source" value={muros?.candidate ? 'GitHub Releases' : 'none'} />
+          <Stat label="Source" value={muros?.candidate ? 'apt.muros.org' : 'none'} />
         </div>
 
         {muros?.upgrade_available && muros.candidate && (
@@ -1272,8 +1272,8 @@ function UpdatesTab() {
         {!muros?.installed && (
           <div className="text-sm text-gray-700 mt-2">
             The MurOS package is not installed via dpkg on this machine. This flow
-            only activates after .deb installation (see GitHub release) or
-            deployment of the ISO appliance.
+            only activates after installing from apt.muros.org or deployment of
+            the ISO appliance.
           </div>
         )}
         {muros?.installed && !muros.upgrade_available && muros.candidate && (

@@ -51,7 +51,7 @@ Les autres composants sont persistants nativement :
 Via le `.deb` publie en release GitHub :
 
 ```bash
-curl -fsSL https://github.com/murosorg/muros/releases/latest/download/install.sh | sudo bash
+curl -fsSL https://apt.muros.org/install.sh | sudo bash
 ```
 
 Le paquet installe les dependances apt (nftables, nginx, fail2ban, wireguard,
@@ -64,7 +64,7 @@ les units systemd et demarre le backend.
 Une seule methode officielle, symetrique de l'install :
 
 ```bash
-curl -fsSL https://github.com/murosorg/muros/releases/latest/download/uninstall.sh | sudo bash
+curl -fsSL https://apt.muros.org/uninstall.sh | sudo bash
 ```
 
 Le script stoppe et disable les services MurOS et optionnels (keepalived/

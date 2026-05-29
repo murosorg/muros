@@ -78,13 +78,12 @@ jobs:
         # et mettre a jour la ligne + le commentaire de version ci-dessous.
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
-          # We do NOT flag rc tags as pre-release: GitHub refuses to
-          # set make_latest=true on a pre-release, which makes
-          # /releases/latest/download/install.sh point to a stale tag.
-          # The homepage install command depends on this URL serving
-          # the newest deb, so we treat every signed tag as a regular
-          # release. The rc suffix in the tag name keeps the semantic
-          # "release candidate" indication for humans.
+          # We do NOT flag rc tags as pre-release: GitHub refuses to set
+          # make_latest=true on a pre-release. We keep make_latest=true so
+          # /releases/latest resolves to the newest signed build, which
+          # the apt publish step (muros-apt-publish, default "latest") and
+          # the release badge rely on. The rc suffix in the tag name keeps
+          # the "release candidate" indication for humans.
           prerelease: false
           make_latest: true
           files: |

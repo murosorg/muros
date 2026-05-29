@@ -26,42 +26,12 @@ STATE_FILE = STATE_DIR / "updates_state.json"
 
 _PKG_RE = re.compile(r"^([^/]+)/[^ ]+ ([^ ]+) [^ ]+ \[upgradable from: ([^\]]+)\]")
 
-# Prefixe des paquets MurOS, geres par un canal de MAJ distinct (GitHub
-# Releases pour l'instant, repo apt plus tard). On les exclut du flux MAJ
-# systeme pour que l'admin distingue clairement les deux types de mises
-# a jour.
+# Prefixe des paquets MurOS. Le paquet muros est gere par un canal de MAJ
+# distinct (le depot apt signe apt.muros.org) qu'on exclut du flux MAJ
+# systeme, pour que l'admin distingue clairement les deux types de mises
+# a jour. Le candidat et l'upgrade passent par apt, exactement comme
+# l'installation initiale.
 MUROS_PACKAGE_PREFIX = "muros"
-
-# URL de l'API GitHub qui renvoie la derniere release MurOS. Surchargeable
-# par env si on bascule plus tard sur un repo apt MurOS ou un miroir.
-MUROS_RELEASE_API_URL = os.environ.get(
-    "MUROS_RELEASE_API_URL",
-    "https://api.github.com/repos/murosorg/muros/releases/latest",
-)
-
-# List endpoint used in priority over /latest. GitHub's /latest tracks
-# the most recently *published* release, which is not necessarily the
-# highest semver when several tagged builds finish out of order in
-# parallel CI jobs (a common case for back-to-back rc tags). Fetching
-# the list and picking the highest semver tag avoids proposing a
-# downgrade like "rc96 -> rc94".
-MUROS_RELEASE_LIST_URL = os.environ.get(
-    "MUROS_RELEASE_LIST_URL",
-    "https://api.github.com/repos/murosorg/muros/releases?per_page=20",
-)
-
-# Repo slug used by the HTML-redirect fallback when the REST API is
-# rate-limited. The unauthenticated GitHub API is capped at 60 req/h
-# per IP and trivially returns 403 in shared-IP / NAT environments;
-# the HTML endpoint /releases/latest is a 302 redirect to
-# /releases/tag/<TAG>, served from the CDN with no rate limit.
-MUROS_RELEASE_REPO = os.environ.get("MUROS_RELEASE_REPO", "murosorg/muros")
-
-# Cache local des .deb telecharges avant install. Stocke a cote de la DB
-# pour partager le meme device (eviter un cross-fs move).
-MUROS_DEB_CACHE = Path(os.environ.get(
-    "MUROS_DEB_CACHE", "/var/cache/muros/upgrade",
-))
 
 
 def _load_state() -> dict:
@@ -109,52 +79,6 @@ def _dpkg_installed_version(pkg: str) -> str | None:
     return None
 
 
-def _fetch_latest_release_via_html() -> dict | None:
-    """Fallback resolver when api.github.com is rate-limited (403/429).
-
-    We HEAD `https://github.com/<repo>/releases/latest`: GitHub answers
-    with a 302 redirect to `/releases/tag/<TAG>`. We extract <TAG> from
-    the final URL and reconstruct the asset URLs by convention (same
-    naming scheme produced by our `build-deb.yml` workflow). Returns a
-    dict shaped like the GitHub REST payload so the rest of the code
-    keeps working unchanged.
-    """
-    import urllib.request
-    import urllib.error
-
-    url = f"https://github.com/{MUROS_RELEASE_REPO}/releases/latest"
-    try:
-        # HEAD request; urllib follows the 302 automatically and exposes
-        # the final URL via `resp.geturl()`.
-        req = urllib.request.Request(
-            url, method="HEAD", headers={"User-Agent": "muros-updater"},
-        )
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            final_url = resp.geturl() or ""
-    except (urllib.error.URLError, OSError):
-        return None
-
-    marker = "/releases/tag/"
-    if marker not in final_url:
-        return None
-    tag = final_url.rsplit(marker, 1)[1].split("/", 1)[0]
-    if not tag.startswith("v"):
-        return None
-    version = tag.lstrip("v")
-    base = f"https://github.com/{MUROS_RELEASE_REPO}/releases/download/{tag}"
-    deb_name = f"muros_{version}_all.deb"
-    return {
-        "tag_name": tag,
-        "published_at": None,
-        "body": "",
-        "assets": [
-            {"name": deb_name, "browser_download_url": f"{base}/{deb_name}"},
-            {"name": deb_name + ".sha256",
-             "browser_download_url": f"{base}/{deb_name}.sha256"},
-        ],
-    }
-
-
 def _parse_version_tuple(version: str) -> tuple:
     """Best-effort semver parser for MurOS tags like '0.9.0-rc97'.
 
@@ -182,132 +106,52 @@ def _parse_version_tuple(version: str) -> tuple:
     return (tuple(base_parts), 0, pre_num)
 
 
-def _fetch_release_list() -> list[dict] | None:
-    """Fetch the recent releases as a list and return the raw payload.
+def _apt_candidate_version(pkg: str) -> str | None:
+    """Return the apt candidate version for `pkg`, or None.
 
-    Used in priority over /latest because /latest tracks publish time,
-    not semver. Returns None on network / parse / rate-limit failure so
-    the caller can fall back to the single-release path.
+    Reads `apt-cache policy <pkg>` and parses the "Candidate:" line. The
+    candidate is whatever apt would install from the configured sources,
+    i.e. apt.muros.org for the muros package. This relies on the apt
+    metadata being reasonably fresh; callers that need an up-to-date
+    answer run `apt-get update` first (check_all does).
     """
-    import json
-    import urllib.request
-    import urllib.error
-
-    req = urllib.request.Request(
-        MUROS_RELEASE_LIST_URL,
-        headers={
-            "Accept": "application/vnd.github+json",
-            "User-Agent": "muros-updater",
-        },
-    )
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            payload = json.loads(resp.read().decode("utf-8"))
-    except (urllib.error.HTTPError, urllib.error.URLError,
-            json.JSONDecodeError, OSError):
-        return None
-    if not isinstance(payload, list):
-        return None
-    # Exclude drafts and prereleases flagged as such on GitHub.
-    return [
-        r for r in payload
-        if isinstance(r, dict)
-        and not r.get("draft")
-        and not r.get("prerelease")
-    ]
-
-
-def _fetch_latest_release() -> dict | None:
-    """Resolve the candidate release for MurOS upgrades.
-
-    Strategy:
-    1. Fetch the recent release list and pick the highest semver tag.
-       This is robust against parallel CI jobs that publish out of
-       order (e.g. rc94 published after rc96 because its workflow ran
-       longer; /latest would then point to rc94 and silently propose a
-       downgrade).
-    2. If the list endpoint fails (network, rate limit, parse error),
-       fall back to /releases/latest.
-    3. If that also fails, fall back to the HTML 302 redirect.
-    """
-    import json
-    import urllib.request
-    import urllib.error
-
-    # 1) Preferred path: list + semver pick.
-    releases = _fetch_release_list()
-    data: dict | None = None
-    if releases:
-        # Highest semver wins. Ties are broken by published_at descending.
-        releases.sort(
-            key=lambda r: (
-                _parse_version_tuple((r.get("tag_name") or "").lstrip("v")),
-                r.get("published_at") or "",
-            ),
-            reverse=True,
+        proc = subprocess.run(
+            ["apt-cache", "policy", pkg],
+            capture_output=True, text=True, timeout=10,
+            env={**os.environ, "LC_ALL": "C"},
         )
-        data = releases[0]
-
-    # 2) Fall back to /releases/latest when the list endpoint is unavailable.
-    if data is None:
-        req = urllib.request.Request(
-            MUROS_RELEASE_API_URL,
-            headers={
-                "Accept": "application/vnd.github+json",
-                "User-Agent": "muros-updater",
-            },
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as exc:
-            if exc.code in (403, 429):
-                data = _fetch_latest_release_via_html()
-            else:
+    except (subprocess.SubprocessError, FileNotFoundError):
+        return None
+    if proc.returncode != 0:
+        return None
+    for line in proc.stdout.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("Candidate:"):
+            value = stripped.split(":", 1)[1].strip()
+            if not value or value == "(none)":
                 return None
-        except (urllib.error.URLError, json.JSONDecodeError, OSError):
-            data = _fetch_latest_release_via_html()
-    if not data:
-        return None
-
-    tag = data.get("tag_name") or ""
-    version = tag.lstrip("v")
-    deb_url: str | None = None
-    sha_url: str | None = None
-    for asset in data.get("assets") or []:
-        name = asset.get("name") or ""
-        if name.endswith(".deb") and name.startswith("muros"):
-            deb_url = asset.get("browser_download_url")
-        elif name.endswith(".sha256") and name.startswith("muros"):
-            sha_url = asset.get("browser_download_url")
-    return {
-        "tag": tag,
-        "version": version,
-        "deb_url": deb_url,
-        "sha256_url": sha_url,
-        "published_at": data.get("published_at"),
-        "notes": (data.get("body") or "")[:4000],
-    }
+            return value
+    return None
 
 
 def get_muros_status() -> dict:
-    """Etat des paquets MurOS : version installee + version disponible.
+    """Etat du paquet MurOS : version installee + version candidate apt.
 
-    La version installee est lue via dpkg-query. La version disponible
-    est recuperee depuis l'API GitHub Releases (publique, 60 req/h).
-    Le checksum SHA-256 et le changelog sont ramenes en meme temps pour
-    affichage dans l'UI.
+    La version installee est lue via dpkg-query, la version candidate via
+    `apt-cache policy muros` (donc depuis apt.muros.org, le meme canal que
+    l'installation). Plus aucun appel a GitHub : l'UI propose seulement un
+    lien "notes de release" vers la page GitHub du tag correspondant.
     """
     state = _load_state()
     pending = [p for p in state.get("packages", []) if _is_muros_pkg(p["name"])]
 
     installed = _dpkg_installed_version(MUROS_PACKAGE_PREFIX)
-    release = _fetch_latest_release()
-    candidate = release["version"] if release else None
+    candidate = _apt_candidate_version(MUROS_PACKAGE_PREFIX)
     # Only offer the upgrade when the candidate is strictly newer than
-    # the installed version. This protects against transient resolver
-    # glitches (CI race, mirror lag, hand-crafted tag) that would
-    # otherwise silently propose a downgrade.
+    # the installed version. This protects against transient glitches
+    # (mirror lag, metadata not refreshed) that would otherwise propose
+    # a no-op or a downgrade.
     upgrade_available = bool(
         installed
         and candidate
@@ -321,9 +165,9 @@ def get_muros_status() -> dict:
         "upgrade_available": upgrade_available,
         "pending_packages": pending,
         "last_check_at": state.get("last_check_at"),
-        "deb_url": release["deb_url"] if release else None,
-        "release_notes": release["notes"] if release else None,
-        "release_published_at": release["published_at"] if release else None,
+        "deb_url": None,
+        "release_notes": None,
+        "release_published_at": None,
     }
 
 
@@ -347,9 +191,9 @@ def check_all() -> dict:
     bouton "Verifier" et qu'elle puisse afficher un horodatage commun.
     """
     apt_result = check_updates()
-    # Force un re-fetch GitHub en remettant le get_muros_status apres :
-    # il interroge l'API GitHub a chaque appel donc on est garantis d'avoir
-    # la derniere info. On synchronise last_check_at sur le meme stamp.
+    # check_updates() vient de lancer `apt-get update`, donc la version
+    # candidate lue par get_muros_status (apt-cache policy) est fraiche.
+    # On synchronise last_check_at sur le meme stamp.
     muros_result = get_muros_status()
     return {
         "apt": apt_result,
@@ -452,53 +296,20 @@ def install_updates() -> dict:
     }
 
 
-def _download(url: str, dest: Path, timeout: int = 120) -> None:
-    """Telecharge `url` vers `dest`. Crash si reponse non-200."""
-    import urllib.request
-
-    req = urllib.request.Request(url, headers={"User-Agent": "muros-updater"})
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        if resp.status != 200:
-            raise RuntimeError(f"HTTP {resp.status} en telechargeant {url}")
-        with dest.open("wb") as fh:
-            while True:
-                chunk = resp.read(64 * 1024)
-                if not chunk:
-                    break
-                fh.write(chunk)
-
-
-def _sha256_of(path: Path) -> str:
-    import hashlib
-    h = hashlib.sha256()
-    with path.open("rb") as fh:
-        for chunk in iter(lambda: fh.read(64 * 1024), b""):
-            h.update(chunk)
-    return h.hexdigest()
-
-
 def install_muros() -> dict:
-    """Installe la derniere version du paquet `muros` depuis GitHub Releases.
+    """Met a jour le paquet `muros` depuis le depot apt signe (apt.muros.org).
 
     Etapes :
       1. Snapshot pre-upgrade (DB + nftables.conf) via backups.create_backup
-      2. Recupere la derniere release via l'API GitHub
-      3. Telecharge le .deb et son fichier .sha256
-      4. Verifie le checksum
-      5. apt install -y ./muros_X.Y.Z_all.deb (apt gere deps + postinst)
+      2. apt-get update (rafraichit la metadata apt.muros.org)
+      3. apt-get install --only-upgrade -y muros (apt gere deps + postinst)
 
-    Pas de repo apt requis : tout passe par github.com.
+    La verification d'integrite est assuree par la signature GPG du depot
+    (le keyring signed-by), donc plus de telechargement .deb ni de check
+    SHA-256 cote applicatif : tout passe par apt, comme l'installation.
     """
     if not _apt_available():
         raise RuntimeError("apt n'est pas disponible : impossible de mettre a jour MurOS.")
-
-    release = _fetch_latest_release()
-    if not release or not release.get("deb_url"):
-        raise RuntimeError(
-            "Aucune release MurOS publiee detectee sur GitHub. Verifier "
-            f"MUROS_RELEASE_API_URL ({MUROS_RELEASE_API_URL})."
-        )
 
     # 1. Snapshot pre-upgrade : DB + nftables.conf, archive horodatee.
     # Label porte la version installee AVANT upgrade pour que l'admin
@@ -511,33 +322,23 @@ def install_muros() -> dict:
     except Exception as exc:  # noqa: BLE001
         snap = {"name": None, "error": str(exc)}
 
-    # 2 & 3. Telecharge le .deb dans le cache local
-    MUROS_DEB_CACHE.mkdir(parents=True, exist_ok=True)
-    deb_name = release["deb_url"].rsplit("/", 1)[-1]
-    deb_path = MUROS_DEB_CACHE / deb_name
+    # 2. Rafraichit la metadata apt (apt.muros.org) avant l'upgrade pour
+    # que la nouvelle version soit visible meme si aucun check n'a ete
+    # lance recemment depuis l'UI.
+    env = {**os.environ, "DEBIAN_FRONTEND": "noninteractive", "LC_ALL": "C"}
     try:
-        _download(release["deb_url"], deb_path, timeout=300)
-    except Exception as exc:  # noqa: BLE001
-        raise RuntimeError(f"Echec du telechargement du .deb : {exc}") from exc
+        upd = subprocess.run(
+            ["apt-get", "update", "-q"],
+            env=env, capture_output=True, text=True, timeout=60,
+        )
+        if upd.returncode != 0:
+            raise RuntimeError(
+                f"apt-get update a echoue : {(upd.stderr or '').strip()[:400]}"
+            )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError("apt-get update n'a pas repondu en 60s.") from exc
 
-    # 4. Verifie le checksum SHA-256 si publie a cote du .deb
-    if release.get("sha256_url"):
-        try:
-            sha_path = MUROS_DEB_CACHE / (deb_name + ".sha256")
-            _download(release["sha256_url"], sha_path, timeout=30)
-            expected = sha_path.read_text().strip().split()[0].lower()
-            actual = _sha256_of(deb_path).lower()
-            if expected != actual:
-                deb_path.unlink(missing_ok=True)
-                raise RuntimeError(
-                    f"Invalid SHA-256 checksum: expected {expected}, got {actual}"
-                )
-        except RuntimeError:
-            raise
-        except Exception as exc:  # noqa: BLE001
-            raise RuntimeError(f"Echec verification SHA-256 : {exc}") from exc
-
-    # 5. apt install ./muros.deb : on ne peut PAS faire un subprocess.run
+    # apt install --only-upgrade muros : on ne peut PAS faire un subprocess.run
     # bloquant ici car le postinst du nouveau .deb va `systemctl restart
     # muros-backend.service`, ce qui envoie SIGTERM au backend (et donc a
     # l'apt-get spawn par le backend). apt-get meurt en code -15 et dpkg
@@ -550,22 +351,23 @@ def install_muros() -> dict:
     # se reconnecter quand le nouveau backend repond.
     progress_log = STATE_DIR / "muros-upgrade.log"
     progress_log.parent.mkdir(parents=True, exist_ok=True)
+    candidate = _apt_candidate_version(MUROS_PACKAGE_PREFIX) or "latest"
     progress_log.write_text(
-        f"# {datetime.now(timezone.utc).isoformat()} : upgrade vers {deb_path.name}\n"
+        f"# {datetime.now(timezone.utc).isoformat()} : "
+        f"apt install --only-upgrade muros (-> {candidate})\n"
     )
 
     if shutil.which("systemd-run") is None or os.geteuid() != 0:
         # Fallback dev / non-root : on tente quand meme l'apt en synchrone
         # (et tant pis si SIGTERM nous coupe ; au moins en dev sans
         # muros-backend.service le scenario n'existe pas).
-        env = {**os.environ, "DEBIAN_FRONTEND": "noninteractive", "LC_ALL": "C"}
-        cmd = ["apt-get", "-y", "install", str(deb_path)]
+        cmd = ["apt-get", "-y", "install", "--only-upgrade", "muros"]
         try:
             proc = subprocess.run(
                 cmd, env=env, capture_output=True, text=True, timeout=600,
             )
         except (subprocess.SubprocessError, FileNotFoundError) as exc:
-            raise RuntimeError(f"apt-get install ./muros.deb a echoue : {exc}") from exc
+            raise RuntimeError(f"apt-get install --only-upgrade muros a echoue : {exc}") from exc
         if proc.returncode != 0:
             raise RuntimeError(
                 f"apt-get install code {proc.returncode}: {proc.stderr[:400]}"
@@ -588,7 +390,7 @@ def install_muros() -> dict:
             "--setenv=LC_ALL=C",
             "--property=StandardOutput=append:" + str(progress_log),
             "--property=StandardError=append:" + str(progress_log),
-            "apt-get", "-y", "install", str(deb_path),
+            "apt-get", "-y", "install", "--only-upgrade", "muros",
         ]
         try:
             proc = subprocess.run(cmd, capture_output=True, text=True, timeout=10)

@@ -144,8 +144,8 @@ schema is not frozen. Upgrades between beta releases are done via clean
 reinstall:
 
 ```bash
-curl -fsSL https://github.com/murosorg/muros/releases/latest/download/uninstall.sh | sudo bash
-curl -fsSL https://github.com/murosorg/muros/releases/latest/download/install.sh | sudo bash
+curl -fsSL https://apt.muros.org/uninstall.sh | sudo bash
+curl -fsSL https://apt.muros.org/install.sh | sudo bash
 ```
 
 If you want to keep your config across reinstalls, export a backup first
