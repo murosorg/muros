@@ -232,7 +232,7 @@ The two projects target completely different platforms and audiences:
 - **Murus** is a closed-source GUI for the macOS built-in PF packet
   filter, sold per seat to individual Mac users who want a graphical
   way to configure the firewall on their workstation.
-- **MurOS** is an open source Linux appliance distribution based on
+- **MurOS** is an open source firewall appliance built on Debian and
   nftables, designed to replace pfSense or OPNsense as a network
   gateway for small and mid-size businesses, managed entirely through
   a web interface.
