@@ -2,6 +2,17 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [v0.9.0-rc6] - 2026-05-29
+
+### Changed
+- CI runs JavaScript actions on Node 24 (FORCE_JAVASCRIPT_ACTIONS_TO_NODE24)
+  ahead of the Node 20 removal on GitHub runners.
+
+### Security
+- The apt deploy key wrapper now requires an explicit release tag. A bare
+  SSH connection with no command is refused instead of defaulting to
+  publishing "latest".
+
 ## [v0.9.0-rc5] - 2026-05-29
 
 ### Changed

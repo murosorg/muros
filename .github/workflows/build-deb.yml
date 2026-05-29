@@ -11,6 +11,14 @@ on:
 permissions:
   contents: write
 
+# Run JavaScript actions on Node 24. Node 20 is deprecated on GitHub
+# runners (removed Sept 2026). We keep the actions at their current
+# versions (the action-gh-release SHA pin is deliberate) and force the
+# Node 24 runtime here instead, the sanctioned opt-in until those actions
+# ship Node 24 native majors.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   build:
     runs-on: ubuntu-24.04
