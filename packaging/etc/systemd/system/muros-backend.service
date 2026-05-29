@@ -1,0 +1,33 @@
+[Unit]
+Description=MurOS backend API
+Documentation=https://github.com/muros
+After=network-online.target systemd-resolved.service systemd-timesyncd.service
+Wants=network-online.target systemd-resolved.service systemd-timesyncd.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/muros/backend
+Environment="MUROS_DB=/var/lib/muros/muros.db"
+Environment="MUROS_BACKUP_DIR=/var/lib/muros/backups"
+Environment="MUROS_STATE_DIR=/var/lib/muros"
+Environment="MUROS_APPLY=true"
+# Cree les dossiers d'etat avant de lancer uvicorn (idempotent).
+ExecStartPre=/bin/mkdir -p /var/lib/muros /var/lib/muros/backups /etc/muros
+ExecStart=/opt/muros/backend/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
+Restart=on-failure
+RestartSec=3
+
+# Hardening compatible avec le besoin de privileges reseau
+NoNewPrivileges=no
+ProtectSystem=no
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=no
+ProtectControlGroups=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target

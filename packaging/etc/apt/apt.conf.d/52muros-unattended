@@ -1,0 +1,36 @@
+// MurOS unattended-upgrades configuration.
+//
+// Auto-applies every Debian package upgrade from the configured origins,
+// EXCEPT the muros package itself which is upgraded only on explicit
+// admin action from the UI (POST /api/updates/muros/install).
+//
+// Automatic reboot is DISABLED on purpose: a firewall reboot is a
+// service-impacting event that must be scheduled by the admin. The UI
+// surfaces a "reboot required" banner when /var/run/reboot-required
+// exists so the admin notices and can pick a maintenance window.
+
+Unattended-Upgrade::Origins-Pattern {
+    "origin=Debian,codename=${distro_codename},label=Debian";
+    "origin=Debian,codename=${distro_codename}-security,label=Debian-Security";
+    "origin=Debian,codename=${distro_codename}-updates";
+};
+
+// muros itself (and any muros-* sub-package we may ship later) is
+// upgraded only from the UI / CLI. Never from the unattended timer.
+Unattended-Upgrade::Package-Blacklist {
+    "muros";
+    "muros-.*";
+};
+
+Unattended-Upgrade::Automatic-Reboot "false";
+Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";
+Unattended-Upgrade::Remove-Unused-Dependencies "true";
+// MinimalSteps lets dpkg be safely interrupted between packages, useful
+// if a keepalived or conntrackd restart triggers an HA transition we
+// want to abort cleanly.
+Unattended-Upgrade::MinimalSteps "true";
+
+// Drive the apt-daily / apt-daily-upgrade systemd timers.
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Unattended-Upgrade "1";
+APT::Periodic::AutocleanInterval "7";

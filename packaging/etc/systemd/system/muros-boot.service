@@ -1,0 +1,29 @@
+[Unit]
+Description=MurOS - restauration de la config reseau au boot
+Documentation=https://github.com/muros
+# On a besoin du reseau de base (interfaces detectees) mais on doit
+# passer AVANT que l'admin tente de se connecter, donc avant
+# network-online.target.
+After=network-pre.target
+Before=network-online.target muros-backend.service
+Wants=network-pre.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=root
+WorkingDirectory=/opt/muros/backend
+Environment="MUROS_DB=/var/lib/muros/muros.db"
+Environment="MUROS_STATE_DIR=/var/lib/muros"
+Environment="MUROS_RULESET=/etc/muros/nftables.conf"
+Environment="MUROS_APPLY=true"
+# Cree les dossiers d'etat avant le run (idempotent).
+ExecStartPre=/bin/mkdir -p /var/lib/muros /var/lib/muros/backups /etc/muros
+ExecStart=/opt/muros/backend/venv/bin/python /opt/muros/backend/scripts/muros_boot.py
+# En cas d'echec : on continue (on log), pour ne pas bloquer le boot.
+# L'admin peut toujours se connecter en SSH si l'interface mgmt est ok,
+# meme si une route ou une regle a echoue.
+TimeoutStartSec=60
+
+[Install]
+WantedBy=multi-user.target

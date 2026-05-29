@@ -1,0 +1,18 @@
+[Unit]
+Description=MurOS event watcher (alertes mail)
+Documentation=https://github.com/murosorg/muros
+After=muros-backend.service
+Wants=muros-backend.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/muros/backend
+Environment="MUROS_DB=/var/lib/muros/muros.db"
+Environment="MUROS_WATCHER_INTERVAL=30"
+ExecStart=/opt/muros/backend/venv/bin/python /opt/muros/backend/scripts/muros_watcher.py
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

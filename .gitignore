@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
+
+# Node
+node_modules/
+dist/
+.vite/
+
+# Build
+*.iso
+*.img
+
+# IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Logs
+*.log
+
+# Base de donnees runtime (SQLite + fichiers WAL/SHM)
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Secret JWT genere localement
+muros-secret.key
+
+
+# Local agent context (never push to repo)
+context.md
+context.full.md.bak
+home.png
+shot_*.png
+shots/
+
+# Site docs are generated from docs/ + CHANGELOG.md by pages.yml CI
+site/docs/*.md
+.dust-conv-files/

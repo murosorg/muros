@@ -1,0 +1,64 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (c) 2026 MurOS contributors.
+"""Routes HTTP de l'API MurOS (sous-module)."""
+
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+
+from app import schemas
+from app.auth import current_user
+from app.db import get_db
+
+_auth_dep = [Depends(current_user)]
+
+
+# --- System actions (reboot, shutdown) ---
+system_actions_router = APIRouter(
+    prefix="/api/system", tags=["system"], dependencies=_auth_dep,
+)
+
+
+@system_actions_router.post("/reboot", response_model=schemas.SystemActionResult)
+def sys_reboot():
+    from app import system_actions
+    try:
+        return system_actions.reboot()
+    except RuntimeError as exc:
+        raise HTTPException(500, str(exc))
+
+
+@system_actions_router.get("/services", response_model=list[schemas.SystemServiceOut])
+def sys_services(db: Session = Depends(get_db)):
+    """Liste les services MurOS-geres effectivement installes, avec leur statut."""
+    from app import models, system_actions
+    services = system_actions.list_services()
+    # Surface "disabled by admin" for sshd so the dashboard does not
+    # raise a red alert on an explicit operator choice.
+    ssh_cfg = db.get(models.SshConfig, 1)
+    if ssh_cfg and getattr(ssh_cfg, "admin_disabled", False):
+        for s in services:
+            if s.get("unit") in ("ssh", "ssh.service", "sshd", "sshd.service"):
+                s["admin_disabled"] = True
+                if s.get("status") in ("inactive", "deactivating", "unknown", "failed"):
+                    s["status"] = "disabled_by_admin"
+    return services
+
+
+@system_actions_router.get("/listen-addresses", response_model=list[schemas.ListenAddressOut])
+def sys_listen_addresses():
+    """Liste les IPs locales utilisables comme adresse d'ecoute."""
+    from app import system_actions
+    return system_actions.list_listen_addresses()
+
+
+@system_actions_router.post("/shutdown", response_model=schemas.SystemActionResult)
+def sys_shutdown():
+    from app import system_actions
+    try:
+        return system_actions.shutdown()
+    except RuntimeError as exc:
+        raise HTTPException(500, str(exc))
+
+
+# Endpoints accessibles uniquement via token de sync (pas via JWT).
+# On les expose dans un router separe sans auth_dep, et on valide a la main.

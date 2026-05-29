@@ -1,0 +1,50 @@
+#!/usr/bin/make -f
+# Build du paquet muros : on package le backend Python (venv pre-rempli)
+# et le frontend builde (Vite -> dist/) sous /opt/muros/.
+
+export DH_VERBOSE=1
+export PYTHONDONTWRITEBYTECODE=1
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	cd frontend && npm ci --no-audit --no-fund && npm run build
+
+override_dh_auto_install:
+	install -d debian/muros/opt/muros/backend
+	cp -a backend/app debian/muros/opt/muros/backend/
+	cp -a backend/scripts debian/muros/opt/muros/backend/
+	cp backend/requirements.txt debian/muros/opt/muros/backend/
+	install -d debian/muros/opt/muros/web
+	cp -a frontend/dist/. debian/muros/opt/muros/web/
+	# install.sh et uninstall.sh ne sont PAS livres dans le .deb.
+	# Seule methode officielle pour les deux : curl asset GitHub release.
+	# Ca evite toute confusion sur "lequel des scripts j'utilise",
+	# garantit qu'on a toujours la derniere version du script (les MAJ
+	# du script ne dependent pas du paquet installe), et reduit la
+	# surface du paquet d'autant.
+	install -D -m 644 packaging/etc/systemd/system/muros-backend.service debian/muros/lib/systemd/system/muros-backend.service
+	install -D -m 644 packaging/etc/systemd/system/muros-boot.service debian/muros/lib/systemd/system/muros-boot.service
+	install -D -m 644 packaging/etc/systemd/system/muros-watcher.service debian/muros/lib/systemd/system/muros-watcher.service
+	install -D -m 644 packaging/etc/systemd/system/muros-wan-monitor.service debian/muros/lib/systemd/system/muros-wan-monitor.service
+	install -D -m 644 packaging/etc/nginx/sites-available/muros debian/muros/etc/nginx/sites-available/muros
+	install -D -m 644 packaging/etc/nginx/html/muros-503.html debian/muros/etc/nginx/html/muros-503.html
+	install -D -m 644 packaging/etc/sysctl.d/99-muros-hardening.conf debian/muros/etc/sysctl.d/99-muros-hardening.conf
+	install -D -m 644 packaging/etc/fail2ban/filter.d/muros-api.conf debian/muros/etc/fail2ban/filter.d/muros-api.conf
+	install -D -m 644 packaging/etc/fail2ban/jail.d/muros.local debian/muros/etc/fail2ban/jail.d/muros.local
+	install -D -m 644 packaging/etc/logrotate.d/muros debian/muros/etc/logrotate.d/muros
+	install -D -m 644 packaging/etc/ssh/sshd_config.d/muros.conf debian/muros/etc/ssh/sshd_config.d/muros.conf
+	install -D -m 644 packaging/etc/systemd/journald.conf.d/muros.conf debian/muros/etc/systemd/journald.conf.d/muros.conf
+	install -D -m 644 packaging/etc/apt/apt.conf.d/52muros-unattended debian/muros/etc/apt/apt.conf.d/52muros-unattended
+	install -D -m 755 packaging/usr/lib/muros/ha-notify.sh debian/muros/usr/lib/muros/ha-notify.sh
+	install -D -m 755 packaging/usr/lib/muros/apply-unattended.sh debian/muros/usr/lib/muros/apply-unattended.sh
+	install -d -m 750 debian/muros/etc/muros
+	install -d -m 750 debian/muros/var/lib/muros
+	install -d -m 750 debian/muros/var/lib/muros/backups
+
+override_dh_auto_clean:
+	rm -rf frontend/dist frontend/node_modules
+
+override_dh_installsystemd:
+	dh_installsystemd --no-start muros-backend.service muros-boot.service muros-watcher.service muros-wan-monitor.service

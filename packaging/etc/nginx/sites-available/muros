@@ -1,0 +1,58 @@
+# Frontal nginx pour MurOS.
+#
+# HTTPS par defaut avec le cert snakeoil de Debian (genere a l'install
+# par ssl-cert / regenere par le postinst). L'admin remplace par un vrai
+# cert depuis l'UI -> Acces HTTP -> Certificat TLS.
+# HTTP redirige vers HTTPS.
+
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name _;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl default_server;
+    listen [::]:443 ssl default_server;
+    http2 on;
+    server_name _;
+
+    ssl_certificate     /etc/nginx/ssl/muros.crt;
+    ssl_certificate_key /etc/nginx/ssl/muros.key;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_ciphers         HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+    ssl_session_cache   shared:SSL:10m;
+    ssl_session_timeout 1d;
+
+    error_page 502 503 504 /muros-503.html;
+    location = /muros-503.html { root /etc/nginx/html; internal; }
+
+    add_header X-Frame-Options DENY always;
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy strict-origin-when-cross-origin always;
+    add_header Strict-Transport-Security "max-age=31536000" always;
+
+    client_max_body_size 100M;
+    root /opt/muros/web;
+    index index.html;
+
+    location /api/ {
+        proxy_pass         http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto https;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+    }
+
+    location / { try_files $uri $uri/ /index.html; }
+
+    location ~* \.(js|css|woff2?|ttf|otf|svg|png|jpg|jpeg|gif|ico|webp)$ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+}

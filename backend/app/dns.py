@@ -1,0 +1,104 @@
+"""Configuration DNS resolveurs sur Debian 13.
+
+MurOS pilote /etc/resolv.conf directement, comme un fichier plat. On ne
+gere PAS systemd-resolved : il n'est pas installe par defaut sur Debian
+13, on l'a maske dans le postinst pour les machines ou il aurait ete
+ajoute a la main, et MurOS mask aussi NetworkManager / systemd-networkd
+/ ifupdown. Donc /etc/resolv.conf appartient a MurOS, point.
+
+C'est la maniere la plus simple, la plus robuste, et celle qui se
+comporte le mieux dans une appliance ou le reseau est pilote par l'admin
+via l'UI. Pas de daemon intermediaire, pas de stub, pas de drop-in.
+"""
+from __future__ import annotations
+
+import ipaddress
+import os
+from pathlib import Path
+
+RESOLV_CONF = Path(os.environ.get("MUROS_RESOLV_CONF", "/etc/resolv.conf"))
+
+DEFAULT_RESOLVERS = ["1.1.1.1", "4.4.4.4", "8.8.8.8"]
+
+_MUROS_HEADER = "# Genere par MurOS - editer depuis l'UI Systeme > DNS\n"
+
+
+def _parse_resolv_conf() -> dict:
+    """Parse /etc/resolv.conf au format glibc standard."""
+    resolvers: list[str] = []
+    search: list[str] = []
+    if not RESOLV_CONF.is_file():
+        return {"resolvers": [], "search": []}
+    try:
+        for raw in RESOLV_CONF.read_text(errors="replace").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#") or line.startswith(";"):
+                continue
+            parts = line.split()
+            if not parts:
+                continue
+            key = parts[0].lower()
+            if key == "nameserver" and len(parts) >= 2:
+                ns = parts[1]
+                if ns not in resolvers:
+                    resolvers.append(ns)
+            elif key in ("search", "domain") and len(parts) >= 2:
+                for tok in parts[1:]:
+                    if tok not in search:
+                        search.append(tok)
+    except OSError:
+        pass
+    return {"resolvers": resolvers, "search": search}
+
+
+def get_resolvers() -> dict:
+    """Retourne {resolvers, search_domains, config_path}.
+
+    Si /etc/resolv.conf est vide ou absent, on renvoie les resolveurs
+    publics par defaut (1.1.1.1, 4.4.4.4, 8.8.8.8) en lecture seule
+    pour que l'UI ait quelque chose a montrer.
+    """
+    parsed = _parse_resolv_conf()
+    resolvers = parsed["resolvers"] or list(DEFAULT_RESOLVERS)
+    return {
+        "resolvers": resolvers,
+        "search_domains": parsed["search"],
+        "config_path": str(RESOLV_CONF),
+    }
+
+
+def set_resolvers(resolvers: list[str], search_domains: list[str] | None = None) -> dict:
+    """Ecrit /etc/resolv.conf directement. Backup de l'original au premier passage."""
+    cleaned: list[str] = []
+    for r in resolvers:
+        r = r.strip()
+        if not r:
+            continue
+        try:
+            ipaddress.ip_address(r)
+        except ValueError as exc:
+            raise ValueError(f"invalid resolver : {r!r}") from exc
+        cleaned.append(r)
+    if not cleaned:
+        raise ValueError("at least one DNS resolver is required")
+
+    search = [s.strip() for s in (search_domains or []) if s.strip()]
+
+    backup = RESOLV_CONF.with_suffix(RESOLV_CONF.suffix + ".muros-bak")
+    if RESOLV_CONF.is_file() and not backup.exists():
+        try:
+            backup.write_text(RESOLV_CONF.read_text(errors="replace"))
+        except OSError:
+            pass
+
+    body = _MUROS_HEADER
+    if search:
+        body += "search " + " ".join(search) + "\n"
+    for ns in cleaned:
+        body += f"nameserver {ns}\n"
+    try:
+        RESOLV_CONF.write_text(body)
+    except OSError as exc:
+        raise RuntimeError(f"unable to write {RESOLV_CONF} : {exc}") from exc
+
+    return get_resolvers()

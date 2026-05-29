@@ -1,0 +1,28 @@
+[Unit]
+Description=MurOS multi-WAN failover monitor
+Documentation=https://github.com/murosorg/muros
+After=muros-backend.service network-online.target
+Wants=muros-backend.service network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/muros/backend
+Environment="MUROS_DB=/var/lib/muros/muros.db"
+Environment="MUROS_WAN_TICK=1.0"
+ExecStart=/opt/muros/backend/venv/bin/python /opt/muros/backend/scripts/muros_wan_monitor.py
+Restart=on-failure
+RestartSec=5
+# Capabilities reseau minimales : on a besoin de poser des routes
+# (CAP_NET_ADMIN) et d'envoyer des ICMP raw (CAP_NET_RAW). On evite
+# d'exposer le reste du noyau.
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW CAP_SETUID CAP_SETGID
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/muros /var/log/muros
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

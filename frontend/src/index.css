@@ -1,0 +1,60 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body, #root {
+    height: 100%;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded border transition-colors whitespace-nowrap;
+  }
+  .btn-primary {
+    /* Action primaire (Add, New, Save, Run). Couleur sombre / neutre pour
+       NE PAS rentrer en collision visuelle avec btn-apply. Avant ce bouton
+       etait jaune (#facc15) ce qui le rendait indistinguable du jaune
+       Apply (#fbbf24) : meme semantique chromatique pour deux actions tres
+       differentes (Add = local form submit, Apply = push systeme noyau). */
+    @apply btn bg-gray-900 text-white border-gray-900 hover:bg-gray-800 hover:border-gray-800;
+  }
+  .btn-primary:disabled {
+    @apply bg-gray-200 border-gray-200 text-gray-400 cursor-not-allowed hover:bg-gray-200 hover:border-gray-200;
+  }
+  /* Bouton "Appliquer au systeme" : pousse la conf en cours au noyau /
+     aux services (nft, network, restart). SEUL bouton jaune vif de l'app
+     pour signaler que ce n'est pas un simple "Save" mais une action a
+     effet immediat. Toujours place en haut a droite de la page via
+     PageHeader.actions. */
+  .btn-apply {
+    @apply btn bg-amber-400 text-gray-900 border-amber-500 hover:bg-amber-500 hover:border-amber-600;
+  }
+  .btn-apply:disabled {
+    @apply bg-white border-gray-300 text-gray-400 cursor-not-allowed hover:bg-white hover:border-gray-300;
+  }
+  .btn-secondary {
+    @apply btn bg-white text-gray-800 border-gray-300 hover:bg-gray-50 hover:border-gray-400;
+  }
+  .btn-danger {
+    @apply btn bg-white text-red-700 border-red-300 hover:bg-red-50;
+  }
+  .btn-ghost {
+    @apply btn bg-transparent text-gray-800 border-transparent hover:bg-gray-100 hover:text-gray-900;
+  }
+
+  .input, .select, .textarea {
+    @apply w-full px-2.5 py-1.5 text-sm bg-white border border-gray-300 rounded
+           text-gray-900 placeholder-gray-500
+           focus:outline-none focus:border-steel-500 focus:ring-1 focus:ring-steel-500/30;
+  }
+
+  .label {
+    @apply block text-xs uppercase tracking-wider text-gray-700 mb-1;
+  }
+
+  .badge {
+    @apply inline-flex items-center px-2 py-0.5 text-xs font-medium rounded;
+  }
+}

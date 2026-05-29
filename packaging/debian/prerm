@@ -1,0 +1,19 @@
+#!/bin/sh
+set -e
+
+case "$1" in
+  upgrade|deconfigure)
+    systemctl stop muros-backend.service muros-watcher.service || true
+    ;;
+  remove)
+    systemctl stop muros-backend.service muros-watcher.service muros-boot.service || true
+    systemctl disable muros-backend.service muros-watcher.service muros-boot.service || true
+    ;;
+  failed-upgrade)
+    ;;
+  *)
+    echo "prerm called with unknown argument $1" >&2
+    exit 1
+    ;;
+esac
+exit 0

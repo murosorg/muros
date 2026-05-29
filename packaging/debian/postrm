@@ -1,0 +1,45 @@
+#!/bin/sh
+set -e
+
+case "$1" in
+  purge)
+    rm -rf /var/lib/muros /etc/muros /var/cache/muros /opt/muros
+    rm -f /etc/nginx/sites-enabled/muros
+    rm -f /etc/systemd/system/apt-daily-upgrade.timer.d/muros-schedule.conf 2>/dev/null || true
+    rmdir /etc/systemd/system/apt-daily-upgrade.timer.d 2>/dev/null || true
+    # Restaure /etc/resolv.conf depuis la sauvegarde si presente.
+    if [ -f /etc/resolv.conf.muros-bak ]; then
+      mv /etc/resolv.conf.muros-bak /etc/resolv.conf
+    fi
+    rm -f /etc/systemd/resolved.conf.d/muros.conf 2>/dev/null || true
+    # Restaure les services reseau natifs
+    for svc in systemd-networkd.service networking.service \
+               systemd-networkd-wait-online.service NetworkManager.service; do
+      systemctl unmask "$svc" 2>/dev/null || true
+    done
+    # Restaure /etc/network/interfaces depuis la sauvegarde si presente
+    if [ -f /etc/network/interfaces.muros-bak ]; then
+      mv /etc/network/interfaces.muros-bak /etc/network/interfaces
+    fi
+    rm -f /etc/network/interfaces.d/muros 2>/dev/null || true
+    rm -f /etc/nginx/ssl/muros.crt /etc/nginx/ssl/muros.key 2>/dev/null || true
+    rmdir /etc/nginx/ssl 2>/dev/null || true
+    # Restaure le site par defaut si dispo, sinon nginx tournera vide
+    if [ -f /etc/nginx/sites-available/default ] && [ ! -L /etc/nginx/sites-enabled/default ]; then
+      ln -sf /etc/nginx/sites-available/default /etc/nginx/sites-enabled/default
+    fi
+    systemctl reload nginx 2>/dev/null || systemctl restart nginx 2>/dev/null || true
+    if getent passwd muros >/dev/null; then
+      deluser --quiet --system muros || true
+    fi
+    systemctl daemon-reload || true
+    ;;
+  remove|upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
+    systemctl daemon-reload || true
+    ;;
+  *)
+    echo "postrm called with unknown argument $1" >&2
+    exit 1
+    ;;
+esac
+exit 0

@@ -1,0 +1,877 @@
+# MurOS - Contexte du projet
+
+Firewall opensource simple, base Debian 13 (trixie), livre sous forme d'ISO
+appliance. UI web pour gerer regles firewall, NAT, routage, VPN, monitoring.
+Pas de CLI requise. Licence AGPL-3.0+. Version courante 1.0.0.
+
+Perimetre v1 fige dans `donottouch.md` (ne pas modifier ce fichier).
+Historique detaille dans `context.full.md.bak` (archive) et `CHANGELOG.md`.
+
+---
+
+## Stack
+
+- **Backend** : FastAPI + SQLAlchemy 2 + SQLite + Pydantic. Python 3.12.
+  Code en `backend/app/`, routes segmentees en package `app/routes/`,
+  schemas en package `app/schemas/`.
+- **Frontend** : React 18 + Vite + TypeScript + Tailwind. Code en `frontend/src/`.
+  Theme clair sobre, pas de gradient / pas d'emoji.
+- **Apply** : nftables (filtrage/NAT), iproute2 (routes/VLAN), systemd-networkd
+  ou /etc/network/interfaces selon le contexte. Gated par `MUROS_APPLY=true`.
+- **VPN** : WireGuard (wg-quick@wg0) et strongSwan (IPsec/IKEv2, unit
+  `strongswan-starter.service` sur Debian 12+).
+- **HA** : keepalived (VRRP) + conntrackd (sync sessions). Replication API
+  push depuis master -> slave.
+- **Observabilite** : journald via `journalctl --output=json`, SNMP via snmpd,
+  notifications mail SMTP + webhook par `muros-watcher.py`.
+- **Packaging** : `packaging/debian/` contient control/rules/postinst/postrm
+  pour build d'un `.deb` via GitHub Actions (`build-deb.yml` sur push de tag).
+  Scripts utilisateur dans `install.sh` et `uninstall.sh` a la racine du repo
+  Une SEULE methode officielle, symetrique, pour les deux :
+  `curl -fsSL .../install.sh | sudo bash` et
+  `curl -fsSL .../uninstall.sh | sudo bash`.
+  Ni install.sh ni uninstall.sh ne sont embarques dans le .deb,
+  aucun symlink /usr/sbin/muros-uninstall, aucune copie dans
+  /opt/muros/scripts. Les scripts vivent uniquement dans le repo
+  et en assets de GitHub release.
+- **Install par defaut** : HTTPS sur :443 avec cert snakeoil Debian
+  (`ssl-cert` en Depends), redirect HTTP -> HTTPS. Services optionnels
+  (keepalived, conntrackd, strongswan, snmpd, wg-quick@wg0) installes mais
+  disabled au boot, enables a l'apply depuis l'UI.
+
+## Stockage runtime
+
+- DB : `/var/lib/muros/muros.db` (SQLite). Override par `MUROS_DB`.
+- Ruleset nftables : `/etc/muros/nftables.conf`. Override par `MUROS_RULESET`.
+- Backups : `/var/lib/muros/backups/`, retention 14 (`MUROS_BACKUP_RETENTION`).
+- Secret JWT : `muros-secret.key` a cote du backend, ou `MUROS_JWT_SECRET`.
+
+---
+
+## Perimetre v1 (couvert, donottouch.md)
+
+| Sujet | Etat |
+|---|---|
+| Filtrage stateful nftables | OK |
+| NAT masquerade + SNAT + DNAT | OK |
+| Routage forwarding + routes statiques | OK |
+| Logs journald + filtrage UI | OK |
+| Monitoring CPU/RAM/conntrack/trafic + sparklines | OK |
+| Zones + interfaces + VLAN 802.1q | OK |
+| Sauvegardes locales + backup remote rsync/SSH | OK |
+| NTP systemd-timesyncd + DNS resolv.conf direct | OK |
+| Mises a jour apt (manuel) | OK |
+| Hardening sysctl + fail2ban | OK |
+| HA keepalived + conntrackd + sync | OK |
+| VPN WireGuard + strongSwan IPsec | OK |
+| SNMP + Notifications + Webhook | OK |
+| Groupes de ports / d'adresses | OK |
+
+Exclu v1 : IPS/IDS (Suricata), proxy applicatif, portail captif,
+LDAP/AD. DHCP/DNS sortent de l'exclu v1 et passent en V1.2 en cours
+(backend scaffolde, frontend TODO). Roadmap centralisee dans `README.md` section
+
+Doctrine "no plugins, all native" (acte 2026-05-28) : MurOS refuse
+explicitement tout systeme de plugins/extensions tiers. Chaque feature
+livree est dans le core, testee end-to-end, integree a l'UI, documentee
+au meme endroit. Inverse du modele pfSense/OPNsense (200+ plugins de
+qualite inegale). Benefices : tests d'integration possibles sur tout le
+produit a chaque release, pas de matrice de compatibilite, surface
+d'attaque connue (CVE trackables), upgrades sans casse plugin, UI
+coherente partout. Cout assume : perimetre plus etroit, on ne couvrira
+pas tous les cas exotiques. Pitch officiel : "MurOS fait moins de
+choses qu'OPNsense, mais celles qu'il fait sont natives, testees et
+garanties pour fonctionner ensemble. Pas de plugins, pas de surprises."
+A reflechir avant d'ajouter toute feature : "est-ce que ca merite
+d'etre dans le core et maintenu pour toujours ?" Si non -> refus.
+Site: nouveau logo "3 traits jaune ascendants + wordmark MurOS" (header/footer
+de toutes les pages, 2026-05-27). Plus de grandes illustrations SVG (jugees trop
+"IA"). Photo PNG du boitier 1U attendue dans site/assets/appliance.png (a
+deposer manuellement, mes outils n'ecrivent pas de binaire). Homepage simplifiee:
+hero + section software/hardware + 3 cards "Why MurOS" + tableau positioning.
+Section "The web UI" sur l'index : 1 seul screenshot grand format
+du dashboard + lien "See every page" vers features.html (qui contient
+les 4 screenshots principaux rules / nat / wireguard / ha).
+
+Homepage tagline (2026-05-27) :
+- H1 : "All the features of pfSense, OPNsense or a FortiGate. Free, open
+  source, on real hardware."
+- Sub : enumere features + "Runs on the physical box you already own, on
+  a recycled mini PC, or in a VM. No license fee, no per-seat cost."
+- Insiste sur "real hardware" (physique d'abord, VM secondaire).
+
+Dashboard screenshot (docs/screenshots/dashboard.png + site/assets/) :
+reshoot 2026-05-27 avec backend + ssh + snmp + strongswan en active,
+optional (watcher/wan-monitor/dhcp) inactive. Apply enabled (no DRY-RUN
+banner). Capture via playwright sur /tmp/shoot.py (venv /tmp/screenshot-venv,
+backend lance avec MUROS_DB=/tmp/muros-dev/muros.db MUROS_APPLY=true, vite
+preview sur 4173, token injecte en localStorage 'muros-token').
+
+Roadmap (V1.1 quick wins, V1.2 services reseau, V2.0 IDS+captif+LDAP+RADIUS+FRR,
+V3.0 long terme). WAF et geo-blocking retires du perimetre, trop pousses
+pour l'instant.
+
+Hors scope definitif (ne pas reproposer, acte 2026-05-27) :
+- SD-WAN application steering : trop complexe, le multi-WAN failover
+  V1.1 (probes ICMP + swap default route) couvre le besoin PME reel.
+- Web filter / HTTP proxy (Squid, SquidGuard, e2guardian) : exige du
+  SSL bump avec CA poussee sur les postes, trop lourd. Le DNS filtering
+  via Unbound forwarders (NextDNS, Quad9 Families) suffit.
+- Antivirus gateway (ClamAV + c-icap) : inefficace sur HTTPS, supplante
+  par l'EDR endpoint.
+- Reverse proxy / HTTP LB (nginx, haproxy) avec ACME : melange les
+  concerns (app-layer sur la box perimetrique), les vraies PME ont deja
+  un reverse proxy ailleurs (Traefik, nginx sur VPS, DMZ). Pour publier
+  un service interne, DNAT simple vers le service qui gere son TLS.
+
+VPN UX overhaul rc63 (2026-05-27) : creation peer WireGuard en 1 click
+(POST /api/wireguard/peers/quick : nom seul, IP/keys/PSK/keepalive auto,
+apply auto, retourne .conf + QR). GET /api/wireguard/config initialise
+keypair + 10.10.0.1/24 + port 51820 au premier appel. Compiler nftables
+injecte automatiquement forward accept wg0 + masquerade du subnet WG
+vers oifname != wg0 quand WireGuard est enable -> internet pour les
+clients VPN sans regle manuelle. Page WireGuard simplifiee (Tunnel card
+= status line + endpoint + public key copy, reste en Advanced). Page
+IPsec : ConnectionModal simplifiee (Name + Remote + reseaux + auth ;
+IKE/ESP/Startup/IDs en Advanced). NewCertModal : Name seul requis,
+is_local toujours true, CN derive du name.
+
+V1.2 acte termine le 2026-05-27 : DHCP dnsmasq + DNS Unbound shipped,
+reverse proxy sorti du scope. V1.2 est donc clos, on enchaine sur la
+finition V1.1 (ISO appliance + CI + repo apt signe GPG) puis V2.0.
+
+Reorganisation 2026-05-27 : V3.0 supprimee. Repo apt signe remonte en
+V1.1 (essentiel pour distribution propre). Self-service WireGuard
+descendu en V2.0 (depend de LDAP qui y est deja).
+
+UI crawl polish rc21 (2026-05-28) : Chromium walkthrough of every
+page (192.168.1.210). Two fixes landed: (1) HA header was showing the
+package name twice ("keepalived inactive keepalived 1:2.3.3-1")
+because `pkg_version()` prefixes the name in the version string AND
+the HA page passes `name="keepalived"` to ServiceStatusInline.
+ServiceStatusInline now strips a leading `<name> ` prefix from the
+version slot when both are provided. (2) System Mode wording changed
+from "Production (apply on)" / "Dry-run (apply off)" to "...(apply
+enabled)" / "...(apply disabled)". Other findings left untouched
+pending user input: HA top bar still dense even with the de-dup,
+Notifications page Apply stays yellow (no on-disk reconcile possible,
+muros-watcher reads DB directly), WAN gateways / HTTP Access asymmetry
+(no toggle by design).
+
+Watcher boot persistence rc20 (2026-05-28) : added `_restore_watcher`
+in `muros_boot.py` aligned with `_restore_ha`. Treats
+`NotificationConfig.enabled` as source of truth and reconciles
+`muros-watcher.service` via `systemctl enable --now` / `disable --now`
+at every boot. Closes the gap where the systemd enable symlink could
+go missing (deb-systemd-helper after upgrade, masked unit, non-zero
+rc from the PUT /api/notifications/config toggle) and the watcher
+silently stayed down post-reboot while the UI showed "Notifications
+enabled". Outcome is logged in the boot journal so failed reconciles
+are no longer silent.
+
+Polish pass rc19 (2026-05-28) : (E) SSH page now shows a slate note
+above the form when sshd is admin_disabled, clarifying that the config
+is still editable and saved changes apply on next re-enable. (F)
+`service_dirty.reconcile_all` extended to wireguard, ipsec, ssh and
+http (cheap SHA-256 compare between rendered render_config /
+render_swanctl_conf / render_dropin / render_site_conf and on-disk
+files). The orange Apply dot now self-clears for these services after
+out-of-band reloads, same as dhcp/dns/snmp/ha already do. Notifications
+intentionally left out (muros-watcher reads DB directly, no on-disk
+file). (G) DHCP description -> "DHCP server, pools and static leases.";
+DNS description -> "Recursive DNS resolver and local records." to
+better cover the full page content.
+
+Polish pass rc18 (2026-05-28) : (A) tooltip wording aligned across
+ApplyFirewallButton / ApplyNetworkButton / ApplyServiceButton /
+FormActions, all four use a "No pending changes" phrasing when clean.
+(B) Service on/off toggle in PageHeader now driven by a dedicated
+`toggleBusy` state on HA/IPsec/SSH pages so the small spinner only
+fires while the toggle is being flipped, not during a regular Apply.
+(C) Monitoring State pill bumped to min-w-[96px] so every label aligns
+vertically (`disabled by admin` no longer overflows the previous 64px).
+(D) `_reconcile_ssh_admin_flag` now also called at the start of
+GET /api/ssh/status so the stale `admin_disabled` flag is cleared the
+first time the SSH page is refreshed after sshd was re-enabled out of
+band. (H) Sidebar `@hostname` toned down to text-neutral-500 so the
+username remains the prominent text.
+
+SSH access page cleanup rc15 (2026-05-28) :
+- Drop-in MurOS toujours present sur l'appliance. Toggle enable/disable
+  retire de la page SSH (header + champ enabled du schema). Garder le
+  drop-in toujours actif est coherent avec la doctrine "no plugins, all
+  native" : on ne propose plus de revert silencieux aux defauts Debian
+  (port 22, root+password) en un clic.
+- Schema SshConfigIn perd `enabled`. render_dropin lit desormais
+  cfg.permit_root_login / password_authentication / pubkey_authentication
+  (avant : tous hardcodes a yes). apply_config simplifie (plus de
+  branche delete drop-in).
+- UI : ajout de la card "Authentication" (root login policy, pubkey,
+  password) + warnings (les deux off / root+password) ; renomme
+  "Configuration" -> "Server settings" ; supprime "Drop-in present/
+  absent" et le hint "Disable from the header toggle" ; corrige le
+  header de colonne FR "Empreinte SHA-256" -> "SHA-256 fingerprint".
+
+Routing + ruleset polish rc6 (2026-05-28) :
+- ApplyFirewallButton accepte une prop `onView` optionnelle. Rules/NAT/
+  Zones/Services rendent un bouton secondaire "View config" a gauche
+  d'Apply, toujours actif (meme sans pending), qui ouvre RulesetModal
+  en lecture seule. Utilite : audit et verification du ruleset
+  actuellement compile sans avoir a creer une regle bidon.
+- RulesetModal a un bouton "Copy" dans le header (clipboard API +
+  fallback textarea pour les contextes non securises type cert
+  snakeoil).
+- Network page : nouvelle colonne Gateway sur les tables interfaces
+  physiques et VLAN. Affiche `Interface.gateway` (DB), et si vide
+  affiche la gateway live observee sur le noyau avec un hint `(live)`
+  pour signaler qu'elle n'est pas encore figee en DB.
+- Routing page : ligne `default` synthetisee (read-only) pour chaque
+  interface ayant un gateway. Resout le bug ou l'admin voyait /routing
+  vide alors qu'il avait bien une default route active (la default
+  vit sur Interface.gateway, pas dans StaticRoute, par design pour
+  eviter le doublon kernel).
+- adoption._adopt_routes : la capture du default gateway sur
+  Interface.gateway ne depend plus de `ip_mode == "static"`. Avant,
+  un re-import kernel sur une iface adoptee en DHCP perdait
+  silencieusement la gateway. Apres, le champ est toujours rempli si
+  vide, regardless du mode.
+- SystemInterface (system.py + schemas) expose desormais `gateway` (la
+  default route live via cette iface). Permet a Network.tsx de
+  montrer la gateway live meme avant import.
+
+Apply pattern rc9 (2026-05-28) : audit complet, toutes les pages avec
+ecriture exposent le bouton jaune Apply dans PageHeader.actions avec
+point orange quand dirty + tooltip detaille. 3 composants partages :
+ApplyFirewallButton (Rules/NAT/Zones/Services, poll firewall/pending,
+ouvre RulesetModal preview), ApplyNetworkButton (Network/Routes, poll
+network/pending, apply direct sans modal), ApplyServiceButton
+(DHCP/DNS/SNMP, poll svc/pending, restart systemd unit). Pages
+"form unique" (SSH, WG, HA, HttpAccess, Notifications, NTP, remote
+backup) utilisent FormActions avec prop `dirty` pour le meme point
+orange. IPsec garde un bouton ad-hoc. Wan.tsx n'a volontairement pas
+d'Apply (muros-wan-monitor lit la table wan_gateways a chaque probe).
+Logs/Monitoring/Diagnostic/Preview en lecture seule.
+
+Reconnecting overlay rc26 (2026-05-28) : pendant un MurOS update,
+muros-backend restart -> nginx renvoie 502 sur tous les XHR en cours
+et l'UI affichait des toasts rouges "502 Bad Gateway" qui faisaient
+croire a une bricked box. Le wrapper request() de lib/api.ts dispatche
+maintenant `muros:backend-down` sur 502/503/504 ou erreurs reseau et
+`muros:backend-up` au premier round-trip qui repasse. Le composant
+BackendUnreachableOverlay (monte dans App.tsx) ecoute les deux events,
+attend 1.5s pour filtrer les blips transitoires, puis affiche une
+card plein ecran sobre (point ambre clignotant, copy neutre) qui
+poll /api/health toutes les 2s et se ferme toute seule au retour du
+backend. Meme langage visuel que la 503 nginx (muros-503.html, aussi
+re-traduite en anglais).
+
+NAT page rc4 (2026-05-28) : alignee sur les conventions de la page Rules.
+Onglets par hook chain (postrouting = Source NAT = masquerade+snat,
+prerouting = Destination NAT = dnat) avec compteur par tab, filtre
+texte libre, table compacte (px-2 py-1.5, text-xs), handle drag &
+drop dans la 1ere colonne, reorder seulement sans filtre actif. Le
+hook reste derive du type cote backend (compiler.py inchange).
+NatForm accepte `defaultType` pour pre-selectionner masquerade ou dnat
+selon l'onglet ouvert.
+
+Repo GitHub : `github.com/murosorg/muros` (org et repo en minuscules
+depuis rc120, 2026-05-28). Anciens chemins `MurOSorg/MurOS`,
+`jeromegitcmd/MurOS`, `ecritel/muros` purges du code.
+
+Distribution actuelle : uniquement via GitHub Releases (.deb standalone
++ .sha256). Pas de repo apt signe. Consequence : `apt install muros=
+<version>` ne marche pas, downgrade manuel via `apt install -y
+--allow-downgrades ./muros_X.Y.Z_all.deb` telecharge depuis Releases.
+Repo apt signe GPG planifie V3.0.
+
+---
+
+## Conventions UI
+
+Reference : la page Reseau (`/network`) est canonique, on aligne tout dessus.
+
+**Pattern de page firewall / reseau** :
+- `PageHeader.actions` contient UNIQUEMENT le bouton jaune "Appliquer"
+  (master, top right). Toujours le plus a droite.
+- Boutons "Ajouter X" et filtres descendent dans le header de chaque
+  `<section>` (sous le titre h2).
+- Tableaux : `border border-gray-200 rounded-md overflow-hidden`, header
+  `bg-gray-50 text-xs uppercase tracking-wider`, lignes `divide-y` ou
+  `border-t`, hover `bg-gray-50`.
+- Boutons Editer / Supprimer : `btn-ghost py-1`, le Supprimer avec
+  `text-red-700 hover:text-red-800`.
+
+**Couleurs boutons** :
+- `btn-apply` (jaune) : applique au systeme (recharge nft, restart service,
+  push noyau). Toujours en haut a droite, partout.
+- `btn-primary` (gris steel) : action principale d'un formulaire ou
+  d'une section (Ajouter, sauvegarde DB simple).
+- `btn-secondary` (blanc) : action secondaire (Annuler, Tester, ...).
+- `btn-danger` (blanc / rouge) : suppression definitive (footer modal).
+- `btn-ghost` : actions de ligne dans un tableau (Editer / Supprimer).
+
+**Layout** :
+- Sidebar a gauche (`w-60 bg-neutral-900`), logo en haut + version + user +
+  hostname + Deconnexion empiles verticalement.
+- Sections sidebar : Reseau (Interfaces, Routage), Pare-feu (Zones, Regles,
+  Services, NAT), VPN (WireGuard, IPsec), Observabilite (Logs, Notifications,
+  SNMP), Administration (Diagnostic, HA, Systeme, Acces HTTP, SSH).
+- Page : `PageHeader` + `<div className="px-6 py-4 space-y-6">` + sections.
+
+**Style global** :
+- Theme clair, fond blanc, texte gray-900. Pas de gris pale (banni :
+  `text-gray-400` et inferieur).
+- Inter (texte) + JetBrains Mono (valeurs techniques, IPs, ports).
+- Tableaux denses style pfSense / OPNsense.
+- Pas de tirets cadratins, pas de gradient, pas d'emoji, pas de marketing.
+
+---
+
+## Apply / rollback
+
+Deux mecanismes selon le type de change :
+
+1. **Apply nftables (Zones/Rules/NAT)** : `RulesetModal` ouvre la modale,
+   preview nft, bouton "Appliquer". Backend compile -> recharge nft ->
+   countdown 10s (modale `ApplyBar` globale) -> confirm ou rollback.
+2. **Apply reseau (Network/Routes)** : `ApplyNetworkButton` poll
+   `/api/network/pending` toutes les 3s pour compter les changes dirty.
+   Clic -> apply DB->kernel pour les entites `dirty=True` -> snapshot +
+   countdown 10s. Au rollback : restore noyau + re-marquage `dirty=True`
+   pour que le compteur remonte (bug fixe le 2026-05-25).
+3. **Apply unitaire** (HA, IPsec, WireGuard, SNMP, SSH...) : bouton
+   `btn-apply` dans le `CardHeader` du panel, ecrit la conf systeme et
+   restart le service correspondant.
+
+Mode dry-run par defaut (rien n'est applique). Active par `MUROS_APPLY=true`
+sur la cible. Cela permet de developper sans casser le PC dev.
+
+---
+
+## Securite
+
+- Auth obligatoire sur toutes les routes hors `/api/auth/*` et `/api/health`.
+- User par defaut : `admin` / `muros` avec `must_change_password=True`.
+- JWT HS256, bcrypt pour les passwords, secret JWT persiste.
+- Sessions : verifier `current_user` dependency partout.
+- HA : le slave VRRP est read-only (writable=False), seul le master peut
+  modifier la conf. Replication automatique master -> slave.
+
+---
+
+## Lancement (dev local)
+
+```bash
+make install   # une fois
+make backend   # terminal 1 (uvicorn sur :8000)
+make frontend  # terminal 2 (vite sur :5173)
+```
+
+Ouvrir http://localhost:5173, login `admin` / `muros`.
+
+## Variables d'env (cible / prod)
+
+```
+MUROS_APPLY=true                          # active le vrai nft -f
+MUROS_JWT_SECRET=<openssl rand -hex 32>   # secret JWT
+MUROS_RULESET=/etc/muros/nftables.conf    # ruleset persistant
+MUROS_DB=/var/lib/muros/muros.db          # chemin DB SQLite
+MUROS_BACKUP_RETENTION=14                 # snapshots conserves
+```
+
+---
+
+## Tests / verifs avant push
+
+```bash
+cd frontend && npx tsc --noEmit && npx vite build
+cd backend  && .venv/bin/python -c "import ast; ast.parse(open('app/main.py').read())"
+```
+
+Le routeur FastAPI ne s'instancie pas depuis le PC dev (lecture
+`muros-secret.key` interdite hors root). On valide par ast.parse +
+import du sous-module concerne.
+
+---
+
+## Packaging et MAJ
+
+Deux flux distincts dans la page Systeme > Mises a jour :
+
+- **MAJ systeme Debian** : `apt-get install --only-upgrade <noms>` sur les
+  paquets en attente, en excluant explicitement `muros*`. Endpoint
+  `POST /api/updates/install`.
+- **MAJ Debian** : `unattended-upgrades` actif par defaut via le drop-in
+  `/etc/apt/apt.conf.d/52muros-unattended`. Origins security + updates,
+  blacklist muros (muros.*), `Automatic-Reboot=false`, `MinimalSteps=true`.
+  Planification : drop-in `apt-daily-upgrade.timer.d/muros-schedule.conf`
+  genere par `/usr/lib/muros/apply-unattended.sh`. Source de verite UI :
+  `/etc/muros/unattended.json` (`{enabled, days[], hour, minute}`). Si
+  absent, default = `Mon,Tue,Wed,Thu 03:00` pour tout le monde. Jitter
+  1h. Pas de logique HA auto : si l'admin veut decorreller deux peers
+  HA, il modifie le schedule via l'UI sur l'un des deux (System >
+  Updates > Edit). Endpoints : `GET /api/updates/unattended` (etat
+  compose conf + timer), `PUT /api/updates/unattended` (persiste +
+  reapplique via le helper). UI : carte editable dans la section
+  System updates (Debian). Endpoint `GET
+  /api/updates/reboot-required` lit `/var/run/reboot-required`,
+  banniere ambree dans l'UI quand un kernel/libc demande un reboot.
+- **MAJ MurOS** : `apt-get install --only-upgrade muros`, precede d'un
+  snapshot auto (DB + nftables.conf) via `backups.create_backup(label=
+  f'pre-upgrade-{current_pkg_version}')`, ex `pre-upgrade-v0.9.0-rc19`.
+  Endpoint `POST /api/updates/muros/install`. Watcher envoie un mail
+  (event `muros_update_available`, throttle 24h, poll GitHub max 1x/h)
+  des qu'une nouvelle release apparait. La
+  version installee + version candidate sont lues via `dpkg-query` et
+  `apt-cache policy muros` (endpoint `GET /api/updates/muros`).
+
+Le paquet Debian `muros` (architecture all) est builde via
+`packaging/debian/` (control, rules, postinst, prerm, postrm, conffiles).
+Le `postinst` cree l'utilisateur systeme `muros`, fixe les
+capabilities `cap_net_admin,cap_net_raw=eip` sur le venv Python, genere
+le secret JWT s'il manque, lance les migrations Alembic et restart le
+service. Le workflow GitHub Actions
+`.github/workflows/build-deb.yml` build le .deb sur tag `vX.Y.Z` et le
+publie en release. Le repo apt MurOS (a heberger plus tard sur GitHub
+Pages ou apt.muros.org) servira ces .deb signes.
+
+Layout cible apres install :
+- `/opt/muros/backend/` (code + venv)
+- `/opt/muros/web/` (build Vite servi par nginx)
+- `/etc/muros/` (conffiles MurOS, conserves a la suppression sauf purge)
+- `/var/lib/muros/` (DB + backups, idem)
+
+Rollback : `apt install muros=<ancienne-version>` + restore du snapshot
+pre-upgrade.
+
+## V1.2 services reseau (frontend + backend livres en rc30)
+
+Architecture validee : `dnsmasq` en DHCP-only (port=0) + `unbound` en
+recursive validating resolver. Separation des concerns : si unbound
+crash, le DHCP continue ; si unbound mange trop de RAM sur une
+blocklist, le DHCP n'est pas impacte. dnsmasq pour la simplicite
+DHCP cible PME, unbound pour le combo DNSSEC + cache + forwarders.
+
+Etat backend (rc25) :
+- Models : `DhcpConfig` (singleton), `DhcpPool`, `DhcpStaticLease`,
+  `DnsConfig` (singleton), `DnsLocalRecord`. Tables creees au boot
+  via `create_all()`.
+- Apply :
+  - `services/dhcp_apply.py` : genere `/etc/dnsmasq.d/muros.conf`,
+    parse `/var/lib/misc/dnsmasq.leases` pour les leases live.
+  - `services/dns_apply.py` : genere
+    `/etc/unbound/unbound.conf.d/muros.conf`, DNSSEC + qname-min +
+    hardened. Allowlist defensive en dur (`local-zone "<dom>"
+    transparent`) sur debian.org, github.com, muros.org,
+    letsencrypt.org, ipify.org : aucune blocklist future ne peut
+    casser apt ou les MAJ MurOS.
+  - `DnsConfig.use_as_system_resolver` : toggle opt-in qui pointe
+    `/etc/resolv.conf` -> 127.0.0.1 + fallback non-loopback (premier
+    forwarder ou 1.1.1.1). Backup `.muros-pre-unbound` restaure au
+    disable.
+- Routes wired : `/api/dhcp/{config,pools,leases,leases/active,status}`,
+  `/api/dns/recursive/{config,records,status}`.
+- Packaging : tous les daemons de feature (`dnsmasq`, `unbound`,
+  `unbound-anchor`, `snmpd`, `snmp`, `wireguard-tools`, `strongswan`,
+  `keepalived`, `conntrackd`, `fail2ban`) sont en `Depends:` du
+  paquet muros. Les binaires sont presents des l'install pour que
+  l'admin n'ait rien a apt-installer depuis l'UI. `install.sh` pose un
+  `policy-rc.d` selectif qui retourne 101 sur ces unites pendant l'apt
+  install, ce qui empeche Debian de demarrer les daemons (qui se
+  battraient pour le port 53 entre autres). Le postinst MurOS fait
+  ensuite un `systemctl disable --now` sur chacun. Les services
+  passent en `enabled+started` quand l'admin clique Apply sur la page
+  correspondante. Le `policy-rc.d` est supprime en fin de install.sh,
+  un trap couvre la sortie inattendue.
+- Dashboard services : `dnsmasq` et `unbound` en categorie `opt`,
+  pages cibles `/services/dhcp` et `/services/dns`.
+
+A faire (rc26+) : pages frontend `/services/dhcp` et `/services/dns`,
+section sidebar dediee, tests d'integration sur cible Debian.
+
+## Derniers changements (resume bref)
+
+Le detail complet est dans `context.full.md.bak` et `git log`. Garder ici
+seulement les conventions actuelles, pas l'historique.
+
+- Live status dans le PageHeader : DHCP / DNS server / WireGuard / IPsec
+  / HA / SNMP / SSH n'ont plus de section "Live status" dediee. Le
+  composant `PageHeader` expose un slot `status` (ReactNode) rendu
+  entre la description et le slot `actions`. Les pages y posent un
+  `ServiceStatusInline` (dot + state + version, sans nom de binaire
+  puisque le titre identifie deja le service). HA est le seul cas a
+  garder les noms (keepalived + conntrackd cote a cote).
+  `ServiceStatusInline.name` est devenu optionnel pour supporter ca.
+  Les bannieres "Missing packages on this node" passent en alerte
+  top-of-page autonome. Les details runtime (Active SAs, VRRP
+  instances, WG interfaces, conntrackd sync) restent dans leurs
+  propres cards.
+- Sub-routes System : la page System utilise des sous-routes
+  /system/maintenance, /system/backups, /system/time, /system/dns,
+  /system/updates. Le back-button browser fonctionne. Composant pilote
+  par useParams/useNavigate. Onglet General renomme "Maintenance".
+- Sub-routes IPsec : /vpn/ipsec/connections (Live status + connexions),
+  /vpn/ipsec/certificates (PKI), /vpn/ipsec/users (placeholder v1.1).
+  La page IPsec etait trop dense, decoupage sans dupliquer la state.
+- NAT drag-and-drop : meme pattern que Rules.tsx. Le DnD est actif
+  uniquement quand filterType === 'all' (sinon reorder partiel casse
+  l'ordre). Backend POST /api/nat/rules/reorder renumerote en x10.
+- Public IP detection : bouton "Detect now" sur /network qui interroge
+  ifconfig.me / api.ipify.org / ifconfig.co via le backend
+  GET /api/system/public-ip (timeout 5s, fallback chain). Pas de
+  polling automatique, on ne veut pas dependre d'un service externe
+  pour l'affichage.
+- requireText partout sur les actions destructives : delete rule,
+  delete NAT, delete zone (nom de la zone), delete VIP, delete IPsec
+  connection (nom), revoke/delete cert, delete SSH key, regenerate
+  snakeoil. Native window.confirm() supprime du frontend, useConfirm()
+  partout pour coherence visuelle.
+- Toggle labels Enabled/Disabled partout (etait mixte Active/Enabled).
+  Les badges runtime services gardent active/inactive (etat systemd).
+- Traduction FR -> EN : tous les HTTPException backend traduits
+  (introuvable -> not found, invalide -> invalid, deja exist -> already
+  exists). Les commentaires Python restent en FR (style projet).
+- Strict pending model partout : FirewallRule / NatRule / Zone ont une
+  colonne `dirty` (BOOLEAN, default true). Chaque create / update /
+  delete / reorder qui change vraiment quelque chose marque dirty=True.
+  POST /api/firewall/apply efface dirty sur succes. POST
+  /apply/rollback re-marque tout dirty (le noyau a ete restaure, la DB
+  reste en avant). Nouveau endpoint GET /api/firewall/pending retourne
+  `{rules, nat, zones, total}`. ApplyFirewallButton.tsx poll toutes
+  les 3s et :
+    - disabled quand total=0 (label "Apply" mais bouton gris)
+    - point orange en haut a droite quand total>0
+    - tooltip detaille les counts par categorie
+  Convention alignee sur ApplyNetworkButton existant. Migration
+  additive dans db._migrate_schema (default 1 sur rows existantes
+  pour forcer un Apply post-upgrade : la DB pourrait avoir des etats
+  non synchronises avec le noyau avant l'introduction du flag).
+
+- Modale rollback unifiee : `RollbackModal.tsx` (ex-ApplyBar) agrege les 3
+  sources (api.apply nft / api.pending safe_apply / api.pendingApply DB)
+  et fournit un countdown 10s partout. `RollbackConfirmModal.tsx` supprime,
+  HttpAccess + SSH passent par la modale globale.
+- Backend route unifiee `GET /api/pending-apply` + confirm/rollback
+  generiques pour les changes DB-backed (http, ssh, tls, interface, route).
+- Validation CIDR interfaces : refus IP sans prefix et refus /32 (v4) /
+  /128 (v6) pour eviter l'isolement de l'interface de management. Cote
+  backend (`network.add_address`) + cote frontend (`InterfaceForm`).
+- Nomenclature page firewall/reseau unifiee : Apply jaune seul dans
+  PageHeader.actions, Ajouter dans chaque section.
+- Bouton Appliquer Reseau ne reste plus grise apres rollback (dirty re-set).
+- Page Services affiche les 2 sections (Groupes de ports + Groupes
+  d'adresses) simultanement, plus de tab switcher.
+- Architecture reseau : MurOS = SEUL control plane reseau, choix
+  ASSUME et VALIDE par le proprio du projet (rc30 conserve). Tous les
+  gestionnaires natifs masques : NetworkManager, systemd-networkd,
+  networking.service (ifupdown). La DB SQLite est l'unique source de
+  verite. Apply = commandes `ip` (iproute2) direct au noyau, comme
+  FortiOS/OpenWrt/VyOS. AUCUN fichier intermediaire en config reseau
+  distribution. Persistance reboot via muros-boot.service qui rejoue
+  depuis la DB.
+- Categories services dashboard : `core` (base, doivent etre actifs) =
+  muros-backend, nginx, ssh, fail2ban, snmpd. `opt` (optionnels,
+  inactifs jusqu'a configuration) = muros-watcher, keepalived,
+  conntrackd, strongswan, wireguard. UI Monitoring : 2 colonnes cote a
+  cote (xl: 2col, mobile: empile), lignes entierement cliquables (vers
+  la page de gestion du service), plus de bouton "Gerer" en bout de
+  ligne.
+- DNS : MurOS gere `/etc/resolv.conf` DIRECTEMENT (pas de daemon, pas
+  de systemd-resolved : c'est le defaut Debian 13 base). `dns.py`
+  detecte le contexte via `/etc/resolv.conf` (fichier statique = mode
+  "static", symlink vers stub = mode "resolved" -> pose drop-in). Au
+  premier set_resolvers en mode "static", on garde un
+  `/etc/resolv.conf.muros-bak` pour pouvoir restaurer au purge. Plus
+  d'install systemd-resolved au postinst.
+- Code shared : `app/service_state.py` expose desormais `which()`,
+  `is_active()`, `service_state()` et `pkg_version(pkg, label)`. Les
+  9 copies de `_which`, 8 copies de `_systemd_active`, et toutes les
+  versions binaires (swanctl/wg/snmpd/sshd/keepalived/conntrackd)
+  pointent sur dpkg-query via pkg_version. Plus rapide et immune aux
+  warnings de plugins.
+- Hardening : apply_recommended() ne pin QUE les cles non conformes,
+  pas toutes en bloc. Sur Debian 13 base, la moitie des cles sont
+  deja a la bonne valeur, on ne les duplique pas dans la drop-in. UI
+  affiche 3 badges : "MurOS" (gere) / "deja OK" (defaut Debian
+  conforme) / "a appliquer".
+- StrongSwan : arbitrage `strongswan` / `strongswan-starter` correct dans
+  list_services pour le dashboard. Version detectee via swanctl/ipsec
+  --version avec fallback dpkg, robuste aux warnings plugins.
+- Dashboard services : 3 etats normalises partout (actif vert / inactif
+  gris / en erreur rouge). Composants Pill harmonises sur IPsec, WG, HA,
+  Monitoring. `unknown` est mappe sur "en erreur".
+- muros-watcher : disabled+stopped par defaut au postinst, l'UI le start
+  a l'apply notifications quand SMTP ou webhook est configure.
+- MAJ MurOS : `apt install muros.deb` est lance via `systemd-run --no-block
+  --unit=muros-self-upgrade` pour survivre au restart du backend declenche
+  par le postinst (sinon SIGTERM -> apt code -15 -> dpkg "half-configured").
+  Suivi par GET /api/updates/muros/progress (lit la unit + log
+  /var/lib/muros/muros-upgrade.log). Reparation par POST
+  /api/updates/muros/repair (dpkg --configure -a aussi en systemd-run).
+- Sidebar : user/host/logout empiles sous le logo, plus de troncation.
+- Suppression Presets (peu utile), suppression toggle table noyau Routes.
+- Convention generale : bouton Appliquer JAUNE, en haut a droite, partout.
+- Resolution version release : install.sh et backend updates.py
+  n'utilisent plus api.github.com en premier (rate-limit 60 req/h par
+  IP = 403 en environnement NAT ou apres quelques retags). install.sh
+  utilise curl -I sur /releases/latest et extrait le tag depuis le
+  redirect 302 vers /releases/tag/<TAG>. updates.py garde l'API REST
+  mais fallback automatique sur le meme redirect HTML en cas de
+  HTTPError 403/429 ou URLError, et reconstruit les URLs d'assets par
+  convention (muros_<ver>_all.deb).
+- Logs firewall : le compilateur nft genere desormais un prefixe enrichi
+  `[muros <ACTION> r=<RULE_ID> <CHAIN>]` au lieu de `[muros]`. logs.py
+  parse ce prefixe, le schema FirewallLogEntryOut expose action/rule_id/
+  chain. La page Logs affiche action (badge colore), regle (lien vers
+  /rules#rule-ID), et un resume "proto src:port -> dst:port (in/out)"
+  au lieu du brut kernel illisible (le brut reste accessible en tooltip).
+
+Release numbering reset (2026-05-28, v1.0.0-rc1) : the rc number had
+climbed to rc127 on the 0.9.0 line. We restart RC counting from 1 on
+the 1.0.0 line. Old `v0.9.0-rc*` tags are kept in git history but no
+new tag will be cut on that line. CI workflow unchanged, still
+triggers on `v*`.
+
+Page header layout (2026-05-28, v1.0.0-rc1) : the `PageHeader.status`
+slot now renders INSIDE the `actions` container, directly to the left
+of the Apply button. The component API is unchanged (pages keep
+passing `status={<ServiceStatusInline ...>}`), only the visual
+placement changes. Applies uniformly to DHCP, DNS, SNMP, WireGuard,
+IPsec, HA, SSH, Notifications, WAN.
+
+Apply pattern refonte (planned, in progress) : service pages today
+have their write endpoints call `<svc>_apply.apply(db)` directly, which
+writes the conf file AND restarts the daemon. The new model splits
+the two : every Save (modal submit, form action, peer add/remove)
+writes the DB + regenerates the conf file but does NOT touch systemd.
+The yellow Apply button in the page header polls a per-service
+`pending` endpoint and shows a yellow dot when the daemon needs to be
+reloaded. Apply restarts/reloads the service and clears the dirty
+flag. Backend infra to build : `service_apply_state` table (one row
+per service name with `dirty` + `last_applied_at`) and shared
+helpers `service_dirty.mark_dirty(db, name)` /
+`service_dirty.mark_clean(db, name)`. Frontend infra : new
+`ApplyServiceButton` component polling `/api/services/<name>/pending`
+on a 3s tick, mirrors `ApplyFirewallButton`. To be rolled out service
+by service starting with DHCP and DNS (V1.2 simplest singletons),
+then SNMP, WireGuard, IPsec, HA, SSH, HttpAccess, Notifications.
+
+UI polish rc119 (2026-05-28) :
+- Page Diagnostic : titre "Diagnostics" (aligne sur le label sidebar).
+- Logs : source MurOS/Kernel passe d'un 2e niveau d'onglets a un select.
+  Chips drops/accepts cliquables avec etat actif.
+- HttpAccess : banniere mot de passe = recommandation non bloquante.
+  Toggle "Automatic rollback on apply" (phrasing positif, ON par defaut)
+  en remplacement de "No automatic rollback".
+- SNMP "Allowed networks" en textarea 2 lignes. DNS "Allow queries from"
+  label raccourci, helper en dessous.
+- Rules : colonne STATE sans label (toggle est explicite), compteur
+  uniforme "0 / 0 B" meme pour regles desactivees, pill chaine active
+  bg-steel-100 (moins satureel), formatService rend toujours
+  "<proto>/<port-or-any>" pour eviter le bare "tcp".
+- HA : badges role (MASTER/BACKUP/FAULT/STANDALONE) rendu chips sans
+  bordure, fond pale, lowercase.
+- Monitoring : grille KPI 2/5 cols (plus de breakpoint md 3 cols qui
+  laissait un trou), valeurs sans font-mono (tabular-nums conserve),
+  temps relatif compact Nm/Nh/Nd, header Services dedupe sur xl+.
+- Routes : kebab "Re-import from kernel" deplace dans le header de la
+  section Routes (PageHeader = Apply uniquement, canonique).
+
+Code review cleanup rc8 (2026-05-28) :
+- Removed `site/docs/*.md` from git (7 files, ~1850 lines). These are
+  regenerated by `pages.yml` CI from `docs/*.md` + `CHANGELOG.md` at
+  every Pages deploy. Added to `.gitignore` to prevent future drift.
+- Removed unused SQLAlchemy models `AlertRule` and `AlertEvent` from
+  `backend/app/models.py` (~32 lines). Scaffolding never wired to any
+  route, schema, service or test. Alerting fully covered by
+  `notifications.py` + `muros-watcher.py`. Existing deployed DBs keep
+  the tables as orphan rows; no migration needed.
+- Verified : ruff clean, frontend tsc clean (noUnusedLocals enforced),
+  backend pytest 11 pass / 1 pre-existing unrelated failure.
+
+Boot network ownership fix rc21 (2026-05-28) : on a reboot, two
+default routes appeared on enp0s3 (one metric 0 from muros-boot, one
+metric 1002 from ifupdown/dhclient still running at boot on ISO
+builds where preseed left ifupdown installed). MurOS doctrine is to
+be sole network control plane. Two fixes :
+1. `packaging/debian/postinst` : added `networking.service` to the
+   mask loop (was only in postrm, asymmetric) + purge of `ifupdown`
+   package on .deb install if d-i left it behind (symmetric to
+   install.sh which already purges it on bare-metal).
+2. `backend/scripts/muros_boot.py` : new `_purge_foreign_network_state()`
+   called before `_restore_interfaces`. `pkill dhclient/dhcpcd` and
+   `ip route flush proto dhcp/boot/ra` to wipe any parasite route
+   from a foreign DHCP client that ran before muros-boot. Static
+   routes (proto static/kernel) untouched.
+
+## 2026-05-28 services-on-by-default doctrine
+Acte : NE PAS activer tous les services optionnels par defaut.
+Seuls les services "core" tournent out-of-the-box (muros-backend, nginx,
+sshd, fail2ban, snmpd, systemd-timesyncd, nftables). sshd est ON par
+defaut (openssh-server en Depends dur du .deb, enable au boot
+standard Debian), mais l'UI doit exposer un toggle pour le disable
+si l'admin le souhaite (page Systeme > SSH, ou via la liste des
+services). C'est un cas legitime (appliance management out-of-band
+uniquement, console serie, politique interne) tant que l'admin sait
+ce qu'il fait. Le toggle ne fait PAS partie du dashboard auto-managed
+"core inactif = alerte rouge" : si l'admin a explicitement coupe sshd
+depuis l'UI, le dashboard l'affiche en "disabled by admin" sans
+remonter d'alerte. Les services "opt"
+(keepalived, conntrackd, strongswan, wg-quick@wg0, muros-watcher,
+dnsmasq/DHCP, unbound/DNS resolver) restent disabled jusqu'a apply
+explicite depuis l'UI. Raisons : surface d'attaque minimale (snmpd
+mis a part car deja durci, communaute random au postinst), pas de
+log noise sur HA/VPN sans peer configure, RAM/CPU economises sur
+hardware modeste, coherence avec la doctrine "no plugins, all native"
+("pas de surprises"). Regle gravee : un service est ON par defaut s'il
+est necessaire pour que la box soit un firewall fonctionnel et sur.
+Tout le reste est OFF jusqu'a action admin.
+
+Stack systeme reseau (rappel, plus chrony ni systemd-resolved) :
+- NTP : systemd-timesyncd uniquement (Debian 13 default). Drop-in
+  `/etc/systemd/timesyncd.conf.d/muros.conf` avec directive `NTP=`.
+  chrony retire du scope, pas installe.
+- DNS resolveurs : `/etc/resolv.conf` plat, gere directement par MurOS.
+  Pas de systemd-resolved (maske au postinst), pas de NetworkManager,
+  pas de stub. `dns.py` ecrit /etc/resolv.conf avec header MurOS.
+  Backup `/etc/resolv.conf.muros-bak` au premier write pour restore
+  au purge.
+
+## 2026-05-28 rc16: HA phantom dirty + SSH admin toggle
+- Bug fix : le dot orange persistant a cote de "High availability" quand
+  l'admin enable HA sans VIP/peer/sync_interface (apply 400, mark_clean
+  jamais appele) reste a true. Plus generalement, tout dirty fantome
+  apres un apply rate. Solution : `service_dirty.reconcile_all(db)` est
+  appele au debut de `GET /api/services/pending`. Chaque service compare
+  l'expected render() vs le sha256 du fichier on-disk ; si match, clean.
+  HA gere les deux daemons (keepalived + conntrackd) et le mode disabled
+  (les deux confs doivent etre absentes). Cout : quelques stat() + sha256
+  sur petits fichiers, safe en boucle de poll 5s.
+- Nouveau toggle SSH service ON/OFF depuis l'UI :
+  - Backend : nouveau champ `ssh_config.admin_disabled` (boolean, default
+    False) + migration ALTER TABLE dans `db.py`. Route
+    `POST /api/ssh/service/toggle {enabled}` qui execute
+    `systemctl enable/disable --now ssh` puis persiste le flag. Persiste
+    a travers les reboots (systemctl disable est durable).
+  - `GET /api/ssh/status` retourne maintenant `admin_disabled`.
+  - `GET /api/system/services` lit le flag et remplace status="inactive"
+    par "disabled_by_admin" pour sshd. Le dashboard Monitoring rend cet
+    etat en gris/neutre, pas en rouge.
+  - Frontend : nouvelle card "SSH service" sur la page SSH avec un
+    `<Toggle>` et un ConfirmModal serieux pour le OFF
+    (requireText: "disable ssh", message explicite sur la perte d'acces
+    shell et la necessite d'un acces out-of-band).
+- Pas de changement pour le toggle de la conf sshd (port/listen/auth) :
+  c'est toujours `/api/ssh/apply` qui reload le daemon. Le toggle on/off
+  est une operation distincte et explicite.
+
+## 2026-05-28 rc24
+- Fix: duplicate default route at boot. Adoption captured the default route both as Interface.gateway and as StaticRoute(destination='default'), producing two kernel default routes (metric 0 + metric 1002 inherited from dhclient at install). _adopt_routes now skips dst=='default' (gateway is on Interface), and muros_boot runs a one-shot migration deleting leftover default StaticRoute rows. Tag v1.0.0-rc24.
+
+## 2026-05-29 site deploy on muros.org
+- Domaine muros.org achete et pointe (A 152.228.128.167) sur le VPS OVH
+  vps-6f583f31.vps.ovh.net (alias interne "jpzi.fr", PAS jpzidi.fr).
+  Acces : `ssh 152.228.128.167` (root, via ~/.ssh/config wildcard).
+  Ce VPS heberge deja calculio.fr et switch-actu.fr sous nginx 1.26.3.
+- Site vitrine deploye dans /opt/muros/site (demande explicite : /opt, pas
+  /var/www). Sync via `rsync -az --delete site/ 152.228.128.167:/opt/muros/site/`
+  (exclut _template.py). Owner root:root.
+- vhost nginx : /etc/nginx/sites-available/muros.conf (symlink dans
+  sites-enabled). server_name muros.org uniquement (www.muros.org ne
+  resout PAS encore). root /opt/muros/site, clean URLs via
+  `try_files $uri $uri.html $uri/`, cache HTML no-store / images 30j /
+  css-js etag. TLS Let's Encrypt obtenu par `certbot --nginx -d muros.org`
+  (cert /etc/letsencrypt/live/muros.org/, expire 2026-08-27, renew auto).
+  Redirect HTTP -> HTTPS gere par certbot.
+- SEO duplicate content : tous les canonical / og:url / og:image /
+  twitter:image + sitemap.xml + robots.txt basculent de
+  murosorg.github.io/muros/ vers muros.org (sed dans site/ + _template.py).
+  GitHub Pages continue de servir les memes fichiers mais declare muros.org
+  comme canonical -> Google consolide le ranking sur muros.org, pas de
+  penalite duplicate. Commit 809c9cf pushe sur main (declenche pages.yml).
+  Pas de tag de release cree : changement site-only, un tag declencherait
+  build-deb.yml (release .deb) inutilement.
+- TODO eventuel : ajouter l'enregistrement DNS www.muros.org puis
+  reincorporer -d www.muros.org au certbot, ou un 301 www -> apex.
+
+## 2026-05-29 site sorti du repo principal + GitHub Pages coupe
+- GitHub Pages desactive (gh api -X DELETE /repos/murosorg/muros/pages).
+  murosorg.github.io/muros/ renvoie 404. Plus de question duplicate
+  content : un seul site, muros.org.
+- Le site vitrine vit maintenant dans un repo PRIVE dedie :
+  github.com/murosorg/muros-site (homepage = muros.org). Clone local :
+  /home/jpetruzzi/Documents/muros-site. Contient les pages + assets +
+  _template.py (SITE = dossier du script, plus de chemin absolu) + un
+  README + deploy.sh (rsync vers 152.228.128.167:/opt/muros/site).
+- Deploiement futur du site : `cd ~/Documents/muros-site && ./deploy.sh`
+  (NE PLUS editer site/ dans le repo principal, il a ete supprime).
+- Repo principal muros : dossier site/ et .github/workflows/pages.yml
+  supprimes (commit a697d62). README : badge + lien Website muros.org,
+  homepage du repo settee a muros.org.
+- OG share card (link previews Signal/WhatsApp/Telegram/socials) : l'ancien
+  og-cover.png faisait 5 Mo (2752x1536) -> au-dessus de la limite des apps
+  de chat, preview non rendue. Remplace par og-cover.jpg 1200x670 ~42 Ko
+  (resize PIL + JPEG q86 progressive). og:image / twitter:image pointent
+  desormais sur le .jpg + ajout og:image:secure_url/type/width/height/alt.
+  Le .png est supprime du repo muros-site. Deploye et verifie en live
+  (content-type image/jpeg, 200). Commit muros-site 24f42b8.
+
+## 2026-05-29 SEO P1+P2 (muros-site, commit 63849f5)
+- P1 viewport responsive : 5 pages avaient viewport width=1280 (fige) ->
+  passees a width=device-width,initial-scale=1 (docs.html etait deja bon).
+  Mobile-first indexing OK.
+- P1 Tailwind statique : remplacement du CDN runtime cdn.tailwindcss.com
+  (~400 Ko JS, render-blocking) par un CSS compile assets/app.css (~14 Ko
+  minifie). Toolchain : package.json + tailwind.config.js (content scanne
+  *.html ET assets/*.js pour capter les classes injectees en JS par
+  lightbox.js/version.js, sinon purgees) + src/input.css (directives
+  @tailwind + ancien style.css fusionne). Build : `npm run build:css`.
+  ATTENTION : npm de cette machine a `omit=dev` + NODE_ENV=production ->
+  `npm install` zappe Tailwind ; utiliser `npm install --production=false`.
+  node_modules gitignore. style.css supprime (renomme en src/input.css).
+- P1 self-host : marked@12 + dompurify@3.1.6 telecharges dans assets/
+  (plus de jsdelivr) pour la page docs.
+- P2 : JSON-LD @graph (Organization, WebSite, SoftwareApplication sur
+  l'accueil, BreadcrumbList sur les autres) + og:site_name + og:locale +
+  theme-color ; sitemap.xml avec lastmod ; width/height + loading=lazy/
+  decoding=async sur les screenshots, hero en fetchpriority=high eager.
+  Fix licence footer docs.html (Apache-2.0 -> AGPL v3, la vraie licence).
+- deploy.sh fait maintenant `npm run build:css` avant le rsync et exclut
+  node_modules/src/package*/tailwind.config/_template.
+- BUG A CORRIGER (pre-existant, pas du SEO) : la page docs.html charge
+  docs/*.md en JS (fetch) mais le dossier docs/ n'est PAS deploye (il
+  etait synce depuis le repo muros par l'ancien workflow pages.yml,
+  supprime). https://muros.org/docs/quickstart.md = 404 -> page Docs
+  cassee en prod. A re-cabler (sync docs depuis ~/projects/muros/docs +
+  CHANGELOG, idealement pre-rendu pour le SEO).
+- Site hardware.html (2026-05-29) : figcaption du boitier 1U reformulee.
+  Plus de "early access" (sous-entend dispo) -> "coming soon" (futur).
+  Texte : hardware certifie pre-flashe + support paye optionnel ENVISAGES,
+  ni l'un ni l'autre commandable pour l'instant, MurOS reste open source
+  et gratuit en attendant. Formulation volontairement prudente (pas
+  d'offre commerciale ferme tant qu'il n'y a pas d'entite legale / SIRET).
+- Site legal.html (2026-05-29) : page "Legal notice" creee (EN), meta
+  noindex, style aligne sur hardware.html (header logo-dark + [BETA]).
+  Sections : Publisher (placeholders nom/email, statut = particulier, pas
+  de SIREN/SIRET), Hosting (placeholders provider/adresse/tel), IP+licence
+  AGPL-3.0, Hardware/support = future plans non commandables, Personal
+  data/cookies (site statique, pas de tracking), Liability, Applicable
+  law (droit FR). Lien "Legal" ajoute dans le footer de toutes les pages
+  + _template.py. A COMPLETER par Jerome : nom, email, hebergeur (IP
+  152.228.128.167 = OVH probablement) avant mise en prod reelle.
+- ATTENTION : le commit legal a aussi embarque la nouvelle docs.html
+  pre-rendue (cards statiques vers /docs/*.html au lieu du fetch JS des
+  *.md) qui etait deja sur le disque non commitee. Ca corrige le bug 404
+  docs note plus haut MAIS il faut que les fichiers /docs/*.html existent
+  et soient deployes, sinon liens casses. A verifier au prochain deploy.
+- SEO docs (2026-05-29, commit 9b1dab7) : le site etait deja bien optimise
+  (canonical, OG, twitter, JSON-LD TechArticle+BreadcrumbList, sitemap,
+  robots, SoftwareApplication+Offer price 0 sur l'accueil). Ajouts :
+  (1) FAQPage JSON-LD sur docs/faq.html (13 Q/A) -> eligible rich results
+  Google ; (2) datePublished 2026-05-27 + dateModified 2026-05-29 sur le
+  TechArticle de toutes les pages docs/*.html ; (3) og:image width/height/
+  type/alt/secure_url sur les pages docs (alignement homepage). JSON-LD
+  valide (json.loads OK sur toutes les pages). Les docs sont desormais
+  pre-rendues en HTML statique (docs/*.html existent) + page 404 ajoutee
+  par le commit a0da79d (process de prerender, pas moi), donc le bug 404
+  docs note plus haut est CORRIGE.

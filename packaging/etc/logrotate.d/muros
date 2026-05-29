@@ -1,0 +1,15 @@
+# MurOS log via journald, donc journald se charge de la rotation
+# (voir /etc/systemd/journald.conf.d/muros.conf).
+# Ce fichier est conserve au cas ou un fichier log texte serait ajoute
+# dans le futur (ex: access log nginx).
+
+/var/log/muros/*.log {
+    weekly
+    rotate 4
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+    su root root
+}

@@ -1,0 +1,288 @@
+#!/bin/sh
+set -e
+
+case "$1" in
+  configure)
+    if ! getent passwd muros >/dev/null; then
+      adduser --system --group --no-create-home --home /var/lib/muros muros
+    fi
+
+    install -d -m 750 -o muros -g muros /etc/muros
+    install -d -m 750 -o muros -g muros /var/lib/muros
+    install -d -m 750 -o muros -g muros /var/lib/muros/backups
+    install -d -m 750 -o muros -g muros /var/cache/muros/upgrade
+    # If install.sh restored a snapshot from /var/backups/muros into
+    # /var/lib/muros, the muros UID/GID may not match the new package's
+    # muros user. Force a recursive chown so the backend (running as
+    # the muros user) can read its DB and write to /var/lib/muros/backups.
+    chown -R muros:muros /var/lib/muros 2>/dev/null || true
+
+    if [ ! -f /etc/muros/jwt.key ]; then
+      umask 077
+      openssl rand -hex 32 > /etc/muros/jwt.key
+      chown muros:muros /etc/muros/jwt.key
+      chmod 600 /etc/muros/jwt.key
+    fi
+
+    # Construction du venv directement sur la cible. C'est plus fiable
+    # que de shipper un venv pre-rempli depuis le runner CI (shebang
+    # casse, paths du builder, etc.).
+    if [ ! -x /opt/muros/backend/venv/bin/uvicorn ]; then
+      echo "  -> creation du venv Python (peut prendre une minute)"
+      python3 -m venv /opt/muros/backend/venv
+      /opt/muros/backend/venv/bin/pip install --quiet --upgrade pip wheel
+      /opt/muros/backend/venv/bin/pip install --quiet -r /opt/muros/backend/requirements.txt
+    fi
+
+    # Capacites reseau pour python (netlink, raw sockets)
+    PYBIN=$(readlink -f /opt/muros/backend/venv/bin/python3)
+    /usr/sbin/setcap cap_net_admin,cap_net_raw=eip "$PYBIN" || true
+
+    # Pas d'Alembic : le schema est cree au demarrage du backend via
+    # SQLAlchemy Base.metadata.create_all(). Les nouvelles colonnes
+    # ajoutees au fil des versions sont detectees par un script de
+    # migration soft dans app/db.py (ALTER TABLE ADD COLUMN si manque).
+
+    # Cert TLS : snakeoil Debian standard (livre par le paquet ssl-cert
+    # liste en Depends). Sur images minimalistes le couple peut ne pas etre
+    # genere automatiquement, on force ici.
+    if [ ! -s /etc/ssl/certs/ssl-cert-snakeoil.pem ] \
+       || [ ! -s /etc/ssl/private/ssl-cert-snakeoil.key ]; then
+      make-ssl-cert generate-default-snakeoil --force-overwrite || true
+    fi
+    install -d -m 0755 /etc/nginx/ssl
+    ln -sf /etc/ssl/certs/ssl-cert-snakeoil.pem /etc/nginx/ssl/muros.crt
+    ln -sf /etc/ssl/private/ssl-cert-snakeoil.key /etc/nginx/ssl/muros.key
+
+    if [ ! -L /etc/nginx/sites-enabled/muros ]; then
+      ln -sf /etc/nginx/sites-available/muros /etc/nginx/sites-enabled/muros
+      rm -f /etc/nginx/sites-enabled/default
+    fi
+
+    # Recharge sysctl pour activer ip_forward + hardening immediatement
+    sysctl --system >/dev/null 2>&1 || true
+
+    # Silence systemd-ssh-generator on bare-metal / VMs without VSOCK.
+    # The generator (shipped by openssh-server) runs on every
+    # `systemctl daemon-reload` and tries to query the local AF_VSOCK
+    # CID to build a sshd@.service template for SSH-over-VSOCK. On any
+    # machine without a virtio-vsock device the syscall fails with
+    # EADDRNOTAVAIL and dumps "Failed to query local AF_VSOCK CID:
+    # Cannot assign requested address" into the journal at every apply.
+    # Since MurOS triggers daemon-reload on every configuration push,
+    # the log gets unreadable fast. Masking the generator by symlinking
+    # it to /dev/null is the upstream-recommended way (cf systemd man
+    # page systemd.generator(7)). The real ssh.service unit is
+    # unaffected.
+    install -d -m 0755 /etc/systemd/system-generators
+    if [ ! -L /etc/systemd/system-generators/systemd-ssh-generator ]; then
+      ln -sf /dev/null /etc/systemd/system-generators/systemd-ssh-generator
+    fi
+
+    # MurOS = seul control plane reseau, comme FortiOS / OpenWrt / VyOS.
+    # NetworkManager / ifupdown / netplan / resolvconf sont uninstalles
+    # avant l'arrivee ici par le install.sh (et le Conflicts: dans
+    # debian/control empeche dpkg de les coinstaller de toute facon).
+    #
+    # Reste systemd-networkd qui fait partie integrante du paquet
+    # systemd (impossible a uninstall) : on le mask pour qu'il ne demarre
+    # pas et ne ramene pas d'IPs depuis /etc/systemd/network. Idem pour
+    # systemd-networkd-wait-online qui bloquerait le boot a attendre une
+    # IP que personne ne va lui poser.
+    #
+    # systemd-resolved : meme histoire (livre par systemd), si actif il
+    # remplace /etc/resolv.conf par un symlink vers son stub 127.0.0.53
+    # et toute conf DNS MurOS est ignoree.
+    #
+    # dhcpcd : sur Debian 13 trixie, dhcpcd-base est le client DHCP par
+    # defaut (remplace isc-dhcp-client). Son hook 20-resolv.conf reecrit
+    # /etc/resolv.conf a chaque renew, ecrasant la conf MurOS. On stoppe
+    # et on masque ; muros-boot prend le relais pour maintenir les IPs.
+    # networking.service (ifupdown) is listed here too : on an ISO build,
+    # debian-installer often installs `ifupdown` despite our Conflicts:
+    # because preseed ordering varies. If left enabled, networking.service
+    # runs at boot, spawns dhclient on the primary NIC and adds a parasite
+    # default route with metric 1002 (= 1000 + ifindex) that fights with
+    # muros-boot's route. Masking the unit is the symmetric counterpart
+    # to install.sh purging the package on bare-metal installs.
+    for svc in systemd-networkd.service systemd-networkd-wait-online.service \
+               systemd-resolved.service dhcpcd.service dhclient.service \
+               networking.service; do
+      if systemctl list-unit-files "$svc" >/dev/null 2>&1; then
+        systemctl stop "$svc" 2>/dev/null || true
+        systemctl disable "$svc" 2>/dev/null || true
+        systemctl mask "$svc" 2>/dev/null || true
+      fi
+    done
+
+    # On an ISO build, debian-installer may have installed ifupdown as
+    # priority=important even though debian/control declares Conflicts:.
+    # Purge it now so it cannot come back via a future apt upgrade and
+    # cannot drop config files in /etc/network/interfaces.d/ that a
+    # manual `ifup` could replay.
+    if dpkg-query -W -f='${Status}' ifupdown 2>/dev/null \
+         | grep -q "install ok installed"; then
+      DEBIAN_FRONTEND=noninteractive apt-get purge -y ifupdown \
+        >/dev/null 2>&1 || true
+    fi
+
+    # systemd-resolved is a separate package on Debian 13 (trixie) and
+    # later. Mask alone is not enough : an admin who runs
+    # `systemctl unmask systemd-resolved` (typical mistake on a fresh
+    # checkout) wakes it up and it grabs ::1:53, which then makes
+    # Unbound fail to start with "Address already in use". Purge the
+    # package so it can't come back unless explicitly reinstalled.
+    if dpkg-query -W -f='${Status}' systemd-resolved 2>/dev/null \
+         | grep -q "install ok installed"; then
+      DEBIAN_FRONTEND=noninteractive apt-get purge -y systemd-resolved \
+        >/dev/null 2>&1 || true
+    fi
+    # Tue les daemons DHCP encore en cours (hors systemd) qui pourraient
+    # reecrire /etc/resolv.conf juste apres notre write.
+    pkill -x dhcpcd 2>/dev/null || true
+    pkill -x dhclient 2>/dev/null || true
+
+    # Nettoyage des fichiers intermediaires legacy (rc <= 29). MurOS
+    # n'utilise plus AUCUN fichier de config reseau distribution : tout
+    # passe par muros-boot + commandes `ip` direct, DB SQLite = source
+    # unique de verite.
+    rm -f /etc/network/interfaces.d/muros /etc/muros/routes.conf 2>/dev/null || true
+
+    # Sauvegarde puis neutralise /etc/network/interfaces pour eviter qu'un
+    # admin qui essaierait un `ifup` manuel s'auto-flingue. Garde une
+    # copie au cas ou il veuille relire ce qui y etait.
+    if [ -f /etc/network/interfaces ] && [ ! -f /etc/network/interfaces.muros-bak ]; then
+      cp /etc/network/interfaces /etc/network/interfaces.muros-bak
+      cat > /etc/network/interfaces <<'EOF'
+# Fichier neutralise par MurOS (sauvegarde dans interfaces.muros-bak).
+# Les interfaces sont gerees depuis l'UI MurOS, pas ici.
+# Garder seulement la loopback pour la coherence systeme.
+
+auto lo
+iface lo inet loopback
+EOF
+    fi
+
+    # Active explicitement systemd-timesyncd (sur Debian minimal il peut
+    # etre installe mais pas enable)
+    systemctl enable --now systemd-timesyncd.service || true
+
+    # DNS : MurOS gere /etc/resolv.conf directement (Debian 13 base = pas
+    # de systemd-resolved, pas de resolvconf). MurOS a deja maske
+    # NetworkManager / systemd-networkd / ifupdown plus haut, donc
+    # personne d'autre n'ecrit ce fichier. A l'install on pose
+    # immediatement des resolveurs publics fiables (1.1.1.1, 4.4.4.4,
+    # 8.8.8.8) sinon l'appliance peut se retrouver sans DNS si le DHCP
+    # du LAN d'install est ensuite remplace (cas typique : install en
+    # bridged puis bascule en NAT, ou DNS de la box plus joignable apres
+    # cablage). L'admin peut changer depuis Systeme > DNS.
+    # Backup de l'ancien resolv.conf au premier passage (idempotent via
+    # le marker .muros-bak). Si c'est un symlink (cas systemd-resolved
+    # stub), on saute le backup (rien d'utile a sauvegarder) et on
+    # ecrase quand meme le fichier. On ecrase a chaque install meme si
+    # un fichier MurOS existe deja : les DHCP clients tiers peuvent
+    # avoir reecrit le fichier entre-temps, l'admin reconfigurera depuis
+    # l'UI si besoin.
+    if [ -f /etc/resolv.conf ] && [ ! -L /etc/resolv.conf ] \
+         && [ ! -f /etc/resolv.conf.muros-bak ]; then
+      cp /etc/resolv.conf /etc/resolv.conf.muros-bak 2>/dev/null || true
+    fi
+    rm -f /etc/resolv.conf
+    cat > /etc/resolv.conf <<'EOF'
+# Generated by MurOS at install - edit from the UI System > DNS.
+# Default public resolvers (reachable without specific LAN config).
+nameserver 1.1.1.1
+nameserver 4.4.4.4
+nameserver 8.8.8.8
+EOF
+    chmod 0644 /etc/resolv.conf
+    # Empeche un futur dhcpcd/dhclient de toucher resolv.conf au cas ou
+    # il aurait survecu au mask plus haut (binaire lance manuellement,
+    # etc.). chattr +i n'est pas portable, on prefere neutraliser les
+    # hooks dhcpcd/dhclient si presents.
+    for hook in /lib/dhcpcd/dhcpcd-hooks/20-resolv.conf \
+                /etc/dhcp/dhclient-enter-hooks.d/resolved \
+                /etc/dhcp/dhclient-exit-hooks.d/debian; do
+      if [ -f "$hook" ] && [ ! -f "$hook.muros-disabled" ]; then
+        mv "$hook" "$hook.muros-disabled" 2>/dev/null || true
+      fi
+    done
+
+    # Desactive par defaut les services qui exigent une configuration
+    # explicite avant d'avoir un sens (HA, VPN, IPsec). Tant que l'admin
+    # ne les a pas configures depuis l'UI ils n'ont rien a faire et leur
+    # etat parasite le dashboard. L'UI les re-active a l'apply.
+    # The block below resets MurOS-managed services to "off until the
+    # admin enables it from the UI". This is the correct default for a
+    # FRESH install but absolutely wrong on a package upgrade: it would
+    # stop the DNS resolver, the DHCP server, WireGuard, IPsec,
+    # keepalived and friends every time the operator clicks "Install
+    # update" in the UI, exactly the services they need to stay up.
+    # Gate the reset on $2 being empty (no previous version installed).
+    if [ -z "$2" ]; then
+      for svc in keepalived.service conntrackd.service strongswan.service \
+                 strongswan-starter.service; do
+        if systemctl list-unit-files "$svc" >/dev/null 2>&1; then
+          systemctl disable --now "$svc" 2>/dev/null || true
+        fi
+      done
+      systemctl disable --now wg-quick@wg0.service 2>/dev/null || true
+
+      # Le watcher d'alertes (boucle SMTP/webhook) est inutile tant qu'aucun
+      # canal de notif n'est configure. L'UI le start a l'apply notifications.
+      systemctl disable --now muros-watcher.service 2>/dev/null || true
+
+      # V1.2 network services : dnsmasq (DHCP) and Unbound (recursive DNS).
+      # Both stay disabled until the admin configures them from the UI.
+      # dnsmasq defaults to claiming port 53 for DNS, our drop-in disables
+      # it with port=0 but the conf only gets written at apply time, so we
+      # must hold the service back here. Same for Unbound.
+      for svc in dnsmasq.service unbound.service; do
+        if systemctl list-unit-files "$svc" >/dev/null 2>&1; then
+          systemctl disable --now "$svc" 2>/dev/null || true
+        fi
+      done
+
+      # Multi-WAN monitor : inactif par defaut. Tant qu'aucun WAN gateway
+      # n'est declare dans l'UI, il n'a rien a probe. L'admin l'enable
+      # depuis la page WAN ; ici on s'assure juste qu'il n'est pas en
+      # train de tourner avec une DB vide (waste CPU pour rien).
+      systemctl disable --now muros-wan-monitor.service 2>/dev/null || true
+    fi
+
+    # unattended-upgrades : applique la planification via le helper
+    # /usr/lib/muros/apply-unattended.sh. Source de verite :
+    # /etc/muros/unattended.json (gere par l'UI). Si absent, le helper
+    # genere une planif par defaut basee sur hash(hostname) pour ecarter
+    # les peers HA d'au moins 1 jour. Le paquet muros est blacklist (cf
+    # 52muros-unattended) : ses upgrades passent toujours par l'UI.
+    /usr/lib/muros/apply-unattended.sh || true
+
+    # snmpd / fail2ban / nginx / muros-backend / muros-boot : activations
+    # standard, deja gerees par dh_installsystemd. Aucune action a faire.
+
+    systemctl daemon-reload
+    # muros-watcher reste disabled tant qu'aucun canal SMTP/webhook n'est
+    # configure depuis l'UI. Il sera enabled+start a l'apply notifications.
+    systemctl enable muros-boot.service muros-backend.service
+    # On lance muros-boot des l'install pour adopter la conf reseau
+    # actuelle (interfaces + IPs + default route) dans la DB MurOS. Sans
+    # ca, l'admin verrait la page Routes vide et au prochain reboot le
+    # kernel rejouerait une DB vide (perte d'IP DHCP).
+    # L'adoption est idempotente : si elle a deja eu lieu (marker
+    # /var/lib/muros/.adopted), on skip.
+    systemctl start muros-boot.service || true
+    systemctl restart muros-backend.service || true
+    systemctl reload nginx || systemctl restart nginx || true
+    ;;
+
+  abort-upgrade|abort-remove|abort-deconfigure)
+    ;;
+
+  *)
+    echo "postinst called with unknown argument $1" >&2
+    exit 1
+    ;;
+esac
+
+exit 0

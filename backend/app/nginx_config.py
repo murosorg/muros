@@ -1,0 +1,181 @@
+"""Configuration nginx du site MurOS depuis l'UI (interface d'ecoute, ports).
+
+Au deploiement, /etc/nginx/sites-available/muros est ecrit avec une conf
+statique (template du packaging). Quand l'admin modifie l'ecoute via
+l'UI (page Acces HTTP), on regenere ce fichier avec les nouveaux
+parametres (listen_address, port_https, port_http).
+
+Validation par nginx -t avant reload, rollback si invalide.
+"""
+from __future__ import annotations
+
+import logging
+import os
+import shutil
+import subprocess
+from pathlib import Path
+
+from app.apply import APPLY_ENABLED
+
+log = logging.getLogger("muros.nginx")
+
+SITE_CONF = Path("/etc/nginx/sites-available/muros")
+SITE_CONF_BAK = Path("/etc/nginx/sites-available/muros.muros-bak")
+
+
+def _server_block(listen_lines: list[str], tls: bool) -> list[str]:
+    """Bloc server commun, en HTTP ou HTTPS."""
+    block = ["server {"]
+    for l in listen_lines:
+        block.append(f"    {l}")
+    block.extend([
+        "    server_name _;",
+        "",
+    ])
+    if tls:
+        block.extend([
+            "    ssl_certificate     /etc/nginx/ssl/muros.crt;",
+            "    ssl_certificate_key /etc/nginx/ssl/muros.key;",
+            "    ssl_protocols       TLSv1.2 TLSv1.3;",
+            "    ssl_ciphers         HIGH:!aNULL:!MD5;",
+            "    ssl_prefer_server_ciphers on;",
+            "    ssl_session_cache   shared:SSL:10m;",
+            "    ssl_session_timeout 1d;",
+            "    add_header Strict-Transport-Security \"max-age=31536000\" always;",
+            "",
+        ])
+    block.extend([
+        "    error_page 502 503 504 /muros-503.html;",
+        "    location = /muros-503.html { root /etc/nginx/html; internal; }",
+        "",
+        "    add_header X-Frame-Options DENY always;",
+        "    add_header X-Content-Type-Options nosniff always;",
+        "    add_header Referrer-Policy strict-origin-when-cross-origin always;",
+        "",
+        "    client_max_body_size 100M;",
+        "    root /opt/muros/web;",
+        "    index index.html;",
+        "",
+        "    location /api/ {",
+        "        proxy_pass         http://127.0.0.1:8000;",
+        "        proxy_http_version 1.1;",
+        "        proxy_set_header   Host              $host;",
+        "        proxy_set_header   X-Real-IP         $remote_addr;",
+        "        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;",
+        "        proxy_set_header   X-Forwarded-Proto $scheme;",
+        "        proxy_read_timeout 300s;",
+        "        proxy_send_timeout 300s;",
+        "    }",
+        "",
+        "    location / { try_files $uri $uri/ /index.html; }",
+        "",
+        "    location ~* \\.(js|css|woff2?|ttf|otf|svg|png|jpg|jpeg|gif|ico|webp)$ {",
+        "        expires 1y;",
+        "        add_header Cache-Control \"public, immutable\";",
+        "    }",
+        "}",
+        "",
+    ])
+    return block
+
+
+def render_site_conf(cfg) -> str:
+    """Genere le contenu complet du sites-available/muros.
+
+    HTTPS toujours actif (cert snakeoil par defaut, vrai cert upload via
+    l'UI). HTTP redirige vers HTTPS sauf si l'admin desactive explicitement.
+    """
+    listen = (cfg.listen_address or "0.0.0.0").strip()
+    port_https = int(cfg.port_https or 443)
+    port_http = int(cfg.port_http or 80)
+    redirect = bool(getattr(cfg, "redirect_http_to_https", True))
+
+    if listen == "0.0.0.0" or not listen:
+        http_listen = [
+            f"listen {port_http} default_server;",
+            f"listen [::]:{port_http} default_server;",
+        ]
+        https_listen = [
+            f"listen {port_https} ssl default_server;",
+            f"listen [::]:{port_https} ssl default_server;",
+            "http2 on;",
+        ]
+    else:
+        http_listen = [f"listen {listen}:{port_http};"]
+        https_listen = [
+            f"listen {listen}:{port_https} ssl;",
+            "http2 on;",
+        ]
+
+    parts: list[str] = [
+        "# Genere par MurOS - ne pas editer a la main.",
+        "# Edite depuis l'UI -> Acces HTTP.",
+        "",
+    ]
+
+    if redirect:
+        parts.extend([
+            "server {",
+            *(f"    {l}" for l in http_listen),
+            "    server_name _;",
+            "    return 301 https://$host$request_uri;",
+            "}",
+            "",
+        ])
+    else:
+        # HTTP sert l'UI aussi (mode degrade explicite)
+        parts.extend(_server_block(http_listen, tls=False))
+
+    parts.extend(_server_block(https_listen, tls=True))
+
+    return "\n".join(parts)
+
+
+def apply_config(cfg) -> dict:
+    """Ecrit le sites-available/muros et reload nginx avec rollback."""
+    if not APPLY_ENABLED:
+        return {
+            "applied": False,
+            "message": "dry-run : MUROS_APPLY off.",
+            "preview": render_site_conf(cfg),
+        }
+    if os.geteuid() != 0:
+        raise RuntimeError("Modification nginx impossible : MurOS doit tourner en root.")
+
+    # Backup avant ecriture pour rollback.
+    if SITE_CONF.exists():
+        shutil.copy2(SITE_CONF, SITE_CONF_BAK)
+
+    SITE_CONF.parent.mkdir(parents=True, exist_ok=True)
+    SITE_CONF.write_text(render_site_conf(cfg), encoding="utf-8")
+    os.chmod(SITE_CONF, 0o644)
+
+    # nginx -t pour valider
+    check = subprocess.run(
+        ["nginx", "-t"], capture_output=True, text=True, timeout=10,
+    )
+    if check.returncode != 0:
+        # Rollback
+        if SITE_CONF_BAK.exists():
+            shutil.copy2(SITE_CONF_BAK, SITE_CONF)
+        raise RuntimeError(
+            f"nginx -t a refuse la config : {check.stderr.strip()[:400]}"
+        )
+
+    # Reload
+    r = subprocess.run(
+        ["systemctl", "reload", "nginx.service"],
+        capture_output=True, text=True, timeout=15,
+    )
+    if r.returncode != 0:
+        log.warning("systemctl reload nginx : %s", r.stderr)
+
+    if SITE_CONF_BAK.exists():
+        SITE_CONF_BAK.unlink()
+
+    listen_disp = cfg.listen_address or "0.0.0.0"
+    return {
+        "applied": True,
+        "message": f"Nginx reconfigure (HTTPS sur {listen_disp}:{cfg.port_https}). "
+                   "Verifier l'acces a l'UI avant de fermer cette page.",
+    }

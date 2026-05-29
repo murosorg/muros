@@ -1,0 +1,96 @@
+name: build-deb
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+# Necessaire pour que softprops/action-gh-release puisse creer la
+# Release publique sur le repo (par defaut GITHUB_TOKEN est read-only).
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    container:
+      image: debian:trixie
+    steps:
+      - name: Install build deps
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential debhelper devscripts \
+            libdistro-info-perl distro-info-data \
+            python3 python3-venv python3-pip \
+            nodejs npm ca-certificates git
+      - uses: actions/checkout@v4
+        # fetch-depth=0 : on a besoin de l'historique pour lire la
+        # description du tag (utilisee comme entree changelog).
+        with:
+          fetch-depth: 0
+      - name: Stage debian/ dir at repo root
+        run: cp -r packaging/debian debian
+      - name: Set version from tag
+        run: |
+          # Marque le repo comme safe pour git dans le container (sinon
+          # 'fatal: detected dubious ownership' sur les commandes git).
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          VERSION=${GITHUB_REF_NAME#v}
+          # On lit le subject du tag annote (ex 'rc45: composants UI...'),
+          # ca finit dans le changelog Debian au lieu d'un message generique.
+          # Fallback si le tag est lightweight ou sans message.
+          SUBJECT=$(git tag -l --format='%(contents:subject)' "$GITHUB_REF_NAME" | head -1)
+          if [ -z "$SUBJECT" ]; then
+            SUBJECT=$(git log -1 --format=%s "$GITHUB_REF_NAME")
+          fi
+          if [ -z "$SUBJECT" ]; then
+            SUBJECT="Release $VERSION"
+          fi
+          # -b force la creation meme si la version est inferieure au
+          # placeholder (le changelog initial peut etre a 0.0.1 par defaut)
+          DEBEMAIL="muros@ecritel.net" DEBFULLNAME="MurOS CI" \
+            dch -b -v "$VERSION" -D stable -M "$SUBJECT"
+      - name: Build .deb
+        run: |
+          dpkg-buildpackage -us -uc -b
+          mkdir -p artifacts
+          mv ../muros_*.deb artifacts/ || true
+          cd artifacts
+          for f in *.deb; do
+            sha256sum "$f" > "$f.sha256"
+          done
+          ls -la
+      - uses: actions/upload-artifact@v4
+        with:
+          name: muros-deb
+          path: |
+            artifacts/*.deb
+            artifacts/*.sha256
+      - name: Publish GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        # Pin sur le SHA exact de v2.6.2 plutot que @v2 mobile : evite
+        # qu'un downgrade GitHub Actions (cas vu en rc40-42) ou une
+        # nouvelle release de l'action puisse casser nos builds.
+        # Pour bumper : verifier la nouvelle SHA via
+        #   gh api repos/softprops/action-gh-release/git/refs/tags
+        # et mettre a jour la ligne + le commentaire de version ci-dessous.
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
+        with:
+          # We do NOT flag rc tags as pre-release: GitHub refuses to
+          # set make_latest=true on a pre-release, which makes
+          # /releases/latest/download/install.sh point to a stale tag.
+          # The homepage install command depends on this URL serving
+          # the newest deb, so we treat every signed tag as a regular
+          # release. The rc suffix in the tag name keeps the semantic
+          # "release candidate" indication for humans.
+          prerelease: false
+          make_latest: true
+          files: |
+            artifacts/*.deb
+            artifacts/*.sha256
+            install.sh
+            uninstall.sh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

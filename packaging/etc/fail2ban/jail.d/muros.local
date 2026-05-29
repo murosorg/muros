@@ -1,0 +1,32 @@
+# Configuration fail2ban MurOS.
+#
+# Charge automatiquement par fail2ban-server (drop-in dans /etc/fail2ban/jail.d/).
+# fail2ban surveille les logs (journald sur Debian/Ubuntu modernes) et bannit
+# les IP qui multiplient les echecs.
+#
+# La jail [sshd] est livree par le paquet fail2ban Debian, on ne la redefinit
+# pas. Pour la confirmer active sur ce systeme :
+#   sudo fail2ban-client status sshd
+#
+# Si elle est desactivee dans la conf par defaut Debian (cela arrive selon
+# les versions), creer `/etc/fail2ban/jail.d/defaults-debian.conf` avec
+# `[sshd]\nenabled = true`.
+
+[DEFAULT]
+# Defauts globaux pour les jails custom MurOS. La policy par defaut
+# du paquet Debian (bantime/findtime) reste valable, on l'override pour
+# nos jails uniquement.
+banaction         = nftables-multiport
+banaction_allports = nftables-allports
+backend           = systemd
+
+[muros-api]
+enabled  = true
+port     = http,https
+filter   = muros-api
+logpath  = /dev/null
+# On lit le journal du service backend (et de nginx access log si en place)
+journalmatch = _SYSTEMD_UNIT=muros-backend.service + _SYSTEMD_UNIT=nginx.service
+maxretry = 5
+findtime = 300
+bantime  = 1800

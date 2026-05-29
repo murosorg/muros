@@ -1,0 +1,76 @@
+Source: muros
+Section: net
+Priority: optional
+Maintainer: Ecritel <muros@ecritel.net>
+Build-Depends:
+ debhelper-compat (= 13),
+ python3 (>= 3.12),
+ python3-venv,
+ nodejs (>= 20),
+ npm,
+Standards-Version: 4.6.2
+Homepage: https://github.com/murosorg/muros
+Rules-Requires-Root: no
+
+Package: muros
+Architecture: all
+Depends:
+ ${misc:Depends},
+ python3 (>= 3.12),
+ python3-venv,
+ python3-pip,
+ build-essential,
+ python3-dev,
+ nftables,
+ iproute2,
+ iputils-ping,
+ iputils-tracepath,
+ traceroute,
+ dnsutils,
+ netcat-openbsd,
+ tcpdump,
+ conntrack,
+ curl,
+ keepalived,
+ conntrackd,
+ strongswan,
+ wireguard-tools,
+ openssh-server,
+ systemd-timesyncd,
+ fail2ban,
+ snmpd,
+ snmp,
+ nginx-light,
+ ssl-cert,
+ rsync,
+ ca-certificates,
+ systemd,
+ libcap2-bin,
+ unattended-upgrades,
+ dnsmasq,
+ unbound,
+ unbound-anchor
+Conflicts:
+ chrony,
+ ntp,
+ ntpsec,
+ openntpd,
+ network-manager,
+ network-manager-gnome,
+ netplan.io,
+ resolvconf,
+ ifupdown,
+ isc-dhcp-client,
+ dhcpcd5,
+ dhcpcd-base,
+ systemd-resolved,
+ connman
+Description: MurOS firewall appliance (backend + UI)
+ Simple opensource firewall appliance based on Debian 13.
+ Includes stateful nftables filtering, NAT, static routing, VPN
+ (WireGuard + strongSwan), HA via keepalived + conntrackd, audit logs,
+ SNMP, mail and webhook notifications, all exposed via a web UI.
+ .
+ This package ships the FastAPI backend, the built React frontend, the
+ systemd units and the boot integration. The web UI is reachable on
+ https://<host>/ once installed.
