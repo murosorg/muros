@@ -220,34 +220,49 @@ EOF
     # update" in the UI, exactly the services they need to stay up.
     # Gate the reset on $2 being empty (no previous version installed).
     if [ -z "$2" ]; then
+      # Helper: disable a feature daemon AND clear any lingering "failed"
+      # status. A plain `disable --now` stops and un-enables the unit but
+      # leaves it marked "failed" in systemd if it had crashed earlier
+      # (e.g. a dependency daemon shipped by us, like dnsmasq or unbound,
+      # was already installed and auto-started by its own package
+      # postinst, collided on port 53, and crashed before our policy-rc.d
+      # could hold it back). Without `reset-failed` the operator sees a
+      # red "failed" unit right after install even though the feature is
+      # simply not enabled yet. reset-failed makes the post-install state
+      # clean: every optional daemon is "inactive (dead)", never "failed".
+      hold_feature_daemon() {
+        _svc="$1"
+        if systemctl list-unit-files "$_svc" >/dev/null 2>&1; then
+          systemctl disable --now "$_svc" 2>/dev/null || true
+          systemctl reset-failed "$_svc" 2>/dev/null || true
+        fi
+      }
+
       for svc in keepalived.service conntrackd.service strongswan.service \
                  strongswan-starter.service; do
-        if systemctl list-unit-files "$svc" >/dev/null 2>&1; then
-          systemctl disable --now "$svc" 2>/dev/null || true
-        fi
+        hold_feature_daemon "$svc"
       done
-      systemctl disable --now wg-quick@wg0.service 2>/dev/null || true
+      hold_feature_daemon wg-quick@wg0.service
 
       # Le watcher d'alertes (boucle SMTP/webhook) est inutile tant qu'aucun
       # canal de notif n'est configure. L'UI le start a l'apply notifications.
-      systemctl disable --now muros-watcher.service 2>/dev/null || true
+      hold_feature_daemon muros-watcher.service
 
       # V1.2 network services : dnsmasq (DHCP) and Unbound (recursive DNS).
       # Both stay disabled until the admin configures them from the UI.
       # dnsmasq defaults to claiming port 53 for DNS, our drop-in disables
       # it with port=0 but the conf only gets written at apply time, so we
-      # must hold the service back here. Same for Unbound.
-      for svc in dnsmasq.service unbound.service; do
-        if systemctl list-unit-files "$svc" >/dev/null 2>&1; then
-          systemctl disable --now "$svc" 2>/dev/null || true
-        fi
-      done
+      # must hold the service back here. Same for Unbound. The reset-failed
+      # inside the helper is what prevents the classic "dnsmasq failed
+      # right after install" caused by the port-53 collision with Unbound.
+      hold_feature_daemon dnsmasq.service
+      hold_feature_daemon unbound.service
 
       # Multi-WAN monitor : inactif par defaut. Tant qu'aucun WAN gateway
       # n'est declare dans l'UI, il n'a rien a probe. L'admin l'enable
       # depuis la page WAN ; ici on s'assure juste qu'il n'est pas en
       # train de tourner avec une DB vide (waste CPU pour rien).
-      systemctl disable --now muros-wan-monitor.service 2>/dev/null || true
+      hold_feature_daemon muros-wan-monitor.service
     fi
 
     # unattended-upgrades : applique la planification via le helper

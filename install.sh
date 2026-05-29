@@ -157,6 +157,28 @@ rm -f "$POLICY"
 if [ -e "$POLICY_BAK" ]; then mv "$POLICY_BAK" "$POLICY"; fi
 trap - EXIT INT TERM
 
+# Defensive sweep: make sure no feature daemon is left running or in a
+# "failed" state after install. policy-rc.d blocks auto-start for daemons
+# (re)configured during this apt transaction, but it cannot help when a
+# daemon was already installed AND enabled before MurOS (it is not
+# reconfigured, so its own postinst never runs again and it keeps
+# whatever state it had, possibly "failed" after a port-53 collision
+# between dnsmasq and unbound). We stop, disable and clear the failed
+# status of every optional daemon so a fresh install always lands on a
+# clean "inactive (dead)" baseline. The admin re-enables each feature
+# from the UI. muros core units (backend, boot, nginx) are untouched.
+# Note: snmpd and fail2ban are intentionally absent. They belong to the
+# always-on stack (default observability + mgmt-plane protection) and are
+# enabled by dh_installsystemd, so they must keep running.
+for svc in dnsmasq unbound keepalived conntrackd \
+           strongswan strongswan-starter wg-quick@wg0 \
+           muros-watcher muros-wan-monitor; do
+  if systemctl list-unit-files "${svc}.service" >/dev/null 2>&1; then
+    systemctl disable --now "${svc}.service" 2>/dev/null || true
+    systemctl reset-failed "${svc}.service" 2>/dev/null || true
+  fi
+done
+
 VER=$(dpkg-query -W -f='${Version}' muros 2>/dev/null || echo "?")
 IP=$(hostname -I 2>/dev/null | awk '{print $1}')
 cat <<EOF
