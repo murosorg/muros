@@ -203,7 +203,7 @@ Delivered features move to [`CHANGELOG.md`](CHANGELOG.md). Current state:
   recursive DNS (Unbound), GitHub Actions CI. Pending before stable: appliance
   ISO, signed apt repository.
 - **V2.0** (planned): IPS / IDS Suricata, captive portal, LDAP / AD
-  integration, multi-user with roles, WireGuard self-service via LDAP.
+  integration, multi-user with roles, WireGuard self-service via LDAP, NTP, 2FA, OpenVPN, Kea
 
 ### Out of scope, by design
 
