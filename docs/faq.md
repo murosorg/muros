@@ -139,7 +139,7 @@ Most common causes:
 
 ## Upgrading MurOS
 
-While MurOS is in **beta** (`v1.0.0-rcXX` release candidate cycle), the DB
+While MurOS is in **beta** (`v0.9.0-rcXX` release candidate cycle), the DB
 schema is not frozen. Upgrades between beta releases are done via clean
 reinstall:
 
@@ -151,7 +151,7 @@ curl -fsSL https://github.com/murosorg/muros/releases/latest/download/install.sh
 If you want to keep your config across reinstalls, export a backup first
 (Backups menu) and restore after reinstall.
 
-Starting from v1.0.0 stable, in-place upgrades will be supported and the
+Starting from the first stable release, in-place upgrades will be supported and the
 schema will evolve via versioned migrations.
 
 ## How to change the Linux root account password?

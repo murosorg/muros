@@ -43,7 +43,7 @@ curl -fsSL https://github.com/murosorg/muros/releases/latest/download/install.sh
 At the end of the script you will see something like:
 
 ```
-MurOS v1.0.0-rcXX installed.
+MurOS v0.9.0-rcXX installed.
 
   UI     : http://192.168.1.10/
   Login  : admin / muros  (password change required on first login)
