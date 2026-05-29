@@ -39,13 +39,7 @@ high availability, DHCP, recursive DNS, SNMP, monitoring.
 
 ## Screenshots
 
-| Filter rules | NAT |
-|:---:|:---:|
-| ![Filter rules](docs/screenshots/rules.png) | ![NAT](docs/screenshots/nat.png) |
-
-| Network interfaces | WireGuard |
-|:---:|:---:|
-| ![Network](docs/screenshots/network.png) | ![WireGuard](docs/screenshots/wireguard.png) |
+![MurOS dashboard](docs/screenshots/dashboard.png)
 
 More screenshots in [`docs/screenshots/`](docs/screenshots/).
 
