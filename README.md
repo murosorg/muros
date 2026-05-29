@@ -9,10 +9,10 @@
 
 Website: [muros.org](https://muros.org)
 
-Turn any linux into a firewall. Web-managed, Debian-native,
-zero subscription. Covers the 90% of small and mid-size business needs:
-stateful filtering, NAT, VPN (WireGuard + IPsec), high availability,
-multi-WAN, DHCP / DNS, monitoring. 
+Turn any linux into a firewall. An open source alternative to pfSense
+and OPNsense. Web-managed, Debian-native, zero subscription. Covers the
+90% of small and mid-size business needs: stateful filtering, NAT, VPN
+(WireGuard + IPsec), high availability, multi-WAN, DHCP / DNS, monitoring.
 
 ![MurOS dashboard](docs/screenshots/dashboard.png)
 
@@ -60,6 +60,17 @@ one reachable interface.
 
 ```bash
 curl -fsSL https://github.com/murosorg/muros/releases/latest/download/install.sh | sudo bash
+```
+
+The installer also registers the signed apt repository
+(`https://apt.muros.org`) so later upgrades flow through `apt`. To add
+the repository by hand instead, or on a host that already runs MurOS:
+
+```bash
+curl -fsSL https://apt.muros.org/muros.asc | sudo gpg --dearmor -o /usr/share/keyrings/muros-archive-keyring.gpg
+echo "deb [signed-by=/usr/share/keyrings/muros-archive-keyring.gpg] https://apt.muros.org stable main" | sudo tee /etc/apt/sources.list.d/muros.list
+sudo apt update
+sudo apt install muros
 ```
 
 Open `https://<firewall-ip>` in a browser. Default credentials:

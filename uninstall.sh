@@ -132,6 +132,10 @@ echo "[4/4] Nettoyage des drop-ins ecrits par MurOS hors paquet"
 # Repertoires applicatifs MurOS (la DB, les backups, les cache)
 rm -rf /opt/muros /var/lib/muros /etc/muros /var/cache/muros
 
+# Depot apt signe enregistre par install.sh (apt.muros.org)
+rm -f /etc/apt/sources.list.d/muros.list
+rm -f /usr/share/keyrings/muros-archive-keyring.gpg
+
 # IPsec : drop-ins swanctl ecrits par MurOS (les confs du paquet
 # strongswan restent intactes)
 rm -f /etc/swanctl/conf.d/muros.conf /etc/swanctl/conf.d/muros.secrets

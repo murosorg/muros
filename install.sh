@@ -46,7 +46,30 @@ case "${MUROS_STATUS}" in
 esac
 
 apt-get update -qq
-apt-get install -y -qq curl ca-certificates
+apt-get install -y -qq curl ca-certificates gnupg
+
+# Register the signed apt repository (apt.muros.org). This is what makes
+# later upgrades work through plain apt / unattended-upgrades, and what
+# the System > Updates page relies on for "apt-get install --only-upgrade
+# muros". The bootstrap install below still uses the downloaded .deb so a
+# first install does not depend on the repo serving that exact version,
+# but from here on the box trusts and tracks apt.muros.org.
+echo "[1b/5] Registering apt.muros.org"
+APT_KEYRING=/usr/share/keyrings/muros-archive-keyring.gpg
+if curl -fsSL https://apt.muros.org/muros.asc -o "${APT_KEYRING}.asc" 2>/dev/null; then
+  gpg --dearmor --batch --yes -o "${APT_KEYRING}" "${APT_KEYRING}.asc" 2>/dev/null || true
+  rm -f "${APT_KEYRING}.asc"
+  if [ -s "${APT_KEYRING}" ]; then
+    echo "deb [signed-by=${APT_KEYRING}] https://apt.muros.org stable main" \
+      > /etc/apt/sources.list.d/muros.list
+    apt-get update -qq || true
+    echo "    -> apt.muros.org registered"
+  else
+    echo "    -> could not import the repository key, skipping (install will still proceed)"
+  fi
+else
+  echo "    -> apt.muros.org unreachable, skipping (install will still proceed)"
+fi
 
 echo "[2/4] Resolving version"
 # Why the atom feed and not /releases/latest:
