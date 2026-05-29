@@ -61,12 +61,13 @@ Prerequisites: a freshly installed Debian 13 machine with root access and
 one reachable interface.
 
 ```bash
-curl -fsSL https://github.com/murosorg/muros/releases/latest/download/install.sh | sudo bash
+curl -fsSL https://apt.muros.org/install.sh | sudo bash
 ```
 
-The installer also registers the signed apt repository
-(`https://apt.muros.org`) so later upgrades flow through `apt`. To add
-the repository by hand instead, or on a host that already runs MurOS:
+The installer registers the signed apt repository (`https://apt.muros.org`)
+and installs the package, so later upgrades are just
+`apt update && apt install --only-upgrade muros`. To add the repository
+by hand instead (for example on a host that already runs MurOS):
 
 ```bash
 curl -fsSL https://apt.muros.org/muros.asc | sudo gpg --dearmor -o /usr/share/keyrings/muros-archive-keyring.gpg
@@ -80,8 +81,9 @@ Open `https://<firewall-ip>` in a browser. Default credentials:
 - Login: `admin`
 - Password: `muros` (the UI forces a password change on first login)
 
-To pin a specific version: `MUROS_VERSION=v1.0.0-rcXX sudo bash`.
-To remove cleanly: `curl -fsSL .../uninstall.sh | sudo bash`.
+To pin a specific version: `MUROS_VERSION=0.9.0-rcXX sudo bash` (the repo
+keeps only the latest version, so pinning works for the current release).
+To remove cleanly: `curl -fsSL https://apt.muros.org/uninstall.sh | sudo bash`.
 
 ## Positioning
 

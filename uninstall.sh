@@ -20,7 +20,7 @@
 # Everything is logged to /var/log/muros-install.log.
 #
 # Usage (official, single method) :
-#   curl -fsSL https://github.com/murosorg/muros/releases/latest/download/uninstall.sh | sudo bash
+#   curl -fsSL https://apt.muros.org/uninstall.sh | sudo bash
 #
 # Optional vars :
 #   MUROS_PURGE_DEPS=1   also purge keepalived/strongswan/wireguard/etc.

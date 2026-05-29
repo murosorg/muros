@@ -1,18 +1,21 @@
 #!/bin/bash
-# MurOS installer - telecharge le dernier .deb de la release GitHub
-# et l'installe sur une VM Debian 13 (trixie). Logge tout dans
-# /var/log/muros-install.log pour pouvoir debug a posteriori.
+# MurOS installer - registers the signed apt repository (apt.muros.org)
+# and installs the muros package on a fresh Debian 13 (trixie). Logs
+# everything to /var/log/muros-install.log for later debugging.
 #
-# Usage :
-#   curl -fsSL https://github.com/murosorg/muros/releases/latest/download/install.sh | sudo bash
+# Usage:
+#   curl -fsSL https://apt.muros.org/install.sh | sudo bash
 #
-# Variable optionnelle :
-#   MUROS_VERSION=v0.9.0   force a specific version (otherwise latest)
+# Optional variable:
+#   MUROS_VERSION=0.9.0-rcN   install a specific version (it must still
+#                             be available in the repo; the repo keeps
+#                             only the latest version).
 
 set -eu
 
-REPO="murosorg/muros"
 LOG=/var/log/muros-install.log
+APT_KEYRING=/usr/share/keyrings/muros-archive-keyring.gpg
+APT_LIST=/etc/apt/sources.list.d/muros.list
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "Ce script doit etre lance en root (sudo bash install.sh)" >&2
@@ -27,7 +30,7 @@ echo "=============================================================="
 echo "MurOS install - $(date -Is)"
 echo "=============================================================="
 
-echo "[1/4] Prerequis"
+echo "[1/4] Prerequisites"
 
 # Detection d'un etat dpkg cassé herite d'une MAJ ratée : si muros est
 # marqué "ReinstReq" / "half-configured" / "half-installed", apt-get
@@ -48,70 +51,20 @@ esac
 apt-get update -qq
 apt-get install -y -qq curl ca-certificates gnupg
 
-# Register the signed apt repository (apt.muros.org). This is what makes
-# later upgrades work through plain apt / unattended-upgrades, and what
-# the System > Updates page relies on for "apt-get install --only-upgrade
-# muros". The bootstrap install below still uses the downloaded .deb so a
-# first install does not depend on the repo serving that exact version,
-# but from here on the box trusts and tracks apt.muros.org.
-echo "[1b/5] Registering apt.muros.org"
-APT_KEYRING=/usr/share/keyrings/muros-archive-keyring.gpg
-if curl -fsSL https://apt.muros.org/muros.asc -o "${APT_KEYRING}.asc" 2>/dev/null; then
-  gpg --dearmor --batch --yes -o "${APT_KEYRING}" "${APT_KEYRING}.asc" 2>/dev/null || true
-  rm -f "${APT_KEYRING}.asc"
-  if [ -s "${APT_KEYRING}" ]; then
-    echo "deb [signed-by=${APT_KEYRING}] https://apt.muros.org stable main" \
-      > /etc/apt/sources.list.d/muros.list
-    apt-get update -qq || true
-    echo "    -> apt.muros.org registered"
-  else
-    echo "    -> could not import the repository key, skipping (install will still proceed)"
-  fi
-else
-  echo "    -> apt.muros.org unreachable, skipping (install will still proceed)"
-fi
-
-echo "[2/4] Resolving version"
-# Why the atom feed and not /releases/latest:
-# - /releases/latest excludes pre-releases. While MurOS is in the 0.9.0
-#   rc cycle every release is flagged pre-release, so /releases/latest
-#   returns an outdated tag (it sticks to the last non-prerelease).
-# - api.github.com is rate-limited (60 req/h per IP unauthenticated)
-#   and returns 403 when the admin re-runs the installer a few times.
-# - /releases.atom has no rate limit, is served from the GitHub CDN,
-#   and lists every release (including pre-releases) sorted by date.
-# We grep the first <link href="...releases/tag/vXXX"> entry.
-if [ -n "${MUROS_VERSION:-}" ]; then
-  TAG="${MUROS_VERSION}"
-else
-  TAG=$(curl -fsSL "https://github.com/${REPO}/releases.atom" 2>/dev/null \
-    | grep -m1 -oE 'releases/tag/v[^/"<]+' \
-    | head -1 \
-    | sed 's|releases/tag/||')
-  # Fallback to /releases/latest in case the atom feed format ever
-  # changes (HTML structure under github.com is more stable than
-  # parsing XML).
-  if [ -z "${TAG}" ]; then
-    EFFECTIVE_URL=$(curl -fsSLI -o /dev/null -w '%{url_effective}' \
-      "https://github.com/${REPO}/releases/latest" || true)
-    TAG="${EFFECTIVE_URL##*/tag/}"
-    case "${TAG}" in v*) ;; *) TAG="" ;; esac
-  fi
-fi
-if [ -z "${TAG}" ]; then
-  echo "Cannot determine the version to install (network issue or repo unreachable)" >&2
-  echo "You can force a specific version: MUROS_VERSION=v0.9.0-rcN curl ... | sudo bash" >&2
+# Register the signed apt repository (apt.muros.org). The whole install,
+# and every later upgrade through apt / unattended-upgrades, flows from
+# here. A leading "v" in MUROS_VERSION is tolerated (tags are vX, the apt
+# version is X).
+echo "[2/4] Registering apt.muros.org"
+install -d -m 0755 /usr/share/keyrings
+if ! curl -fsSL https://apt.muros.org/muros.asc | gpg --dearmor --batch --yes -o "${APT_KEYRING}"; then
+  echo "Cannot fetch the repository signing key from https://apt.muros.org" >&2
+  echo "Check DNS / network and retry." >&2
   exit 1
 fi
-VER="${TAG#v}"
-DEB="muros_${VER}_all.deb"
-URL="https://github.com/${REPO}/releases/download/${TAG}/${DEB}"
-echo "    -> ${TAG}"
-
-echo "[3/4] Telechargement"
-TMP=$(mktemp -d)
-trap 'rm -rf "$TMP"' EXIT
-curl -fL --progress-bar -o "${TMP}/${DEB}" "${URL}"
+echo "deb [signed-by=${APT_KEYRING}] https://apt.muros.org stable main" > "${APT_LIST}"
+apt-get update -qq
+echo "    -> apt.muros.org registered"
 
 # MurOS takes over the entire network/routing control plane (single
 # source of truth = SQLite DB applied via iproute2). Competing managers
@@ -122,7 +75,7 @@ curl -fL --progress-bar -o "${TMP}/${DEB}" "${URL}"
 # this purge (typical DHCP lease is 24h+, so even if the renewer is
 # gone for a few seconds, the IP stays). muros-boot then captures the
 # kernel state in the DB at install time and replays it on every reboot.
-echo "[4/5] Removing competing network managers"
+echo "[3/4] Removing competing network managers"
 PURGE_LIST=""
 for pkg in network-manager network-manager-gnome network-manager-config-connectivity-debian \
            ifupdown resolvconf netplan.io \
@@ -141,7 +94,7 @@ else
   echo "    None installed, nothing to do."
 fi
 
-echo "[5/5] Installing MurOS"
+echo "[4/4] Installing MurOS"
 # If a previous uninstall stashed a data snapshot in /var/backups/muros,
 # we restore it BEFORE installing so the new postinst sees an existing
 # DB and skips first-boot seeding. Picks the most recent stash.
@@ -190,27 +143,38 @@ EOF
 chmod +x "$POLICY"
 trap 'rm -f "$POLICY"; if [ -e "$POLICY_BAK" ]; then mv "$POLICY_BAK" "$POLICY"; fi' EXIT INT TERM
 
-apt-get install -y "${TMP}/${DEB}"
+if [ -n "${MUROS_VERSION:-}" ]; then
+  # Tolerate a leading "v" (release tag form) in the requested version.
+  WANT="${MUROS_VERSION#v}"
+  echo "    -> installing muros=${WANT}"
+  apt-get install -y "muros=${WANT}"
+else
+  apt-get install -y muros
+fi
 
 # Clean up the policy file; trap covers the case where apt-get fails.
 rm -f "$POLICY"
 if [ -e "$POLICY_BAK" ]; then mv "$POLICY_BAK" "$POLICY"; fi
 trap - EXIT INT TERM
 
+VER=$(dpkg-query -W -f='${Version}' muros 2>/dev/null || echo "?")
 IP=$(hostname -I 2>/dev/null | awk '{print $1}')
 cat <<EOF
 
-MurOS ${TAG} installe.
+MurOS ${VER} installed.
 
-  UI     : https://${IP:-<ip-vm>}/  (cert snakeoil auto-signe, accepter le warning navigateur)
-  Login  : admin / muros  (changement de mot de passe au premier login)
+  UI     : https://${IP:-<ip-vm>}/  (self-signed snakeoil cert, accept the browser warning)
+  Login  : admin / muros  (the UI forces a password change on first login)
   Log    : ${LOG}
 
-Verifs :
+Checks:
   systemctl status muros-backend
   journalctl -u muros-backend -n 50 -f
 
-Desinstallation complete (methode officielle, unique) :
-  curl -fsSL https://github.com/${REPO}/releases/latest/download/uninstall.sh | sudo bash
+Later upgrades:
+  apt-get update && apt-get install --only-upgrade muros
+
+Full uninstall (official, single method):
+  curl -fsSL https://apt.muros.org/uninstall.sh | sudo bash
 
 EOF
