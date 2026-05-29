@@ -9,10 +9,12 @@
 
 Website: [muros.org](https://muros.org)
 
-Turn any linux into a firewall. An open source alternative to pfSense
-and OPNsense. Web-managed, Debian-native, zero subscription. Covers the
-90% of small and mid-size business needs: stateful filtering, NAT, VPN
-(WireGuard + IPsec), high availability, multi-WAN, DHCP / DNS, monitoring.
+A firewall appliance built on Debian 13, with every network service
+built natively on top and managed from a single web UI. An open source
+alternative to pfSense and OPNsense. Web-managed, Debian-native, zero
+subscription. Covers the 90% of small and mid-size business needs:
+stateful filtering, NAT, routing, multi-WAN, VPN (WireGuard + IPsec),
+high availability, DHCP, recursive DNS, SNMP, monitoring.
 
 ![MurOS dashboard](docs/screenshots/dashboard.png)
 
