@@ -105,6 +105,8 @@ export default function DnsPage() {
         prefetch: cfg.prefetch,
         forwarders: cfg.forwarders,
         use_as_system_resolver: cfg.use_as_system_resolver,
+        register_dhcp_leases: cfg.register_dhcp_leases,
+        lease_domain: cfg.lease_domain,
       })
     }
   }, [cfg])
@@ -123,6 +125,8 @@ export default function DnsPage() {
     prefetch: cfg.prefetch,
     forwarders: cfg.forwarders,
     use_as_system_resolver: cfg.use_as_system_resolver,
+    register_dhcp_leases: cfg.register_dhcp_leases,
+    lease_domain: cfg.lease_domain,
   })
 
   // Save persists DB + on-disk unbound.conf and stages an unbound
@@ -162,6 +166,8 @@ export default function DnsPage() {
         prefetch: cfg.prefetch,
         forwarders: cfg.forwarders,
         use_as_system_resolver: cfg.use_as_system_resolver,
+        register_dhcp_leases: cfg.register_dhcp_leases,
+        lease_domain: cfg.lease_domain,
       })
       await api.dnsServer.apply()
       setMessage(next ? 'DNS server enabled and unbound started.' : 'DNS server disabled and unbound stopped.')
@@ -390,6 +396,33 @@ function ConfigCard({ form, setForm, dirty, busy, onSave }: {
             <div className="text-xs text-gray-600 mt-1 max-w-2xl">
               When enabled, MurOS itself sends its DNS queries to Unbound on 127.0.0.1. A non-loopback fallback (first forwarder, or 1.1.1.1) is appended to <code className="font-mono">/etc/resolv.conf</code> so apt and curl keep working if Unbound is stopped. A backup of the previous resolv.conf is kept and restored when this toggle is turned off.
             </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-5 border-t border-gray-200 pt-4">
+        <div className="flex items-start gap-2">
+          <Toggle checked={form.register_dhcp_leases}
+            onChange={(v) => setForm({ ...form, register_dhcp_leases: v })} />
+          <div className="flex-1">
+            <div className="text-sm font-medium">Register DHCP hosts in DNS</div>
+            <div className="text-xs text-gray-600 mt-1 max-w-2xl">
+              Publish DHCP reservations and active leases as local DNS
+              records, so LAN clients resolve each other by name (e.g.{' '}
+              <code className="font-mono">nas.{form.lease_domain || 'lan'}</code>).
+              Manual local records always take precedence.
+            </div>
+            {form.register_dhcp_leases && (
+              <label className="block mt-2 max-w-xs">
+                <div className="text-xs font-medium text-gray-600 mb-1">Lease domain</div>
+                <input
+                  className="input font-mono text-sm"
+                  value={form.lease_domain}
+                  onChange={(e) => setForm({ ...form, lease_domain: e.target.value })}
+                  placeholder="lan"
+                />
+              </label>
+            )}
           </div>
         </div>
       </div>

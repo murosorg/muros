@@ -245,6 +245,15 @@ def apply(db: Session) -> None:
     """Backwards-compatible helper: write then reload in a single call."""
     write_conf(db)
     reload(db)
+    # DHCP <-> DNS : reservation changes affect the DNS records published
+    # for the lease domain, so refresh Unbound too. Best-effort: a DNS
+    # reload failure (or DNS disabled) must not fail the DHCP apply.
+    try:
+        from app.services import dns_apply
+
+        dns_apply.apply(db)
+    except Exception:  # noqa: BLE001
+        log.warning("DHCP applied but DNS refresh failed", exc_info=True)
 
 
 def read_active_leases() -> list[dict]:

@@ -125,6 +125,24 @@ def render(db: Session) -> str:
         )
         lines.append(f'  local-data: "{zone} IN {rtype} {_format_rdata(rtype, r.value)}"')
 
+    # DHCP <-> DNS : publish DHCP hostnames under cfg.lease_domain so LAN
+    # clients resolve each other by name. Static reservations come from
+    # the DB (deterministic); dynamic leases are read from the Kea lease
+    # file at apply time. Manual local records above win over leases.
+    if cfg.register_dhcp_leases:
+        existing = {
+            (r.name if r.name.endswith(".") else r.name + ".").lower()
+            for r in records
+        }
+        for host, ip in _dhcp_lease_records(db, cfg.lease_domain):
+            fqdn = f"{host}.{cfg.lease_domain}."
+            if fqdn.lower() in existing:
+                continue
+            existing.add(fqdn.lower())
+            lines.append(f'  local-zone: "{fqdn}" static')
+            lines.append(f'  local-data: "{fqdn} IN A {ip}"')
+            lines.append(f'  local-data-ptr: "{ip} {fqdn}"')
+
     forwarders = (cfg.forwarders or "").strip()
     if forwarders:
         lines.append("")
@@ -134,6 +152,51 @@ def render(db: Session) -> str:
             lines.append(f"  forward-addr: {ip}")
 
     return "\n".join(lines) + "\n"
+
+
+def _sanitize_label(host: str | None) -> str:
+    """Turn a DHCP hostname into a safe single DNS label (or '')."""
+    import re
+
+    h = (host or "").strip().lower()
+    # Clients sometimes send a FQDN; keep only the first label.
+    h = h.split(".")[0]
+    h = re.sub(r"[^a-z0-9-]", "-", h).strip("-")
+    return h[:63]
+
+
+def _dhcp_lease_records(db: Session, domain: str) -> list[tuple[str, str]]:
+    """(hostname, ip) pairs to publish in DNS, from DHCP reservations + leases.
+
+    Static reservations (DB) take precedence over dynamic leases (Kea
+    file). Hostnames are sanitized to valid DNS labels and de-duplicated;
+    a blank hostname is skipped. Reading the lease file is best-effort so
+    rendering never fails when Kea is absent (dev box).
+    """
+    from app import models
+
+    out: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    try:
+        for lease in db.query(models.DhcpStaticLease).all():
+            host = _sanitize_label(lease.hostname)
+            if host and lease.ip and host not in seen:
+                seen.add(host)
+                out.append((host, lease.ip))
+    except Exception:
+        pass
+    try:
+        from app.services import dhcp_apply
+
+        for lease in dhcp_apply.read_active_leases():
+            host = _sanitize_label(lease.get("hostname"))
+            ip = lease.get("ip")
+            if host and ip and host not in seen:
+                seen.add(host)
+                out.append((host, ip))
+    except Exception:
+        pass
+    return out
 
 
 def _format_rdata(rtype: str, value: str) -> str:

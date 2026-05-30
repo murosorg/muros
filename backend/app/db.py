@@ -185,6 +185,24 @@ def _migrate_schema() -> None:
             ))
             conn.commit()
 
+        # DHCP <-> DNS integration columns on dns_config (additive).
+        try:
+            dcols = {c["name"] for c in insp.get_columns("dns_config")}
+        except Exception:
+            dcols = set()
+        if dcols and "register_dhcp_leases" not in dcols:
+            conn.execute(text(
+                "ALTER TABLE dns_config ADD COLUMN register_dhcp_leases "
+                "BOOLEAN NOT NULL DEFAULT 1"
+            ))
+            conn.commit()
+        if dcols and "lease_domain" not in dcols:
+            conn.execute(text(
+                "ALTER TABLE dns_config ADD COLUMN lease_domain "
+                "VARCHAR(63) NOT NULL DEFAULT 'lan'"
+            ))
+            conn.commit()
+
         # rc128 : drop the legacy "Deny all (catch-all)" rule on the
         # forward chain. The chain already has policy drop in the
         # compiler output, so the explicit catch-all rule is redundant

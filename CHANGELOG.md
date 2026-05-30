@@ -2,6 +2,24 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [v0.9.0-rc22] - 2026-05-30
+
+### Added
+- Two-factor authentication (TOTP, RFC 6238) for the web UI login. When
+  enabled on an account, the password step returns a short-lived token
+  and the login asks for a 6-digit code from an authenticator app
+  (POST /api/auth/login/verify). Enrolment is self-service from the HTTP
+  Access page (QR code + manual secret), confirmed with one code; the
+  intermediate token is scoped so it can never be used as an access
+  token. Disabling requires a current valid code. (pyotp dependency.)
+- DHCP <-> DNS integration. Unbound now publishes DHCP hostnames as local
+  DNS records under a configurable lease domain (default "lan"), so LAN
+  clients resolve each other by name (e.g. nas.lan). Static reservations
+  are DB-driven and deterministic; active dynamic leases are read from
+  the Kea lease file on apply. Manual local records take precedence, the
+  WAN is unaffected. Toggle and lease domain on the DNS server page;
+  a DHCP apply now also refreshes the DNS records.
+
 ## [v0.9.0-rc20] - 2026-05-30
 
 ### Changed

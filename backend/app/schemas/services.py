@@ -37,6 +37,19 @@ def _cidr_csv(v: str) -> str:
     return v
 
 
+def _dns_label(v: str) -> str:
+    """Validate the DHCP lease domain as a DNS name (one or more labels)."""
+    import re
+
+    v = (v or "").strip().lower().rstrip(".")
+    if not v:
+        raise ValueError("lease domain cannot be empty")
+    label = r"[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?"
+    if not re.fullmatch(rf"{label}(\.{label})*", v):
+        raise ValueError("invalid DNS domain")
+    return v
+
+
 # --- DHCP ----------------------------------------------------------------
 
 class DhcpConfigOut(BaseModel):
@@ -106,6 +119,8 @@ class DnsConfigOut(BaseModel):
     prefetch: bool
     forwarders: str | None = None
     use_as_system_resolver: bool = False
+    register_dhcp_leases: bool = True
+    lease_domain: str = "lan"
 
 
 class DnsConfigIn(BaseModel):
@@ -115,6 +130,8 @@ class DnsConfigIn(BaseModel):
     prefetch: bool = True
     forwarders: str | None = None  # CSV of IPs, empty -> pure recursive
     use_as_system_resolver: bool = False
+    register_dhcp_leases: bool = True
+    lease_domain: Annotated[str, AfterValidator(_dns_label)] = "lan"
 
 
 class DhcpStatus(BaseModel):

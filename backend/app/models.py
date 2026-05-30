@@ -396,6 +396,14 @@ class DnsConfig(Base):
     # resolver is always appended so apt/curl keep working if Unbound
     # is stopped. Opt-in : default False.
     use_as_system_resolver: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # DHCP <-> DNS integration: when True, MurOS publishes the DHCP
+    # reservations (and current dynamic leases) as local DNS records under
+    # `lease_domain`, so LAN clients resolve each other by hostname
+    # (e.g. nas.lan -> 192.168.1.10). Static reservations are DB-driven
+    # and deterministic; dynamic leases are read from the Kea lease file
+    # whenever the DNS config is applied.
+    register_dhcp_leases: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    lease_domain: Mapped[str] = mapped_column(String(63), default="lan", nullable=False)
 
 
 class DnsLocalRecord(Base):

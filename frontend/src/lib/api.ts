@@ -1422,6 +1422,8 @@ export type DnsServerConfigInput = {
   prefetch: boolean
   forwarders: string | null
   use_as_system_resolver: boolean
+  register_dhcp_leases: boolean
+  lease_domain: string
 }
 
 export type DnsServerConfig = DnsServerConfigInput

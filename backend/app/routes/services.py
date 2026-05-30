@@ -212,6 +212,8 @@ def dns_put(payload: DnsConfigIn, db: Session = Depends(get_db)):
     cfg.prefetch = payload.prefetch
     cfg.forwarders = payload.forwarders
     cfg.use_as_system_resolver = payload.use_as_system_resolver
+    cfg.register_dhcp_leases = payload.register_dhcp_leases
+    cfg.lease_domain = payload.lease_domain
     db.commit()
     db.refresh(cfg)
     _stage_dns(db, summary="DNS config updated")
