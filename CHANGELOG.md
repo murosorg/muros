@@ -4,6 +4,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [v0.9.0-rc85] - 2026-05-30
+
+### Added
+- Regression tests for the compiler chain/zone match clause
+  (`test_compiler_zones.py`): forward matches both interfaces, input keeps
+  only the source interface, output keeps only the destination interface,
+  a stale zone on the firewall side is ignored, and a multi-interface zone
+  expands to an nft set. Locks in the invariant the redesigned rule form
+  relies on.
+
 ## [v0.9.0-rc84] - 2026-05-30
 
 ### Changed
