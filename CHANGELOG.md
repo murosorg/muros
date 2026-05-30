@@ -4,6 +4,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [v0.9.0-rc88] - 2026-05-30
+
+### Removed
+- Dead WireGuard helper cluster in `wireguard.py` (`next_free_peer_ip`
+  and its private helpers `_tunnel_network` / `_used_peer_ips`). These
+  functions had no caller anywhere in the backend, frontend or tests:
+  peer addresses are entered by the operator, not auto-assigned. Removing
+  them drops unreachable code without any behaviour change.
+
 ## [v0.9.0-rc86] - 2026-05-30
 
 ### Added
