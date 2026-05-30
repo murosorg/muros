@@ -154,6 +154,24 @@ def _migrate_schema() -> None:
             ))
             conn.commit()
 
+        # root-only-ui : the web UI is gated on a per-account ui_access
+        # flag. Only root is granted by default (seed_root_user), every
+        # other PAM-valid account stays locked out until root enables it
+        # from the Access > Users page. On upgrade from a release without
+        # this column, existing rows default to ui_access=1 so the admin
+        # account already in use does not get locked out by the upgrade;
+        # seed_root_user then guarantees root itself is always granted.
+        try:
+            ucols = {c["name"] for c in insp.get_columns("users")}
+        except Exception:
+            ucols = set()
+        if ucols and "ui_access" not in ucols:
+            conn.execute(text(
+                "ALTER TABLE users ADD COLUMN ui_access "
+                "BOOLEAN NOT NULL DEFAULT 1"
+            ))
+            conn.commit()
+
         # rc128 : drop the legacy "Deny all (catch-all)" rule on the
         # forward chain. The chain already has policy drop in the
         # compiler output, so the explicit catch-all rule is redundant

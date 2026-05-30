@@ -25,6 +25,7 @@ import HttpAccess from './pages/HttpAccess'
 import Diagnostic from './pages/Diagnostic'
 import DhcpPage from './pages/Dhcp'
 import DnsPage from './pages/Dns'
+import UsersPage from './pages/Users'
 import Login from './pages/Login'
 import { auth, setUnauthorizedHandler } from './lib/api'
 import { ToastHost } from './components/Toast'
@@ -91,6 +92,7 @@ export default function App() {
           {/* DNS sub-routes for bookmarks: server, records. */}
           <Route path="/services/dns/:tab" element={<DnsPage />} />
           <Route path="/access/http" element={<HttpAccess />} />
+          <Route path="/access/users" element={<UsersPage />} />
           {/* Back-compat: ancien path /account redirige vers /access/http. */}
           <Route path="/account" element={<Navigate to="/access/http" replace />} />
           <Route path="/tls" element={<Navigate to="/access/http" replace />} />

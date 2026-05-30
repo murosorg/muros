@@ -4,7 +4,7 @@ Un snapshot est une archive tar.gz contenant :
 - muros.db : copie de la base SQLite
 - nftables.snapshot : sortie de `nft list ruleset`
 - network/interfaces : contenu de /etc/network/interfaces si present
-- network/timesyncd.conf.d/muros.conf : drop-in NTP gere par MurOS
+- chrony/conf.d/muros.conf : drop-in NTP (chrony) gere par MurOS
 - network/resolved.conf.d/muros.conf : drop-in DNS gere par MurOS
 - sysctl.txt : sysctl net.ipv4.ip_forward + ipv6
 - manifest.json : meta (timestamp, version, hostname, label)
@@ -119,8 +119,8 @@ def create_backup(label: str | None = None) -> dict:
         # Fichiers reseau (snapshots a titre informatif, l'application
         # gere DNS et NTP via les drop-ins systemd)
         _add_text(tar, "network/interfaces", _safe_read("/etc/network/interfaces"))
-        _add_text(tar, "network/timesyncd.conf.d/muros.conf",
-                  _safe_read("/etc/systemd/timesyncd.conf.d/muros.conf"))
+        _add_text(tar, "chrony/conf.d/muros.conf",
+                  _safe_read("/etc/chrony/conf.d/muros.conf"))
         _add_text(tar, "network/resolved.conf.d/muros.conf",
                   _safe_read("/etc/systemd/resolved.conf.d/muros.conf"))
         _add_text(tar, "sysctl.txt", _sysctl_dump())

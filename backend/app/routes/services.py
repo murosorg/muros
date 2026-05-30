@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (c) 2026 MurOS contributors.
-"""REST CRUD pour DHCP server (dnsmasq) et DNS recursive (Unbound)."""
+"""REST CRUD for the DHCP server (Kea) and the recursive DNS (Unbound)."""
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -27,7 +27,7 @@ from app.services import dhcp_apply, dns_apply
 
 
 def _stage_dhcp(db: Session, summary: str | None = None) -> None:
-    """Save path: regenerate the dnsmasq drop-in and flag dhcp dirty.
+    """Save path: regenerate the Kea config and flag dhcp dirty.
 
     The live daemon keeps the previous config until the operator clicks
     Apply on the page header, which is the only path that calls
@@ -280,7 +280,7 @@ def dhcp_apply_now(db: Session = Depends(get_db)):
     except DhcpApplyError as exc:
         # Keep the dirty flag set so the UI keeps the orange dot lit.
         raise HTTPException(409, str(exc)) from exc
-    service_dirty.mark_clean(db, "dhcp", summary="dnsmasq reload")
+    service_dirty.mark_clean(db, "dhcp", summary="Kea reload")
     return {"applied": True, **service_dirty.get_state(db, "dhcp")}
 
 

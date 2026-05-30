@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app import __version__
 from app.db import init_db, SessionLocal
 from app.routes import (
-    auth_router, zones_router, interfaces_router, firewall_router,
+    auth_router, users_router, zones_router, interfaces_router, firewall_router,
     nat_router, routes_router, network_router, logs_router, metrics_router,
     backups_router, ntp_router, dns_router, updates_router,
     hardening_router, backup_remote_router, pending_router,
@@ -28,7 +28,13 @@ from app.routes import (
 )
 from app.metrics_history import start as start_metrics_collector, stop as stop_metrics_collector
 from app.routing import apply_all_routes, enable_ip_forwarding
-from app.seed import seed_admin_user, seed_if_empty, seed_snmp_if_missing, apply_snmp_if_enabled
+from app.seed import (
+    seed_root_user,
+    seed_if_empty,
+    seed_snmp_if_missing,
+    seed_ssh_disabled_by_default,
+    apply_snmp_if_enabled,
+)
 
 # Format unique de log :  [LEVEL] logger.name : message
 # Sous systemd (journalctl) le timestamp est ajoute automatiquement, on
@@ -70,7 +76,7 @@ async def lifespan(app: FastAPI):
     init_db()
     enable_ip_forwarding()
     with SessionLocal() as db:
-        seed_admin_user(db)
+        seed_root_user(db)
         # Adoption automatique de la conf reseau au tout premier demarrage.
         # Si la DB est vide ET le marker /var/lib/muros/.adopted est absent,
         # on aspire les interfaces / IPs / routes actives du kernel. Permet
@@ -84,6 +90,7 @@ async def lifespan(app: FastAPI):
             log.exception("Adoption initiale a echoue (non bloquant)")
         seed_if_empty(db)
         seed_snmp_if_missing(db)
+        seed_ssh_disabled_by_default(db)
         apply_all_routes(db)
         apply_snmp_if_enabled(db)
         # Clear false-positive dirty flags : if the operator clicked
@@ -244,6 +251,7 @@ def system_info():
 
 
 app.include_router(auth_router)
+app.include_router(users_router)
 app.include_router(zones_router)
 app.include_router(interfaces_router)
 app.include_router(firewall_router)

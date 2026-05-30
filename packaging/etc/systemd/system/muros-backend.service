@@ -1,8 +1,8 @@
 [Unit]
 Description=MurOS backend API
 Documentation=https://github.com/muros
-After=network-online.target systemd-resolved.service systemd-timesyncd.service
-Wants=network-online.target systemd-resolved.service systemd-timesyncd.service
+After=network-online.target chrony.service
+Wants=network-online.target chrony.service
 
 [Service]
 Type=simple
@@ -21,7 +21,10 @@ RestartSec=3
 # Hardening compatible avec le besoin de privileges reseau
 NoNewPrivileges=no
 ProtectSystem=no
-ProtectHome=yes
+# ProtectHome must stay off: the backend manages the administrator's SSH
+# authorized_keys, and the default administrator is root (home /root).
+# With ProtectHome=yes the backend could not read or write /root/.ssh.
+ProtectHome=no
 PrivateTmp=yes
 ProtectKernelTunables=no
 ProtectControlGroups=yes

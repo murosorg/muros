@@ -68,7 +68,7 @@ def _unit_exists(unit: str) -> bool:
 #      MurOS Wan Monitor (multi-WAN failover engine). Both are
 #      MurOS-native but only start once the admin configures the
 #      corresponding feature, so they belong to the optional half.
-#   3. LAN services published to clients: dnsmasq (DHCP), unbound
+#   3. LAN services published to clients: Kea (DHCP), unbound
 #      (recursive DNS).
 #   4. High availability: keepalived (VRRP) + conntrackd (sync).
 #   5. VPN: strongswan (IPsec) + wg-quick@wg0 (WireGuard).
@@ -88,8 +88,8 @@ _SERVICE_CATALOG = [
     {"unit": "muros-wan-monitor", "display": "MurOS Wan Monitor", "page": "/wan", "category": "muros"},
 
     # 3. LAN services published by the firewall.
-    {"unit": "dnsmasq", "display": "DHCP server (dnsmasq)", "page": "/services/dhcp",
-     "binary": "dnsmasq", "category": "opt"},
+    {"unit": "kea-dhcp4-server", "display": "DHCP server (Kea)", "page": "/services/dhcp",
+     "binary": "kea-dhcp4", "category": "opt"},
     {"unit": "unbound", "display": "DNS recursive (Unbound)", "page": "/services/dns",
      "binary": "unbound", "category": "opt"},
 

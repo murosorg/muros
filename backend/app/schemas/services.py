@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (c) 2026 MurOS contributors.
-"""Schemas Pydantic pour les network services : DHCP (dnsmasq), DNS (Unbound)."""
+"""Schemas Pydantic pour les network services : DHCP (Kea), DNS (Unbound)."""
 import ipaddress
 import re
 from typing import Annotated, Literal

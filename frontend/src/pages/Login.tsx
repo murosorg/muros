@@ -9,7 +9,7 @@ export default function Login() {
   const nav = useNavigate()
   const [params] = useSearchParams()
   const expired = params.get('expired') === '1'
-  const [username, setUsername] = useState('admin')
+  const [username, setUsername] = useState('root')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)

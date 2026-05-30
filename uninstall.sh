@@ -53,10 +53,9 @@ for s in muros-backend muros-watcher muros-boot; do
 done
 # Services optionnels qui n'ont de sens qu'avec MurOS (gere via l'UI).
 # On les arrete et disable, mais on laisse le paquet en place. Le
-# reset-failed evite de laisser une unite en "failed" rouge apres coup
-# (ex dnsmasq/unbound qui se battaient pour le port 53).
+# reset-failed evite de laisser une unite en "failed" rouge apres coup.
 for s in keepalived conntrackd strongswan strongswan-starter \
-         snmpd dnsmasq unbound muros-watcher; do
+         snmpd kea-dhcp4-server unbound muros-watcher; do
   systemctl stop "$s.service" 2>/dev/null || true
   systemctl disable "$s.service" 2>/dev/null || true
   systemctl reset-failed "$s.service" 2>/dev/null || true
@@ -120,7 +119,7 @@ if [ "$PURGE_DEPS" = "1" ]; then
     libcharon-extra-plugins libstrongswan-extra-plugins
     wireguard-tools wireguard
     fail2ban snmpd snmp
-    dnsmasq unbound
+    kea-dhcp4-server kea-common chrony unbound
   "
   for p in $DEPS; do
     if dpkg -l "$p" >/dev/null 2>&1; then
@@ -160,12 +159,17 @@ rm -f /etc/conntrackd/conntrackd.conf 2>/dev/null || true
 # SNMP : drop-in MurOS uniquement (laisse /etc/snmp/snmpd.conf du paquet)
 rm -f /etc/snmp/snmpd.conf.d/muros.conf
 
-# Services reseau V1.2 : drop-ins ecrits par MurOS a l'apply. dnsmasq
-# tourne en DHCP-only (port=0), unbound en resolver recursif. On retire
-# uniquement nos fichiers, les confs des paquets restent intactes.
-rm -f /etc/dnsmasq.d/muros.conf
-rm -f /var/lib/misc/dnsmasq.leases 2>/dev/null || true
+# Services reseau V1.2 : configs ecrites par MurOS. Kea sert le DHCP,
+# unbound le resolver recursif. On retire la config MurOS de Kea, ses
+# leases, et le drop-in unbound. Les confs des paquets restent intactes.
+rm -f /etc/kea/kea-dhcp4.conf
+rm -f /var/lib/kea/kea-leases4.csv 2>/dev/null || true
 rm -f /etc/unbound/unbound.conf.d/muros.conf
+
+# NTP : drop-in chrony ecrit par MurOS. On le retire et on rouvre
+# systemd-timesyncd (masque a l'install) pour que la box garde l'heure.
+rm -f /etc/chrony/conf.d/muros.conf
+systemctl unmask systemd-timesyncd.service 2>/dev/null || true
 
 # DNS : MurOS ecrit /etc/resolv.conf directement et garde un backup
 # .muros-bak. Si l'admin avait une conf DNS pre-MurOS on la restaure.

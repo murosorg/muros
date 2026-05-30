@@ -7,6 +7,16 @@ case "$1" in
       adduser --system --group --no-create-home --home /var/lib/muros muros
     fi
 
+    # Application AND SSH administrator account (PAM authentication).
+    # MurOS authenticates the web UI through PAM against a local Linux
+    # account, and that same account is used for SSH: one set of
+    # credentials covers both the UI and the shell. The default
+    # administrator is the system 'root' account directly, so there is
+    # no separate 'admin' user to create here. Every other Linux account
+    # is refused entry to the web UI until root grants it access from the
+    # Access > Users page (ui_access gate in the backend).
+    MUROS_ADMIN_USER=root
+
     install -d -m 750 -o muros -g muros /etc/muros
     install -d -m 750 -o muros -g muros /var/lib/muros
     install -d -m 750 -o muros -g muros /var/lib/muros/backups
@@ -163,9 +173,22 @@ iface lo inet loopback
 EOF
     fi
 
-    # Active explicitement systemd-timesyncd (sur Debian minimal il peut
-    # etre installe mais pas enable)
-    systemctl enable --now systemd-timesyncd.service || true
+    # NTP : MurOS uses chrony as the time daemon (enabled by default).
+    # chrony is more capable than systemd-timesyncd (real NTP server mode,
+    # better step/slew control, chronyc introspection) and is the service
+    # the UI Time page manages via /etc/chrony/conf.d/muros.conf. Mask
+    # systemd-timesyncd so the two cannot fight over the system clock,
+    # then enable chrony now and at boot.
+    if systemctl list-unit-files systemd-timesyncd.service >/dev/null 2>&1; then
+      systemctl stop systemd-timesyncd.service 2>/dev/null || true
+      systemctl disable systemd-timesyncd.service 2>/dev/null || true
+      systemctl mask systemd-timesyncd.service 2>/dev/null || true
+    fi
+    if systemctl list-unit-files chrony.service >/dev/null 2>&1; then
+      systemctl enable --now chrony.service 2>/dev/null || true
+    elif systemctl list-unit-files chronyd.service >/dev/null 2>&1; then
+      systemctl enable --now chronyd.service 2>/dev/null || true
+    fi
 
     # DNS : MurOS gere /etc/resolv.conf directement (Debian 13 base = pas
     # de systemd-resolved, pas de resolvconf). MurOS a deja maske
@@ -220,6 +243,35 @@ EOF
     # update" in the UI, exactly the services they need to stay up.
     # Gate the reset on $2 being empty (no previous version installed).
     if [ -z "$2" ]; then
+      # Default password for the root administrator on a FRESH install
+      # only. 'muros', flagged must_change_password=True in the DB so the
+      # web UI forces a change at first login. We deliberately do NOT run
+      # `chage -d 0`: an expired Unix password would make PAM refuse the
+      # very login the operator needs to change it from the web UI.
+      echo "$MUROS_ADMIN_USER:muros" | chpasswd 2>/dev/null || true
+
+      # SSH closed by default. openssh-server is a hard dependency so the
+      # binaries are present, but the daemon does not run until the admin
+      # explicitly enables it from the UI (SSH access page) once keys and
+      # zone restrictions are in place. On Debian 13 (trixie) sshd is
+      # socket-activated, so we disable both ssh.service and ssh.socket.
+      for sshunit in ssh.service ssh.socket sshd.service; do
+        if systemctl list-unit-files "$sshunit" >/dev/null 2>&1; then
+          systemctl disable --now "$sshunit" 2>/dev/null || true
+          systemctl reset-failed "$sshunit" 2>/dev/null || true
+        fi
+      done
+
+      # Services that need no prior configuration are enabled by default.
+      # fail2ban protects the web UI / SSH out of the box; it has sane
+      # built-in jails and our /etc/fail2ban/jail.d/muros.local drop-in.
+      # (nginx, muros-backend, muros-boot and chrony are enabled
+      # above / by dh_installsystemd; snmpd is brought up by the
+      # backend at boot from its DB config.)
+      if systemctl list-unit-files fail2ban.service >/dev/null 2>&1; then
+        systemctl enable --now fail2ban.service 2>/dev/null || true
+      fi
+
       # Helper: disable a feature daemon AND clear any lingering "failed"
       # status. A plain `disable --now` stops and un-enables the unit but
       # leaves it marked "failed" in systemd if it had crashed earlier
@@ -248,15 +300,58 @@ EOF
       # canal de notif n'est configure. L'UI le start a l'apply notifications.
       hold_feature_daemon muros-watcher.service
 
-      # V1.2 network services : dnsmasq (DHCP) and Unbound (recursive DNS).
-      # Both stay disabled until the admin configures them from the UI.
-      # dnsmasq defaults to claiming port 53 for DNS, our drop-in disables
-      # it with port=0 but the conf only gets written at apply time, so we
-      # must hold the service back here. Same for Unbound. The reset-failed
-      # inside the helper is what prevents the classic "dnsmasq failed
-      # right after install" caused by the port-53 collision with Unbound.
-      hold_feature_daemon dnsmasq.service
-      hold_feature_daemon unbound.service
+      # V1.2 network services : Kea (DHCP) and Unbound (recursive DNS).
+      # These run without any prior configuration, so MurOS enables them
+      # by default (alongside NTP/chrony and SNMP). Kea is DHCP-only and
+      # never binds port 53, so it coexists cleanly with Unbound: no
+      # collision, both can stay up from install.
+      #
+      # Kea : the stock Debian config can reference a sample subnet that
+      # fails to bind on a fresh box. Drop a minimal, always-valid MurOS
+      # config first (no interface, no subnet = idle daemon), so the
+      # service starts clean and hands out nothing until the admin
+      # configures a pool from the UI (which rewrites this file).
+      install -d -m 0755 /etc/kea
+      if [ ! -f /etc/kea/kea-dhcp4.conf ] \
+         || ! grep -q "managed by MurOS" /etc/kea/kea-dhcp4.conf; then
+        cat > /etc/kea/kea-dhcp4.conf <<'KEAEOF'
+// /etc/kea/kea-dhcp4.conf -- managed by MurOS, do not edit.
+// Idle default config: no interface, no subnet. The MurOS backend
+// rewrites this file when a DHCP pool is configured from the UI.
+{
+  "Dhcp4": {
+    "interfaces-config": { "interfaces": [] },
+    "control-socket": {
+      "socket-type": "unix",
+      "socket-name": "/run/kea/kea4-ctrl-socket"
+    },
+    "lease-database": {
+      "type": "memfile",
+      "persist": true,
+      "name": "/var/lib/kea/kea-leases4.csv"
+    },
+    "valid-lifetime": 43200,
+    "subnet4": [],
+    "loggers": [{
+      "name": "kea-dhcp4",
+      "severity": "INFO",
+      "output_options": [{ "output": "syslog" }]
+    }]
+  }
+}
+KEAEOF
+      fi
+      install -d -m 0750 /var/lib/kea
+      if systemctl list-unit-files kea-dhcp4-server.service >/dev/null 2>&1; then
+        systemctl unmask kea-dhcp4-server.service 2>/dev/null || true
+        systemctl reset-failed kea-dhcp4-server.service 2>/dev/null || true
+        systemctl enable --now kea-dhcp4-server.service 2>/dev/null || true
+      fi
+      if systemctl list-unit-files unbound.service >/dev/null 2>&1; then
+        systemctl unmask unbound.service 2>/dev/null || true
+        systemctl reset-failed unbound.service 2>/dev/null || true
+        systemctl enable --now unbound.service 2>/dev/null || true
+      fi
 
       # Multi-WAN monitor : inactif par defaut. Tant qu'aucun WAN gateway
       # n'est declare dans l'UI, il n'a rien a probe. L'admin l'enable

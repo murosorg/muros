@@ -3,7 +3,7 @@ from fastapi.testclient import TestClient
 
 
 def _login(client):
-    r = client.post("/api/auth/login", json={"username": "admin", "password": "muros"})
+    r = client.post("/api/auth/login", json={"username": "root", "password": "muros"})
     return {"Authorization": f"Bearer {r.json()['access_token']}"}
 
 

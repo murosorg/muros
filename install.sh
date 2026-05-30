@@ -110,12 +110,14 @@ if [ -d /var/backups/muros ] && [ ! -f /var/lib/muros/muros.db ]; then
 fi
 
 # Block auto-start of feature daemons during apt install. The muros
-# package ships every feature daemon (dnsmasq, unbound, snmpd, ...) as
-# a hard Depends so the binaries are present from the start, but those
-# services must stay dormant until the admin enables the corresponding
-# feature from the UI. Debian otherwise starts daemons right after
-# package configure, which causes collisions on port 53 between
-# dnsmasq's default config and unbound's default config.
+# package ships every feature daemon (kea-dhcp4-server, unbound, snmpd,
+# ...) as a hard Depends so the binaries are present from the start.
+# Daemons that need a per-site configuration must stay dormant until the
+# admin enables the corresponding feature from the UI. Debian otherwise
+# starts daemons right after package configure with their stock config,
+# which is unwanted for HA/VPN units. The no-config services (Kea,
+# Unbound, chrony, snmpd) are (re)enabled cleanly by the MurOS postinst
+# right after, with a MurOS-managed config.
 #
 # We install a selective policy-rc.d that returns 101 only for the
 # feature daemons. muros core services (muros-backend, muros-boot,
@@ -132,7 +134,7 @@ cat > "$POLICY" <<'EOF'
 # Installed by MurOS install.sh to block auto-start of feature daemons
 # during apt install. Removed at the end of install.sh.
 case "$1" in
-  dnsmasq|unbound|snmpd|fail2ban|keepalived|conntrackd|\
+  kea-dhcp4-server|unbound|snmpd|fail2ban|keepalived|conntrackd|\
   strongswan|strongswan-starter|strongswan-swanctl|\
   wg-quick@*|systemd-resolved)
     exit 101
@@ -157,20 +159,21 @@ rm -f "$POLICY"
 if [ -e "$POLICY_BAK" ]; then mv "$POLICY_BAK" "$POLICY"; fi
 trap - EXIT INT TERM
 
-# Defensive sweep: make sure no feature daemon is left running or in a
-# "failed" state after install. policy-rc.d blocks auto-start for daemons
-# (re)configured during this apt transaction, but it cannot help when a
-# daemon was already installed AND enabled before MurOS (it is not
-# reconfigured, so its own postinst never runs again and it keeps
-# whatever state it had, possibly "failed" after a port-53 collision
-# between dnsmasq and unbound). We stop, disable and clear the failed
-# status of every optional daemon so a fresh install always lands on a
-# clean "inactive (dead)" baseline. The admin re-enables each feature
-# from the UI. muros core units (backend, boot, nginx) are untouched.
-# Note: snmpd and fail2ban are intentionally absent. They belong to the
-# always-on stack (default observability + mgmt-plane protection) and are
-# enabled by dh_installsystemd, so they must keep running.
-for svc in dnsmasq unbound keepalived conntrackd \
+# Defensive sweep: make sure no CONFIG-REQUIRED feature daemon is left
+# running or in a "failed" state after install. policy-rc.d blocks
+# auto-start for daemons (re)configured during this apt transaction, but
+# it cannot help when a daemon was already installed AND enabled before
+# MurOS (it is not reconfigured, so its own postinst never runs again and
+# it keeps whatever state it had). We stop, disable and clear the failed
+# status of every config-required daemon so a fresh install always lands
+# on a clean "inactive (dead)" baseline for those. The admin re-enables
+# each from the UI once configured.
+#
+# Note: kea-dhcp4-server, unbound, snmpd, chrony and fail2ban are
+# intentionally absent. They run without per-site configuration and
+# belong to the default always-on stack (DHCP/DNS/NTP/SNMP + mgmt-plane
+# protection); the MurOS postinst enables them, so they must keep running.
+for svc in keepalived conntrackd \
            strongswan strongswan-starter wg-quick@wg0 \
            muros-watcher muros-wan-monitor; do
   if systemctl list-unit-files "${svc}.service" >/dev/null 2>&1; then
@@ -186,7 +189,7 @@ cat <<EOF
 MurOS ${VER} installed.
 
   UI     : https://${IP:-<ip-vm>}/  (self-signed snakeoil cert, accept the browser warning)
-  Login  : admin / muros  (the UI forces a password change on first login)
+  Login  : root / muros  (the UI forces a password change on first login)
   Log    : ${LOG}
 
 Checks:

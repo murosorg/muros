@@ -36,7 +36,7 @@ Depends:
  strongswan,
  wireguard-tools,
  openssh-server,
- systemd-timesyncd,
+ chrony,
  fail2ban,
  snmpd,
  snmp,
@@ -47,11 +47,11 @@ Depends:
  systemd,
  libcap2-bin,
  unattended-upgrades,
- dnsmasq,
+ kea-dhcp4-server,
  unbound,
  unbound-anchor
 Conflicts:
- chrony,
+ dnsmasq,
  ntp,
  ntpsec,
  openntpd,

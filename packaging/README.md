@@ -34,8 +34,8 @@ Les autres composants sont persistants nativement :
 | Composant | Persistance |
 |---|---|
 | Sysctl hardening | `/etc/sysctl.d/99-muros-hardening.conf` charge par sysctl --system |
-| NTP | `/etc/systemd/timesyncd.conf.d/muros.conf` lu par systemd-timesyncd |
-| DNS | `/etc/systemd/resolved.conf.d/muros.conf` lu par systemd-resolved |
+| NTP | `/etc/chrony/conf.d/muros.conf` lu par chrony |
+| DNS | `/etc/unbound/unbound.conf.d/muros.conf` lu par unbound (resolver recursif) |
 | HA VRRP | `/etc/keepalived/keepalived.conf` lu par keepalived |
 | HA conntrack | `/etc/conntrackd/conntrackd.conf` lu par conntrackd |
 | HA notify | `/usr/lib/muros/ha-notify.sh` appele a chaque transition VRRP |
@@ -105,11 +105,11 @@ aussi possible de les installer manuellement :
 sudo apt install -y keepalived conntrackd
 ```
 
-Pas besoin d'installer `chrony` ni `unbound` : MurOS s'appuie sur
-`systemd-timesyncd` (NTP) et `systemd-resolved` (DNS) deja livres avec
-Debian 13 via le paquet `systemd`. Les drop-ins generes par MurOS
-posent uniquement `NTP=` et `DNS=`, le reste de la conf reste celle de
-Debian.
+MurOS s'appuie sur `chrony` (NTP) et `unbound` (resolver recursif),
+actives par defaut a l'installation. systemd-timesyncd et
+systemd-resolved sont masques/purges pour ne pas entrer en conflit. Les
+fichiers generes par MurOS posent la liste de serveurs NTP (chrony) et
+la conf du resolver (unbound).
 
 Le paquet `ssl-cert` installe automatiquement une paire de certificats
 snakeoil (`/etc/ssl/certs/ssl-cert-snakeoil.pem` + `/etc/ssl/private/ssl-cert-snakeoil.key`)
@@ -161,7 +161,7 @@ sudo systemctl enable --now muros-backend.service
 ### 4. Acceder a l'UI
 
 Ouvrir `https://<ip-du-boitier>/` (accepter le cert self-signed la
-premiere fois). Le login par defaut est `admin` / `muros`. MurOS force
+premiere fois). Le login par defaut est `root` / `muros`. MurOS force
 un changement de mot de passe au premier login (`must_change_password=true`
 en base).
 

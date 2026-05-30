@@ -25,9 +25,9 @@ import { ServiceStatusInline, type ServiceState } from '../components/ServiceSta
 import { useConfirm } from '../components/ConfirmModal'
 import { Network } from 'lucide-react'
 
-// Page /services/dhcp : dnsmasq DHCP-only.
+// Page /services/dhcp : Kea DHCP-only.
 // Layout : status, global config, pools per interface, static reservations,
-// live leases from /var/lib/misc/dnsmasq.leases.
+// live leases from /var/lib/kea/kea-leases4.csv.
 
 export default function DhcpPage() {
   const [status, setStatus] = useState<DhcpStatus | null>(null)
@@ -95,20 +95,20 @@ export default function DhcpPage() {
     domain: cfg.domain,
   })
 
-  // Save persists DB + on-disk dnsmasq.conf and stages a dnsmasq
+  // Save persists DB + on-disk Kea config and stages a Kea
   // restart. Apply (page header) is the path that actually restarts
-  // dnsmasq.
+  // Kea.
   const saveConfig = async (data: DhcpConfigInput) => {
     setBusy(true); setError(null); setMessage(null)
     try {
       await api.dhcp.updateConfig(data)
-      setMessage('DHCP configuration saved. Click Apply to restart dnsmasq.')
+      setMessage('DHCP configuration saved. Click Apply to restart Kea.')
       await reload()
     } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
   }
 
   // Page-header quick toggle : flips the persisted enabled flag and
-  // applies immediately (start/stop dnsmasq through the regular apply
+  // applies immediately (start/stop Kea through the regular apply
   // pipeline). Independent from the form Apply button so the operator
   // can pause the service without saving unrelated edits.
   const toggleService = async () => {
@@ -116,11 +116,11 @@ export default function DhcpPage() {
     const next = !cfg.enabled
     const ok = await confirm(next ? {
       title: 'Enable DHCP server ?',
-      message: 'dnsmasq will be started now and at every boot. Clients on configured pools will start receiving leases. Make sure no other DHCP server already serves these networks.',
+      message: 'Kea will be started now and at every boot. Clients on configured pools will start receiving leases. Make sure no other DHCP server already serves these networks.',
       confirmLabel: 'Enable',
     } : {
       title: 'Disable DHCP server ?',
-      message: 'dnsmasq will be stopped immediately. New clients will not receive any lease until you re-enable it. Existing leases keep working until they expire.',
+      message: 'Kea will be stopped immediately. New clients will not receive any lease until you re-enable it. Existing leases keep working until they expire.',
       confirmLabel: 'Disable',
       destructive: true,
     })
@@ -134,7 +134,7 @@ export default function DhcpPage() {
         domain: cfg.domain,
       })
       await api.dhcp.apply()
-      setMessage(next ? 'DHCP enabled and dnsmasq started.' : 'DHCP disabled and dnsmasq stopped.')
+      setMessage(next ? 'DHCP enabled and Kea started.' : 'DHCP disabled and Kea stopped.')
       await reload()
     } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
   }
@@ -182,14 +182,14 @@ export default function DhcpPage() {
         serviceEnabled={!!cfg?.enabled}
         serviceToggleBusy={busy || !status?.installed}
         serviceToggleTitle={cfg?.enabled
-          ? 'DHCP server enabled. Click to stop dnsmasq and disable it at boot.'
-          : 'DHCP server disabled. Click to start dnsmasq and enable it at boot.'}
+          ? 'DHCP server enabled. Click to stop Kea and disable it at boot.'
+          : 'DHCP server disabled. Click to start Kea and enable it at boot.'}
         onServiceEnabledChange={toggleService}
         actions={
           <ApplyServiceButton
             service="dhcp"
-            pendingTooltip="Restart dnsmasq to apply the saved configuration."
-            onApplied={() => { void reload(); setMessage('dnsmasq reloaded.') }}
+            pendingTooltip="Restart Kea to apply the saved configuration."
+            onApplied={() => { void reload(); setMessage('Kea reloaded.') }}
             onError={setError}
             disabled={!status?.installed}
             formDirty={cfgDirty}
@@ -203,8 +203,8 @@ export default function DhcpPage() {
 
         {status && !status.installed && (
           <div className="bg-amber-50 border border-amber-200 text-amber-900 px-3 py-3 rounded text-sm">
-            <div className="font-medium">dnsmasq is not installed on this node.</div>
-            <div className="mt-1">Install it with <code className="font-mono">apt install dnsmasq</code>, then refresh this page.</div>
+            <div className="font-medium">Kea is not installed on this node.</div>
+            <div className="mt-1">Install it with <code className="font-mono">apt install kea-dhcp4-server</code>, then refresh this page.</div>
           </div>
         )}
 
@@ -481,7 +481,7 @@ function ConfigCard({ form, setForm, dirty, busy, onSave }: {
         <span className="text-sm">Authoritative on the subnet</span>
       </div>
       <div className="text-xs text-gray-600 mt-1 ml-12">
-        Lets dnsmasq reply DHCPNAK to clients holding a lease from a rogue server.
+        Lets Kea reply DHCPNAK to clients holding a lease from a rogue server.
         Only enable when MurOS is the only DHCP server on the segment.
       </div>
     </div>

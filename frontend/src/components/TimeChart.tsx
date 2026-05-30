@@ -7,6 +7,11 @@ type Props = {
   yFormat?: (v: number) => string
   height?: number
   headerExtra?: React.ReactNode
+  // When set, the x axis is pinned to a fixed time window ending now
+  // ([now - xSpanMs, now]) instead of being derived from the data
+  // extent. Keeps a live chart from horizontally rescaling on every
+  // sample and lets short windows render second-level tick labels.
+  xSpanMs?: number
 }
 
 export default function TimeChart({
@@ -16,6 +21,7 @@ export default function TimeChart({
   yFormat = (v) => v.toFixed(0),
   height = 160,
   headerExtra,
+  xSpanMs,
 }: Props) {
   const allPoints = series.flatMap((s) => s.points)
   if (allPoints.length === 0) {
@@ -32,8 +38,8 @@ export default function TimeChart({
   const innerW = width - padding.left - padding.right
   const innerH = height - padding.top - padding.bottom
 
-  const xMin = Math.min(...allPoints.map((p) => p.x))
-  const xMax = Math.max(...allPoints.map((p) => p.x))
+  const xMax = xSpanMs ? Date.now() : Math.max(...allPoints.map((p) => p.x))
+  const xMin = xSpanMs ? xMax - xSpanMs : Math.min(...allPoints.map((p) => p.x))
   const yObservedMax = Math.max(...allPoints.map((p) => p.y), 1)
   const yLimit = yMax ?? yObservedMax
 
@@ -45,9 +51,14 @@ export default function TimeChart({
 
   // Graduations X (3 reperes)
   const xTicks = [0, 0.5, 1].map((p) => xMin + p * (xMax - xMin))
+  // For sub-hour windows the minute alone repeats across ticks, so we
+  // show minutes:seconds. Longer spans keep the hour:minute format.
+  const shortSpan = (xSpanMs ?? xMax - xMin) <= 30 * 60_000
   const formatTime = (ts: number) => {
     const d = new Date(ts)
-    return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
+    return d.toLocaleTimeString('en-US', shortSpan
+      ? { minute: '2-digit', second: '2-digit', hour12: false }
+      : { hour: '2-digit', minute: '2-digit', hour12: false })
   }
 
   return (

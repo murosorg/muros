@@ -11,7 +11,7 @@ import { useConfirm } from './ConfirmModal'
 // `service` (optional) links the entry to a managed service name from
 // `service_apply_state`. When that service is dirty, an orange dot is
 // rendered next to the entry to surface the pending apply globally.
-const navItems: { to: string; label: string; section: string | null; service?: string }[] = [
+const navItems: { to: string; label: string; section: string | null; service?: string; adminOnly?: boolean }[] = [
   { to: '/', label: 'Dashboard', section: null },
   { to: '/network', label: 'Interfaces', section: 'Network' },
   { to: '/routes', label: 'Routing', section: 'Network' },
@@ -32,6 +32,7 @@ const navItems: { to: string; label: string; section: string | null; service?: s
   { to: '/system', label: 'System', section: 'Administration' },
   { to: '/access/http', label: 'HTTP access', section: 'Administration', service: 'http' },
   { to: '/ssh', label: 'SSH access', section: 'Administration', service: 'ssh' },
+  { to: '/access/users', label: 'Users', section: 'Administration', adminOnly: true },
 ]
 
 export default function Layout() {
@@ -127,12 +128,15 @@ export default function Layout() {
   const grouped = useMemo(() => {
     const g: Record<string, typeof navItems> = {}
     for (const item of navItems) {
+      // Admin-only entries (user management) are hidden from accounts
+      // that root has not promoted to administrator.
+      if (item.adminOnly && !me?.is_admin) continue
       const key = item.section || ''
       if (!g[key]) g[key] = []
       g[key].push(item)
     }
     return g
-  }, [])
+  }, [me])
 
   return (
     <div className="flex h-full">

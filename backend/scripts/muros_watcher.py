@@ -45,9 +45,9 @@ SERVICES: list[str] = [
     "postfix",
     "ssh",
     "sshd",
-    "systemd-timesyncd",
     "chrony",
-    "ntp",
+    "kea-dhcp4-server",
+    "unbound",
     "muros-watcher",
 ]
 

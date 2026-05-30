@@ -1,18 +1,23 @@
-"""Configuration NTP via systemd-timesyncd.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (c) 2026 MurOS contributors.
+"""NTP configuration through chrony.
 
-Sur Debian 13 (Trixie), systemd-timesyncd est le client NTP par defaut. On
-ne touche plus a chrony (paquet optionnel), on s'appuie uniquement sur le
-service systemd natif.
+MurOS uses chrony as its NTP daemon (enabled by default at install).
+chrony is more capable than systemd-timesyncd: it can act as an NTP
+server for the LAN, has finer step/slew control and exposes a rich
+introspection interface via chronyc.
 
-Lecture :
-- `timedatectl show` : etat de la synchro (NTP=, NTPSynchronized=, Timezone=)
-- `timedatectl timesync-status` : detail de la source active
+Reading:
+- ``timedatectl show`` : sync state (NTP=, NTPSynchronized=, Timezone=).
+  These come from the kernel and are populated by any running NTP
+  daemon, chrony included.
+- ``chronyc tracking`` : active reference source and stratum.
 
-Ecriture :
-- MurOS pose un drop-in /etc/systemd/timesyncd.conf.d/muros.conf qui ne
-  contient que la directive `NTP=`. Le reste de la conf systemd reste
-  intact.
-- Apres ecriture : `systemctl restart systemd-timesyncd`.
+Writing:
+- MurOS drops /etc/chrony/conf.d/muros.conf containing only ``server``
+  lines. Debian's stock /etc/chrony/chrony.conf includes conf.d, so the
+  rest of the chrony configuration stays intact.
+- After writing: ``systemctl restart chrony`` (chronyd on some distros).
 """
 from __future__ import annotations
 
@@ -20,8 +25,8 @@ import os
 import subprocess
 from pathlib import Path
 
-MUROS_TIMESYNCD_CONF = Path(os.environ.get(
-    "MUROS_TIMESYNCD_CONF", "/etc/systemd/timesyncd.conf.d/muros.conf",
+MUROS_CHRONY_CONF = Path(os.environ.get(
+    "MUROS_CHRONY_CONF", "/etc/chrony/conf.d/muros.conf",
 ))
 
 DEFAULT_SERVERS = [
@@ -35,60 +40,85 @@ DEFAULT_SERVERS = [
 from app.service_state import which as _which  # noqa: E402
 
 
-def get_backend() -> str:
-    """Retourne 'timesyncd' si la commande timedatectl est presente.
+def _chrony_unit() -> str:
+    """Return the systemd unit name for chrony on this distribution.
 
-    L'unit systemd peut etre inactive ; c'est au `get_status` de le signaler.
-    Sur Ubuntu 24.04, chrony peut etre installe a la place mais MurOS cible
-    timesyncd uniquement (Debian 13 par defaut). Si timedatectl absent, on
-    rend 'none' et l'UI affiche un message explicite.
+    Debian/Ubuntu ship 'chrony.service'; some distros use 'chronyd'.
     """
-    if _which("timedatectl"):
-        return "timesyncd"
+    return "chrony"
+
+
+def get_backend() -> str:
+    """Return 'chrony' when chrony is available, else 'none'."""
+    if _which("chronyc") or _which("chronyd"):
+        return "chrony"
     return "none"
 
 
-def get_status() -> dict:
-    """Etat de la synchro systemd-timesyncd."""
-    if get_backend() != "timesyncd":
-        return {"available": False, "backend": "none"}
+def _timedatectl_info() -> dict:
+    info: dict = {}
     try:
         td = subprocess.check_output(["timedatectl", "show"], text=True, timeout=5)
     except (subprocess.SubprocessError, FileNotFoundError):
-        return {"available": False, "backend": "timesyncd"}
-    info: dict = {}
+        return info
     for line in td.splitlines():
         if "=" in line:
             k, v = line.split("=", 1)
             info[k.strip()] = v.strip()
+    return info
 
-    # Le serveur courant vit dans `timesync-status`, pas dans `show`.
-    server = ""
+
+def _chrony_tracking() -> dict:
+    """Parse `chronyc tracking` into a dict (reference name, stratum)."""
+    out: dict = {}
     try:
-        ts = subprocess.check_output(
-            ["timedatectl", "timesync-status"], text=True, timeout=5,
-        )
-        for line in ts.splitlines():
-            line = line.strip()
-            if line.startswith("Server:"):
-                server = line.split(":", 1)[1].strip().split()[0]
-                break
+        raw = subprocess.check_output(["chronyc", "tracking"], text=True, timeout=5)
     except (subprocess.SubprocessError, FileNotFoundError):
-        pass
+        return out
+    for line in raw.splitlines():
+        if ":" not in line:
+            continue
+        k, v = line.split(":", 1)
+        out[k.strip()] = v.strip()
+    return out
+
+
+def get_status() -> dict:
+    """State of the chrony synchronization."""
+    if get_backend() != "chrony":
+        return {"available": False, "backend": "none"}
+
+    info = _timedatectl_info()
+    tracking = _chrony_tracking()
+
+    # Reference name : 'Reference ID' line looks like
+    # '192.168.1.1 (ntp.example.org)' or 'A29FC87B (time.cloudflare.com)'.
+    ref_name = ""
+    ref_id = tracking.get("Reference ID", "")
+    if "(" in ref_id and ")" in ref_id:
+        ref_name = ref_id[ref_id.find("(") + 1:ref_id.find(")")]
+    elif ref_id:
+        ref_name = ref_id.split()[0]
+
+    stratum = 0
+    try:
+        stratum = int(tracking.get("Stratum", "0") or 0)
+    except ValueError:
+        stratum = 0
 
     ntp_active = info.get("NTP") == "yes"
     synced = info.get("NTPSynchronized") == "yes"
     if synced:
         leap = "Normal"
     elif ntp_active:
-        leap = "En cours"
+        leap = "Synchronizing"
     else:
-        leap = "Service NTP inactif"
+        leap = "NTP service inactive"
     return {
         "available": True,
-        "backend": "timesyncd",
-        "ref_name": server,
-        "stratum": 0,
+        "backend": "chrony",
+        "ref_name": ref_name,
+        "stratum": stratum,
         "leap_status": leap,
         "ntp_synchronized": synced,
         "ntp_active": ntp_active,
@@ -97,43 +127,42 @@ def get_status() -> dict:
 
 
 def get_servers() -> list[str]:
-    """Lit la liste actuelle de serveurs depuis le drop-in MurOS."""
-    if not MUROS_TIMESYNCD_CONF.is_file():
+    """Read the current server list from the MurOS chrony drop-in."""
+    if not MUROS_CHRONY_CONF.is_file():
         return list(DEFAULT_SERVERS)
-    for line in MUROS_TIMESYNCD_CONF.read_text().splitlines():
+    servers: list[str] = []
+    for line in MUROS_CHRONY_CONF.read_text().splitlines():
         s = line.strip()
-        if s.startswith("NTP="):
-            return s[4:].split()
-    return list(DEFAULT_SERVERS)
+        if s.startswith("server "):
+            parts = s.split()
+            if len(parts) >= 2:
+                servers.append(parts[1])
+    return servers or list(DEFAULT_SERVERS)
 
 
 def get_config_path() -> str:
-    return str(MUROS_TIMESYNCD_CONF)
+    return str(MUROS_CHRONY_CONF)
 
 
 def set_servers(servers: list[str]) -> None:
-    """Ecrit le drop-in timesyncd et redemarre le service."""
+    """Write the chrony drop-in and restart the service."""
     cleaned = [s.strip() for s in servers if s.strip()]
     if not cleaned:
-        raise ValueError("au moins un serveur NTP est requis")
-    if get_backend() != "timesyncd":
+        raise ValueError("at least one NTP server is required")
+    if get_backend() != "chrony":
         raise RuntimeError(
-            "systemd-timesyncd indisponible sur ce systeme (commande "
-            "timedatectl manquante)."
+            "chrony is not available on this system (chronyc / chronyd missing)."
         )
-    MUROS_TIMESYNCD_CONF.parent.mkdir(parents=True, exist_ok=True)
-    body = (
-        "# Genere par MurOS, ne pas editer a la main\n"
-        "[Time]\n"
-        "NTP=" + " ".join(cleaned) + "\n"
-    )
-    MUROS_TIMESYNCD_CONF.write_text(body)
-    _restart("systemd-timesyncd")
+    MUROS_CHRONY_CONF.parent.mkdir(parents=True, exist_ok=True)
+    lines = ["# Generated by MurOS, do not edit by hand."]
+    lines += [f"server {host} iburst" for host in cleaned]
+    MUROS_CHRONY_CONF.write_text("\n".join(lines) + "\n")
+    _restart(_chrony_unit())
 
 
 def _restart(service: str) -> None:
     try:
         subprocess.check_call(["systemctl", "restart", service], timeout=10)
     except (subprocess.SubprocessError, FileNotFoundError):
-        # Silencieux : en dev (MUROS_APPLY off), pas de systemctl ou pas de droits.
+        # Silent : in dev (MUROS_APPLY off) there is no systemctl / no rights.
         pass

@@ -17,12 +17,12 @@ os.environ["MUROS_APPLY"] = "0"
 
 @pytest.fixture(scope="session", autouse=True)
 def _init_db():
-    """Initialise la DB de test et seed admin admin/admin."""
+    """Initialize the test DB and seed the default root admin row."""
     from app import db
-    from app.seed import seed_admin_user
+    from app.seed import seed_root_user
     db.init_db()
     with db.SessionLocal() as s:
-        seed_admin_user(s)
+        seed_root_user(s)
     yield
 
 

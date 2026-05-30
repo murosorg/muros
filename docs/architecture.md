@@ -25,7 +25,7 @@ Generated configuration files (rewritten on every Apply):
 /etc/conntrackd/conntrackd.conf              state replication
 /etc/wireguard/wg0.conf                      WireGuard
 /etc/swanctl/conf.d/muros.conf               StrongSwan
-/etc/dnsmasq.d/muros-dhcp.conf               DHCP server
+/etc/kea/kea-dhcp4.conf                      DHCP server (Kea)
 /etc/unbound/unbound.conf.d/muros.conf       recursive DNS
 /etc/ssh/sshd_config.d/muros.conf            SSH drop-in
 /etc/fail2ban/{filter.d,jail.d}/muros*       fail2ban
@@ -50,13 +50,13 @@ DB by `muros-boot.service` before `network-online.target`.
 | nftables | filter + NAT | `nft -f` on Apply |
 | keepalived | VRRP active/passive | restart on HA Apply |
 | conntrackd | conntrack state sync | restart with keepalived |
-| dnsmasq | DHCP only (port=0 for DNS) | restart on DHCP Apply |
+| kea-dhcp4-server | DHCP only (never binds port 53) | restart on DHCP Apply |
 | unbound | recursive DNS | restart on DNS Apply |
 | strongswan | IPsec | swanctl --load-all on IPsec Apply |
 | wg-quick@wg0 | WireGuard tunnel | wg syncconf on peer Apply (no tunnel drop) |
 | fail2ban | bruteforce protection | reload on rule change |
 | snmpd | SNMP agent | restart on SNMP Apply |
-| chrony or systemd-timesyncd | NTP | restart on Time Apply |
+| chrony | NTP (enabled by default) | restart on Time Apply |
 
 ## Apply pipeline
 
@@ -92,7 +92,7 @@ systemd-boot
         - generates /etc/nftables.conf, loads it
      -> network-online.target
      -> muros-backend.service, nginx, keepalived, conntrackd,
-        dnsmasq, unbound, strongswan, wg-quick@wg0 (if enabled)
+        kea-dhcp4-server, unbound, strongswan, wg-quick@wg0 (if enabled)
 ```
 
 A failure in muros-boot is non-fatal for the OS: SSH and the

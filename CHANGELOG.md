@@ -2,6 +2,57 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [v0.9.0-rc9] - 2026-05-30
+
+### Changed
+- Dashboard is now a live view. The summary endpoint is sampled twice
+  per second (was every 3s) and the per-interface traffic and history
+  charts are fed from an in-memory ring buffer instead of the backend
+  60s collector, so they update in real time.
+- History window selector now offers 1 / 5 / 15 minutes and defaults to
+  5 minutes (was 1 / 6 / 12 / 24 hours, default 24h). Time charts pin
+  the x axis to the selected window and show minute:second labels for
+  sub-hour spans.
+- Authentication now goes through PAM: the web UI and SSH share the same
+  Linux accounts. The UI login is validated against the system password
+  (pam_unix on /etc/shadow), and changing the password from the UI also
+  changes it for SSH. The default administrator is the system `root`
+  account (password `muros`, forced change on first UI login). No
+  separate `admin` account is created at install.
+- DHCP server now uses ISC Kea (`kea-dhcp4-server`) instead of dnsmasq.
+  Kea is DHCP-only and never binds port 53, so it coexists with Unbound
+  with no possible collision. The DHCP configuration is rendered to
+  `/etc/kea/kea-dhcp4.conf`; leases are read from the Kea memfile CSV.
+- NTP now uses chrony instead of systemd-timesyncd. chrony is enabled by
+  default and managed from System > Time (`/etc/chrony/conf.d/muros.conf`).
+- No-configuration services start by default at install: DHCP (Kea), DNS
+  (Unbound), NTP (chrony), SNMP, plus the management plane (nginx, backend,
+  fail2ban). Services that need a per-site configuration (HA, VPN) stay
+  disabled until enabled from the UI.
+
+### Added
+- Access > Users page (administrators only). The web UI and SSH share the
+  PAM stack, so any Linux account could authenticate; this page controls
+  which accounts are actually allowed into the web UI. Only `root` is
+  granted by default, every other account stays locked out until root
+  grants it access. Granted accounts can optionally be promoted to
+  administrator.
+
+### Removed
+- The five summary cards at the top of the dashboard (Interfaces up,
+  Total throughput, Conntrack, Pending changes, Last apply). The same
+  information is available from the metric cards and the relevant pages.
+
+### Security
+- SSH is closed by default. `openssh-server` ships but ssh.service /
+  ssh.socket are disabled on a fresh install; the operator opens SSH
+  from the SSH access page once keys and restrictions are in place.
+- Root login over SSH defaults to `prohibit-password` (key only, never
+  password), so root can open an SSH session with a key once SSH is
+  enabled while password login for root stays refused.
+- Web UI access is gated per account: passing PAM is not enough, an
+  account must be explicitly granted access by root to sign in.
+
 ## [v0.9.0-rc6] - 2026-05-29
 
 ### Changed

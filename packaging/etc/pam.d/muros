@@ -1,0 +1,9 @@
+# PAM service for the MurOS web UI.
+#
+# The web UI authenticates operators against the exact same Linux account
+# stack used by local login and SSH, so a single credential set covers
+# both the UI and shell access. We reuse the distribution common-auth /
+# common-account includes (pam_unix against /etc/shadow, plus any site
+# policy already layered there).
+@include common-auth
+@include common-account

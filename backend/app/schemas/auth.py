@@ -67,6 +67,39 @@ class UserOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+# --- User management (root grants web UI access to Linux accounts) ---
+class UserAdminOut(BaseModel):
+    id: int
+    username: str
+    is_admin: bool
+    ui_access: bool
+    must_change_password: bool
+    last_login: datetime | None = None
+    # True when the account still exists in the system passwd database.
+    # A row can outlive its Linux account (account deleted from the
+    # shell); the UI greys those out so root can clean them up.
+    exists_on_system: bool = True
+    model_config = ConfigDict(from_attributes=True)
+
+
+class UsersListOut(BaseModel):
+    users: list[UserAdminOut]
+    # Linux login accounts not yet granted UI access, offered in the
+    # "Grant access" picker.
+    grantable_accounts: list[str]
+
+
+class GrantAccessRequest(BaseModel):
+    username: str = Field(min_length=1, max_length=64)
+    # Promote the account to administrator (can manage other users).
+    is_admin: bool = False
+
+
+class UpdateUserRequest(BaseModel):
+    ui_access: bool | None = None
+    is_admin: bool | None = None
+
+
 class PasswordPolicyOut(BaseModel):
     # Expose les regles de mot de passe pour affichage cote UI (page
     # changement de password). On garde toutes les regles ici plutot que

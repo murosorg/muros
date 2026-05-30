@@ -342,7 +342,8 @@ function RootPasswordPanel() {
       <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
         <h2 className="text-lg font-semibold">Linux password for the root account</h2>
         <div className="text-xs text-gray-600">
-          Different from the MurOS UI password. Used for SSH only when password authentication is enabled.
+          For local console / recovery only. SSH and the web UI use the
+          shared <code>admin</code> account, not root.
         </div>
       </div>
       {err && <div className="mb-3"><ErrorBlock message={err} /></div>}
@@ -416,13 +417,14 @@ function SshKeysPanel() {
 
   return (
     <div className="card">
-      <h2 className="text-lg font-semibold mb-3">Authorized SSH keys for root</h2>
+      <h2 className="text-lg font-semibold mb-3">Authorized SSH keys for the admin account</h2>
       {err && <div className="mb-3"><ErrorBlock message={err} /></div>}
       {msg && <SuccessBlock message={msg} onDismiss={() => setMsg(null)} />}
 
       <div className="text-xs text-gray-600 mb-3">
         Public keys placed in <code>/root/.ssh/authorized_keys</code>. Paste
         the full line: <code className="font-mono">ssh-ed25519 AAAA... comment</code>.
+        SSH and the web UI share the same <code>admin</code> account.
       </div>
 
       <div className="space-y-2">

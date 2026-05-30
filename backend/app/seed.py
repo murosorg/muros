@@ -4,25 +4,75 @@ import logging
 from sqlalchemy.orm import Session
 
 from app import models
-from app.auth import hash_password
 from app.system import list_system_interfaces, get_default_gateway
 
 log = logging.getLogger("muros.seed")
 
 
-def seed_admin_user(db: Session) -> None:
-    """Cree l'utilisateur admin par defaut si aucun utilisateur n'existe."""
-    if db.query(models.User).count() > 0:
+def seed_root_user(db: Session) -> None:
+    """Ensure the 'root' mirror row exists and is granted UI access.
+
+    Authentication is delegated to the system PAM stack: the web UI and
+    SSH share the same Linux accounts. The default administrator is the
+    system 'root' account, whose password is set by the package postinst
+    on a fresh install ('muros', flagged must_change_password). This DB
+    row carries no real password hash, only the JWT subject, the admin
+    flag, the ui_access grant and the must_change_password hint.
+
+    root is the only account granted ui_access by default; every other
+    Linux account stays locked out of the web UI until root enables it
+    from Access > Users. We always (re)assert root's grant here, even on
+    a non-empty DB, so an operator can never accidentally lock root out.
+    """
+    root = db.query(models.User).filter(models.User.username == "root").first()
+    if root is None:
+        # Fresh install: no row yet. Force a password change at first
+        # login only when this is the very first account in the DB (a
+        # brand new appliance). On an upgrade the row is materialized
+        # without the must-change flag (the password is already managed).
+        first_account = db.query(models.User).count() == 0
+        root = models.User(
+            username="root",
+            password_hash="!",  # PAM is the source of truth, not this column
+            is_admin=True,
+            ui_access=True,
+            must_change_password=first_account,
+        )
+        db.add(root)
+        db.commit()
+        log.warning(
+            "Mirror root row created (system account 'root', default "
+            "password 'muros' set at install, must be changed on first login)"
+        )
         return
-    admin = models.User(
-        username="admin",
-        password_hash=hash_password("muros"),
-        is_admin=True,
-        must_change_password=True,
-    )
-    db.add(admin)
+    # Existing row: make sure root keeps admin rights and UI access.
+    if not root.is_admin or not root.ui_access:
+        root.is_admin = True
+        root.ui_access = True
+        db.commit()
+        log.info("root mirror row re-asserted with is_admin + ui_access")
+
+
+# Backwards-compatible alias: older call sites / tests import the
+# previous name. Kept so an in-flight upgrade does not break imports.
+seed_admin_user = seed_root_user
+
+
+def seed_ssh_disabled_by_default(db: Session) -> None:
+    """Sur une install fraiche, SSH est ferme par defaut.
+
+    On materialise la ligne SshConfig avec admin_disabled=True pour que
+    l'UI affiche l'etat 'desactive par l'admin', en miroir du `systemctl
+    disable --now ssh` pose par le postinst sur une install fraiche.
+    L'admin reactive SSH explicitement depuis la page Acces SSH. On ne
+    touche jamais une ligne existante (cas upgrade) : seule la creation
+    initiale impose le defaut ferme.
+    """
+    if db.get(models.SshConfig, 1) is not None:
+        return
+    db.add(models.SshConfig(id=1, admin_disabled=True))
     db.commit()
-    log.warning("Utilisateur admin cree avec mot de passe par defaut 'muros' (a changer)")
+    log.info("SshConfig seede avec admin_disabled=True (SSH ferme par defaut)")
 
 
 def seed_snmp_if_missing(db: Session) -> None:

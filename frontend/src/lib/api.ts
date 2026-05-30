@@ -234,6 +234,21 @@ export type User = {
   last_login: string | null
 }
 
+export type AdminUser = {
+  id: number
+  username: string
+  is_admin: boolean
+  ui_access: boolean
+  must_change_password: boolean
+  last_login: string | null
+  exists_on_system: boolean
+}
+
+export type UsersList = {
+  users: AdminUser[]
+  grantable_accounts: string[]
+}
+
 export type FirewallPending = {
   rules: number
   nat: number
@@ -465,6 +480,15 @@ export const api = {
     me: () => request<User>('GET', '/api/auth/me'),
     changePassword: (current_password: string, new_password: string) =>
       request<User>('POST', '/api/auth/change-password', { current_password, new_password }),
+  },
+
+  users: {
+    list: () => request<UsersList>('GET', '/api/users'),
+    grant: (username: string, is_admin: boolean) =>
+      request<AdminUser>('POST', '/api/users/grant', { username, is_admin }),
+    update: (id: number, data: { ui_access?: boolean; is_admin?: boolean }) =>
+      request<AdminUser>('PUT', `/api/users/${id}`, data),
+    remove: (id: number) => request<void>('DELETE', `/api/users/${id}`),
   },
 
   metrics: {
@@ -1304,7 +1328,7 @@ export type SnmpApplyResult = {
   conf_preview?: string | null
 }
 
-// --- DHCP (dnsmasq) ---
+// --- DHCP (Kea) ---
 
 export type DhcpStatus = {
   enabled: boolean
@@ -1408,7 +1432,7 @@ export type BackupRestoreResult = {
 
 export type NtpStatus = {
   available: boolean
-  backend?: 'timesyncd' | 'none'
+  backend?: 'chrony' | 'none'
   ref_name?: string
   stratum?: number
   last_offset_seconds?: number

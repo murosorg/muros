@@ -35,6 +35,7 @@ override_dh_auto_install:
 	install -D -m 644 packaging/etc/fail2ban/jail.d/muros.local debian/muros/etc/fail2ban/jail.d/muros.local
 	install -D -m 644 packaging/etc/logrotate.d/muros debian/muros/etc/logrotate.d/muros
 	install -D -m 644 packaging/etc/ssh/sshd_config.d/muros.conf debian/muros/etc/ssh/sshd_config.d/muros.conf
+	install -D -m 644 packaging/etc/pam.d/muros debian/muros/etc/pam.d/muros
 	install -D -m 644 packaging/etc/systemd/journald.conf.d/muros.conf debian/muros/etc/systemd/journald.conf.d/muros.conf
 	install -D -m 644 packaging/etc/apt/apt.conf.d/52muros-unattended debian/muros/etc/apt/apt.conf.d/52muros-unattended
 	install -D -m 755 packaging/usr/lib/muros/ha-notify.sh debian/muros/usr/lib/muros/ha-notify.sh

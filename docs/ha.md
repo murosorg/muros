@@ -49,7 +49,7 @@ HTTPS as they happen.
   SSH from the LAN to a DMZ host, IPsec SAs replicated by charon).
 - The active WireGuard interface : peers reconnect within their
   persistent keepalive interval (default 25 s).
-- DHCP leases : dnsmasq writes them to disk in a path that is part
+- DHCP leases : Kea writes them to disk in a path that is part
   of the replicated MurOS DB snapshot.
 
 ## What does NOT survive a failover

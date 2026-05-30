@@ -139,9 +139,10 @@ ALLOWED_UNITS = {
     "openssh-server.service",
     "fail2ban.service",
     "snmpd.service",
+    "chrony.service",
 
     # LAN services published by the firewall.
-    "dnsmasq.service",
+    "kea-dhcp4-server.service",
     "unbound.service",
 
     # High availability.
@@ -228,13 +229,14 @@ def list_known_units() -> list[str]:
         "ssh.service",
         "fail2ban.service",
         "snmpd.service",
+        "chrony.service",
 
         # MurOS optional daemons.
         "muros-watcher.service",
         "muros-wan-monitor.service",
 
         # LAN services published by the firewall.
-        "dnsmasq.service",
+        "kea-dhcp4-server.service",
         "unbound.service",
 
         # High availability.

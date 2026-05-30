@@ -2,6 +2,7 @@
 # Copyright (c) 2026 MurOS contributors.
 """Package routes : re-exporte tous les APIRouter de l'API MurOS."""
 from .auth import auth_router
+from .users import users_router
 from .network_fw import (
     zones_router, interfaces_router, network_router,
     firewall_router, nat_router, routes_router,
@@ -25,6 +26,7 @@ from .service_apply import service_apply_router
 
 __all__ = [
     'auth_router',
+    'users_router',
     'zones_router', 'interfaces_router', 'network_router',
     'firewall_router', 'nat_router', 'routes_router',
     'logs_router', 'metrics_router', 'backups_router',

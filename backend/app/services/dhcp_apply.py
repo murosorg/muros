@@ -1,12 +1,23 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (c) 2026 MurOS contributors.
-"""Generation de /etc/dnsmasq.d/muros.conf + reload du service dnsmasq.
+"""Generation of /etc/kea/kea-dhcp4.conf + reload of the Kea DHCPv4 server.
 
-Mode : dnsmasq en DHCP-only (option `port=0` desactive le DNS embarque,
-on laisse Unbound s'en occuper). Une seule source : la DB MurOS.
+MurOS uses ISC Kea as its DHCPv4 server. Kea is DHCP-only (it never
+binds port 53), so it coexists cleanly with Unbound as the recursive
+resolver: no port collision, both services can run side by side at all
+times. The single source of truth is the MurOS database; this module
+renders the Kea JSON config from it.
+
+Kea is rendered as a self-contained, always-valid config: when DHCP is
+disabled or no pool is defined, the config still loads but serves no
+subnet and binds to no interface (idle daemon). That keeps the service
+running without ever handing out a lease until the operator configures
+a pool, and avoids the classic "daemon failed right after install".
 """
 from __future__ import annotations
 
+import ipaddress
+import json
 import logging
 import os
 import subprocess
@@ -18,21 +29,20 @@ from app.models import DhcpConfig, DhcpPool, DhcpStaticLease, Interface
 
 log = logging.getLogger("muros.dhcp")
 
-CONF_PATH = Path("/etc/dnsmasq.d/muros.conf")
-LEASES_PATH = Path("/var/lib/misc/dnsmasq.leases")
-# Sentinel for tests / dev without systemd : when MUROS_APPLY is
-# off, we neither write the conf nor reload the service. Accept the
-# same set of truthy spellings as the rest of the codebase
-# (env var is set to "true" by the systemd unit).
+SERVICE = "kea-dhcp4-server.service"
+CONF_PATH = Path("/etc/kea/kea-dhcp4.conf")
+LEASES_PATH = Path("/var/lib/kea/kea-leases4.csv")
+# Binary used to validate a rendered config before poking systemd.
+_KEA_BIN = "kea-dhcp4"
 _APPLY = os.environ.get("MUROS_APPLY", "false").lower() in ("1", "true", "yes")
 
 
 class DhcpApplyError(Exception):
-    """Raised when dnsmasq refuses to load the rendered configuration.
+    """Raised when Kea refuses to load the rendered configuration.
 
     Routes catch this and surface it as a 409 to the UI, so a broken
-    pool definition (overlapping ranges, invalid netmask, malformed
-    static lease) does not silently leave the LAN without DHCP.
+    pool definition (overlapping ranges, malformed reservation) does not
+    silently leave the LAN without DHCP.
     """
 
 
@@ -45,219 +55,270 @@ def _get_singleton(db: Session) -> DhcpConfig:
     return cfg
 
 
-def render(db: Session) -> str:
-    """Construit le contenu de muros.conf en memoire (testable sans I/O).
+def _iface_ip(iface: Interface | None) -> str | None:
+    """Return the bare IPv4 address configured on an interface, if any."""
+    if iface is None or not iface.ip_address:
+        return None
+    try:
+        return str(ipaddress.ip_interface(iface.ip_address).ip)
+    except ValueError:
+        return None
 
-    Hors du mode `enabled`, on renvoie une conf neutre (empty) pour que
-    le reload soit no-op. On ne genere PAS le fichier empty : c'est le
-    job du caller (apply) qui le removed pour que dnsmasq n'expose
-    no section DHCP.
+
+def _iface_network(iface: Interface | None) -> str | None:
+    """Return the IPv4 network (CIDR) the interface sits on, if any.
+
+    Kea needs the subnet CIDR for each subnet4 entry. We derive it from
+    the interface address (e.g. 192.168.1.1/24 -> 192.168.1.0/24).
     """
+    if iface is None or not iface.ip_address:
+        return None
+    try:
+        return str(ipaddress.ip_interface(iface.ip_address).network)
+    except ValueError:
+        return None
+
+
+def _build_config(db: Session) -> dict:
+    """Build the Kea DHCPv4 config as a Python dict (testable, no I/O)."""
     cfg = _get_singleton(db)
-    if not cfg.enabled:
-        return ""
 
-    lines: list[str] = [
-        "# /etc/dnsmasq.d/muros.conf -- managed by MurOS, do not edit.",
-        "# DNS embarque desactive : MurOS utilise Unbound pour le recursive.",
-        "port=0",
-        "# Refuse d'avancer si l'interface designee n'est pas montee.",
-        "bind-interfaces",
-        "dhcp-leasefile=/var/lib/misc/dnsmasq.leases",
-    ]
-    if cfg.authoritative:
-        lines.append("dhcp-authoritative")
-    if cfg.domain:
-        lines.append(f"domain={cfg.domain}")
-        lines.append("expand-hosts")
+    interfaces: list[str] = []
+    subnets: list[dict] = []
 
-    pools = db.query(DhcpPool).filter(DhcpPool.enabled.is_(True)).all()
-    if not pools:
-        # enabled=True but no pool yet : we still emit a minimal valid
-        # config so the daemon stays running and the UI shows it as
-        # 'active'. Without any dhcp-range, dnsmasq simply sits idle.
-        # Previous behaviour was to disable the service, which was
-        # confusing ("I toggled it on but the status stays inactive").
-        log.info("DHCP enabled but no active pool, emitting idle conf")
-        return (
-            "# /etc/dnsmasq.d/muros.conf -- managed by MurOS.\n"
-            "# DHCP enabled but no pool yet : daemon idle, DNS disabled.\n"
-            "port=0\n"
-        )
-
-    # Declare every interface that hosts at least one pool exactly
-    # once. Repeating `interface=` is harmless but noisy; deduping keeps
-    # the generated file readable.
-    declared_ifaces: set[str] = set()
+    pools = (
+        db.query(DhcpPool).filter(DhcpPool.enabled.is_(True)).all()
+        if cfg.enabled else []
+    )
     for p in pools:
         iface: Interface | None = p.interface
         if iface is None or not iface.name:
             continue
-        if iface.name not in declared_ifaces:
-            lines.append("")
-            lines.append(f"interface={iface.name}")
-            declared_ifaces.add(iface.name)
+        network = _iface_network(iface)
+        if network is None:
+            # No usable IPv4 on the interface : Kea cannot place the
+            # subnet. Skip rather than emit an invalid subnet4 entry.
+            log.warning(
+                "DHCP pool #%s skipped : interface %s has no IPv4 address",
+                p.id, iface.name,
+            )
+            continue
+        if iface.name not in interfaces:
+            interfaces.append(iface.name)
 
-        lease = p.lease_seconds or cfg.default_lease_seconds
-        # Bind the range to clients arriving on this interface. dnsmasq
-        # auto-tags incoming DHCP requests with the receiving interface
-        # name, so `tag:<iface>` is the documented way to scope a
-        # dhcp-range / dhcp-option to one specific link. Using the bare
-        # interface name here (the previous behavior) was a syntax
-        # error: dnsmasq expects an IP in the first positional and
-        # would either reject the line or silently apply the range
-        # globally.
-        tag = iface.name
-        lines.append(f"# Pool #{p.id} on {iface.name}")
-        lines.append(
-            f"dhcp-range=tag:{tag},{p.range_start},{p.range_end},{lease}s"
+        option_data: list[dict] = []
+        gateway = (p.gateway or "").strip() or _iface_ip(iface)
+        if gateway:
+            option_data.append({"name": "routers", "data": gateway})
+        if p.dns_servers and p.dns_servers.strip():
+            dns = ",".join(
+                s.strip() for s in p.dns_servers.split(",") if s.strip()
+            )
+        else:
+            # Default : hand out the MurOS box itself so clients resolve
+            # through the local Unbound recursive resolver.
+            dns = _iface_ip(iface) or ""
+        if dns:
+            option_data.append({"name": "domain-name-servers", "data": dns})
+        if cfg.domain:
+            option_data.append({"name": "domain-name", "data": cfg.domain})
+
+        reservations: list[dict] = []
+        leases = (
+            db.query(DhcpStaticLease)
+            .filter(DhcpStaticLease.pool_id == p.id)
+            .all()
         )
-        if p.gateway:
-            lines.append(f"dhcp-option=tag:{tag},3,{p.gateway}")
-        if p.dns_servers:
-            dns = ",".join(s.strip() for s in p.dns_servers.split(",") if s.strip())
-            lines.append(f"dhcp-option=tag:{tag},6,{dns}")
-
-        leases = db.query(DhcpStaticLease).filter(DhcpStaticLease.pool_id == p.id).all()
         for l in leases:
-            host = f",{l.hostname}" if l.hostname else ""
-            lines.append(f"dhcp-host={l.mac},{l.ip}{host}")
+            res = {"hw-address": l.mac, "ip-address": l.ip}
+            if l.hostname:
+                res["hostname"] = l.hostname
+            reservations.append(res)
 
-    return "\n".join(lines) + "\n"
+        subnet = {
+            "id": p.id,
+            "subnet": network,
+            "interface": iface.name,
+            "pools": [{"pool": f"{p.range_start} - {p.range_end}"}],
+            "valid-lifetime": p.lease_seconds or cfg.default_lease_seconds,
+        }
+        if option_data:
+            subnet["option-data"] = option_data
+        if reservations:
+            subnet["reservations"] = reservations
+        subnets.append(subnet)
+
+    dhcp4: dict = {
+        "interfaces-config": {"interfaces": interfaces},
+        "control-socket": {
+            "socket-type": "unix",
+            "socket-name": "/run/kea/kea4-ctrl-socket",
+        },
+        "lease-database": {
+            "type": "memfile",
+            "persist": True,
+            "name": str(LEASES_PATH),
+        },
+        "valid-lifetime": cfg.default_lease_seconds,
+        "authoritative": bool(cfg.authoritative),
+        "subnet4": subnets,
+        "loggers": [{
+            "name": "kea-dhcp4",
+            "severity": "INFO",
+            "output_options": [{"output": "syslog"}],
+        }],
+    }
+    return {"Dhcp4": dhcp4}
+
+
+def render(db: Session) -> str:
+    """Render the Kea config JSON as text (always valid, even when idle)."""
+    header = (
+        "// /etc/kea/kea-dhcp4.conf -- managed by MurOS, do not edit.\n"
+        "// Regenerated from the MurOS database on every DHCP apply.\n"
+    )
+    return header + json.dumps(_build_config(db), indent=2) + "\n"
 
 
 def write_conf(db: Session) -> None:
-    """Render and persist /etc/dnsmasq.d/muros.conf only.
+    """Render and persist /etc/kea/kea-dhcp4.conf only (no systemd).
 
-    Does NOT touch systemd. Used by the Save path: the new config is
-    materialised so it survives a reboot via muros-boot, but the live
-    daemon keeps its previous config until the operator clicks Apply.
+    Used by the Save path: the new config is materialised so it survives
+    a reboot, but the live daemon keeps its previous config until the
+    operator clicks Apply.
     """
     if not _APPLY:
-        log.info("MUROS_APPLY=0, skipping dnsmasq.conf write")
+        log.info("MUROS_APPLY=0, skipping kea-dhcp4.conf write")
         return
-    content = render(db)
     CONF_PATH.parent.mkdir(parents=True, exist_ok=True)
-    if content:
-        CONF_PATH.write_text(content)
-    elif CONF_PATH.exists():
-        CONF_PATH.unlink()
+    CONF_PATH.write_text(render(db))
 
 
 def reload(db: Session) -> None:
-    """Restart dnsmasq (or stop it) to pick up the on-disk config.
+    """Validate then restart Kea to pick up the on-disk config.
 
-    Called only by the explicit Apply action from the UI. Assumes
-    write_conf() has already been run by the preceding Save.
+    Kea stays enabled at all times : when DHCP is disabled or has no
+    pool the rendered config is idle (no interface, no subnet), so the
+    daemon runs but hands out nothing. This avoids stop/start churn and
+    keeps the service state predictable on the dashboard.
     """
     if not _APPLY:
-        log.info("MUROS_APPLY=0, skipping dnsmasq reload")
+        log.info("MUROS_APPLY=0, skipping kea reload")
         return
-    cfg = _get_singleton(db)
-    content = render(db)
-    if cfg.enabled and content:
-        # Validate the drop-in before poking systemd. A broken pool /
-        # static lease / option line would put dnsmasq in failed state
-        # and blackhole DHCP for the whole LAN. We catch it here and
-        # surface to the UI as a 409. Best-effort : if dnsmasq is not
-        # installed we proceed (the systemctl call below will surface
-        # the real error).
-        try:
-            check = subprocess.run(
-                ["dnsmasq", "--test", "--conf-file=" + str(CONF_PATH)],
-                capture_output=True, timeout=10,
-            )
-        except FileNotFoundError:
-            check = None
-        if check is not None and check.returncode != 0:
-            raise DhcpApplyError(
-                "dnsmasq --test rejected the generated configuration: "
-                + (check.stderr or check.stdout).decode(errors="replace").strip()
-            )
 
-        # enable+start (idempotent), then restart to ensure the new conf
-        # is picked up. dnsmasq does not support a graceful 'reload' for
-        # all directives, restart is the safe path.
-        subprocess.run(
-            ["systemctl", "unmask", "dnsmasq.service"],
-            capture_output=True, timeout=10,
-        )
-        subprocess.run(
-            ["systemctl", "enable", "dnsmasq.service"],
-            capture_output=True, timeout=10,
-        )
-        r = subprocess.run(
-            ["systemctl", "restart", "dnsmasq.service"],
+    # Validate the rendered config before touching systemd. A broken
+    # pool / reservation would put Kea in a failed state and blackhole
+    # DHCP for the whole LAN. Surface it to the UI as a 409 instead.
+    try:
+        check = subprocess.run(
+            [_KEA_BIN, "-t", str(CONF_PATH)],
             capture_output=True, timeout=15,
         )
-        if r.returncode != 0:
-            log.error(
-                "systemctl restart dnsmasq failed (rc=%s): %s",
-                r.returncode, r.stderr.decode(errors="replace").strip(),
-            )
-    else:
-        subprocess.run(
-            ["systemctl", "disable", "--now", "dnsmasq.service"],
-            capture_output=True, timeout=10,
+    except FileNotFoundError:
+        check = None
+    if check is not None and check.returncode != 0:
+        raise DhcpApplyError(
+            "kea-dhcp4 -t rejected the generated configuration: "
+            + (check.stderr or check.stdout).decode(errors="replace").strip()
+        )
+
+    subprocess.run(
+        ["systemctl", "unmask", SERVICE],
+        capture_output=True, timeout=10,
+    )
+    subprocess.run(
+        ["systemctl", "enable", SERVICE],
+        capture_output=True, timeout=10,
+    )
+    r = subprocess.run(
+        ["systemctl", "restart", SERVICE],
+        capture_output=True, timeout=15,
+    )
+    if r.returncode != 0:
+        log.error(
+            "systemctl restart %s failed (rc=%s): %s",
+            SERVICE, r.returncode, r.stderr.decode(errors="replace").strip(),
         )
 
 
 def apply(db: Session) -> None:
-    """Backwards-compatible helper: write then reload in a single call.
-
-    Kept for code paths that pre-date the Save / Apply split (legacy
-    tests, watcher cron). New routes call write_conf() at Save time and
-    reload() only on explicit Apply.
-    """
+    """Backwards-compatible helper: write then reload in a single call."""
     write_conf(db)
     reload(db)
 
 
 def read_active_leases() -> list[dict]:
-    """Parse /var/lib/misc/dnsmasq.leases.
+    """Parse the Kea memfile lease CSV (/var/lib/kea/kea-leases4.csv).
 
-    Line format produced by dnsmasq :
-      <expiry_epoch> <mac> <ip> <hostname> <client_id>
-
-    Hostname is `*` when the client did not send one. expiry_epoch is 0
-    for static leases (no expiry).
+    Kea appends a new row every time a lease changes, so the same
+    address can appear several times; the last row wins. A row with
+    valid_lifetime 0 (or expire in the past) is an expired / released
+    lease and is dropped. CSV columns (Kea 2.x memfile schema):
+      address,hwaddr,client_id,valid_lifetime,expire,subnet_id,
+      fqdn_fwd,fqdn_rev,hostname,state,user_context,pool_id
     """
-    out: list[dict] = []
+    out: dict[str, dict] = {}
     if not LEASES_PATH.is_file():
-        return out
+        return []
     try:
-        for raw in LEASES_PATH.read_text(errors="replace").splitlines():
-            parts = raw.strip().split()
-            if len(parts) < 4:
-                continue
-            expiry = parts[0]
-            try:
-                expiry_int = int(expiry)
-            except ValueError:
-                expiry_int = 0
-            out.append({
-                "expiry": expiry_int,
-                "mac": parts[1],
-                "ip": parts[2],
-                "hostname": parts[3] if parts[3] != "*" else None,
-                "client_id": parts[4] if len(parts) >= 5 else None,
-            })
+        import csv
+        with LEASES_PATH.open(newline="", errors="replace") as fh:
+            reader = csv.reader(fh)
+            header = next(reader, None)
+            if header is None:
+                return []
+            idx = {name: i for i, name in enumerate(header)}
+
+            def col(row, name):
+                i = idx.get(name)
+                return row[i] if i is not None and i < len(row) else ""
+
+            for row in reader:
+                if not row:
+                    continue
+                address = col(row, "address")
+                if not address:
+                    continue
+                try:
+                    expire = int(col(row, "expire") or 0)
+                except ValueError:
+                    expire = 0
+                try:
+                    vlt = int(col(row, "valid_lifetime") or 0)
+                except ValueError:
+                    vlt = 0
+                hostname = col(row, "hostname") or None
+                entry = {
+                    "expiry": expire,
+                    "mac": col(row, "hwaddr"),
+                    "ip": address,
+                    "hostname": hostname,
+                    "client_id": col(row, "client_id") or None,
+                    "_vlt": vlt,
+                }
+                # Last row for an address wins (most recent state).
+                out[address] = entry
     except OSError:
-        pass
-    return out
+        return []
+    # Drop released leases (valid_lifetime 0) and strip helper field.
+    result = []
+    for e in out.values():
+        if e.pop("_vlt", 0) == 0:
+            continue
+        result.append(e)
+    return result
 
 
 def get_status(db: Session) -> dict:
     """Return a snapshot of the DHCP server state."""
     from app.service_state import service_state, pkg_version, which
-    from app.models import DhcpPool, DhcpStaticLease
     cfg = _get_singleton(db)
     leases = read_active_leases()
     return {
         "enabled": cfg.enabled,
-        "installed": which("dnsmasq"),
-        "service_state": service_state("dnsmasq.service"),
-        "version": pkg_version("dnsmasq"),
+        "installed": which(_KEA_BIN),
+        "service_state": service_state(SERVICE),
+        "version": pkg_version("kea-dhcp4-server"),
         "pools_count": db.query(DhcpPool).count(),
         "static_leases_count": db.query(DhcpStaticLease).count(),
         "active_leases_count": len(leases),

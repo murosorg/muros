@@ -79,3 +79,14 @@ def current_user(
     if not user:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User not found")
     return user
+
+
+def require_admin(user: models.User = Depends(current_user)) -> models.User:
+    """Dependency guarding admin-only endpoints (user management).
+
+    Only accounts flagged is_admin (root, plus any account root has
+    promoted) may manage which Linux users are allowed into the web UI.
+    """
+    if not user.is_admin:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Administrator rights required")
+    return user

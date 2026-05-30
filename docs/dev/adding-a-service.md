@@ -1,7 +1,7 @@
 # Adding a managed service
 
 A "managed service" in MurOS is a UI page that owns one (or a small
-cluster of) systemd daemon(s) : DHCP / dnsmasq, DNS / unbound, SNMP /
+cluster of) systemd daemon(s) : DHCP / Kea, DNS / unbound, SNMP /
 snmpd, WireGuard, IPsec / strongSwan, HA / keepalived + conntrackd,
 SSH access, HTTP access, Notifications. This document is the
 reference template every new service must follow so the Save / Apply
@@ -24,7 +24,7 @@ def reload(db: Session) -> None:
     """Restart / reload the daemon to pick up the on-disk config.
 
     Validate the rendered config first (e.g. `unbound-checkconf`,
-    `dnsmasq --test`, `swanctl --load-conns -n`). Raise a service-
+    `kea-dhcp4 -t`, `swanctl --load-conns -n`). Raise a service-
     specific `<Name>ApplyError` when validation fails so the route can
     surface it as a 409 and keep the dirty flag lit.
     """
@@ -95,7 +95,7 @@ Add `"<name>"` to `KNOWN_SERVICES` in
 ## 5. Drift reconciliation on startup
 
 If the daemon loads its drop-in config at OS boot independently of
-the MurOS backend (dnsmasq, unbound, snmpd, fail2ban, snmpd, ...),
+the MurOS backend (Kea, unbound, snmpd, fail2ban, ...),
 add a branch to `service_dirty.reconcile_on_startup` that compares
 SHA256 of the rendered conf to the on-disk conf and calls
 `mark_clean()` when they match. Otherwise leftover dirty flags from

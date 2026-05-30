@@ -794,11 +794,11 @@ cat ${key?.key_path || keyPath}.pub`}</pre>
 
 /* --- Onglet NTP --- */
 function NtpTab() {
-  // Bloc minimaliste : on s'appuie sur systemd-timesyncd natif de Debian 13.
-  // MurOS lit l'etat via `timedatectl show` et pose un drop-in
-  // /etc/systemd/timesyncd.conf.d/muros.conf avec la liste de serveurs.
-  // Pas de table de sources, pas de stratum/poll/reach. Si quelqu'un veut
-  // ce detail il fait `timedatectl timesync-status` en SSH.
+  // Minimal block : MurOS relies on chrony, enabled by default at
+  // install. It reads the state via `timedatectl show` + `chronyc
+  // tracking` and drops /etc/chrony/conf.d/muros.conf with the server
+  // list. No source table here; for that detail run `chronyc sources`
+  // over SSH.
   const [status, setStatus] = useState<NtpStatus | null>(null)
   const [config, setConfig] = useState<NtpServers | null>(null)
   const [serversText, setServersText] = useState<string>('')
@@ -828,21 +828,21 @@ function NtpTab() {
     <div>
       {error && <div className="mb-4"><ErrorBlock message={error} /></div>}
       <Section
-        title="systemd-timesyncd synchronization"
+        title="chrony synchronization"
         actions={<button className="btn-secondary" onClick={reload}>Refresh</button>}
       >
         {status === null && <LoadingState variant="inline" />}
         {status?.available === false && (
           <div className="text-sm text-gray-800 border border-amber-300 bg-amber-50 rounded p-3">
-            systemd-timesyncd unavailable. Check that the package is installed and the service is active.
+            chrony unavailable. Check that the package is installed and the service is active.
           </div>
         )}
         {status?.available && (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <Stat label="Synchronise" value={status.ntp_synchronized ? 'oui' : 'non'} />
+            <Stat label="Synchronized" value={status.ntp_synchronized ? 'yes' : 'no'} />
             <Stat label="Service active" value={status.ntp_active ? 'yes' : 'no'} />
             <Stat label="Current source" value={status.ref_name || '(none)'} mono />
-            <Stat label="Fuseau" value={status.timezone || '-'} />
+            <Stat label="Timezone" value={status.timezone || '-'} />
           </div>
         )}
       </Section>
@@ -854,12 +854,12 @@ function NtpTab() {
             onApply={save}
             busy={working}
             dirty={!!config && serversText.trim() !== config.servers.join(' ').trim()}
-            title="Save the server list and restart systemd-timesyncd."
+            title="Save the server list and restart chrony."
           />
         }
       >
         <p className="text-xs text-gray-700 mb-2">
-          Space-separated server list. Written to <code className="font-mono">{config?.config_path || '/etc/systemd/timesyncd.conf.d/muros.conf'}</code>.
+          Space-separated server list. Written to <code className="font-mono">{config?.config_path || '/etc/chrony/conf.d/muros.conf'}</code>.
           The service is restarted after each save.
         </p>
         <input

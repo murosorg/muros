@@ -55,6 +55,12 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=True)
     must_change_password: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Web UI access gate. The MurOS web UI and SSH share the system PAM
+    # stack, so any local Linux account can in theory pass authentication.
+    # ui_access decides whether that account is allowed into the web UI:
+    # only 'root' is granted by default, every other account stays locked
+    # out until root explicitly enables it from the Access > Users page.
+    ui_access: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     last_login: Mapped[datetime | None] = mapped_column(DateTime)
 
@@ -290,12 +296,13 @@ class WanGateway(Base):
 
 
 class DhcpConfig(Base):
-    """Singleton holding the global DHCP server settings (dnsmasq DHCP-only).
+    """Singleton holding the global DHCP server settings (Kea DHCPv4).
 
-    dnsmasq is started in DHCP-only mode (port=0). DNS resolution on the
-    box is delegated to Unbound. The service is stopped while
-    `enabled=False`; no lease is handed out. Each apply regenerates
-    /etc/dnsmasq.d/muros.conf and reloads dnsmasq (or stops it).
+    MurOS uses ISC Kea as a DHCP-only server; it never binds port 53, so
+    it coexists with Unbound (recursive DNS) without any collision. Kea
+    stays running at all times: while `enabled=False` (or no pool is
+    defined) the rendered config is idle and serves nothing. Each apply
+    regenerates /etc/kea/kea-dhcp4.conf and restarts kea-dhcp4-server.
     """
     __tablename__ = "dhcp_config"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
@@ -311,9 +318,10 @@ class DhcpConfig(Base):
 class DhcpPool(Base):
     """One DHCP range bound to a single interface (one subnet).
 
-    dnsmasq raises an error if two ranges are declared on the same
-    interface; we enforce a unique constraint at the column level and
-    re-check at the API layer to return a clean 400 instead of a 500.
+    Kea derives the subnet CIDR from the interface address, so a pool is
+    tied to exactly one interface; we enforce a unique constraint at the
+    column level and re-check at the API layer to return a clean 400
+    instead of a 500.
     """
     __tablename__ = "dhcp_pools"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -322,11 +330,12 @@ class DhcpPool(Base):
     )
     range_start: Mapped[str] = mapped_column(String(64), nullable=False)
     range_end: Mapped[str] = mapped_column(String(64), nullable=False)
-    # Optional gateway pushed to clients. Empty -> dnsmasq derives it
-    # from the interface IP itself (the common case).
+    # Optional gateway pushed to clients (DHCP option routers). Empty ->
+    # MurOS uses the interface IP itself (the common case).
     gateway: Mapped[str | None] = mapped_column(String(64))
-    # CSV of DNS servers handed to clients. Empty -> dnsmasq pushes its
-    # own IP, which forwards to Unbound on the box. Standard PME case.
+    # CSV of DNS servers handed to clients. Empty -> MurOS pushes the
+    # interface IP, which resolves through Unbound on the box. Standard
+    # PME case.
     dns_servers: Mapped[str | None] = mapped_column(String(512))
     lease_seconds: Mapped[int | None] = mapped_column(Integer)  # NULL = inherit global default
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
@@ -336,7 +345,7 @@ class DhcpPool(Base):
 
 
 class DhcpStaticLease(Base):
-    """Static MAC-to-IP reservation served by dnsmasq dhcp-host=.
+    """Static MAC-to-IP reservation served as a Kea host reservation.
 
     Lets fixed hosts (printers, NAS, servers) always receive the same IP
     over DHCP without touching their local config.
@@ -706,8 +715,12 @@ class SshConfig(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
     port: Mapped[int] = mapped_column(Integer, default=22, nullable=False)
-    # prohibit-password = root par cle SSH OK, par mot de passe refuse
-    # (defaut Debian 13 cloud-init, evite le lock-out sur install fresh)
+    # prohibit-password = root may log in over SSH with a public key but
+    # never with a password. The web UI and SSH share the same account and
+    # the default administrator is 'root', so root must be able to open an
+    # SSH session once the admin enables SSH and uploads a key. Password
+    # login for root stays refused; the operator can still tighten this to
+    # 'no' or loosen it to 'yes' from the UI.
     permit_root_login: Mapped[str] = mapped_column(String(16), default="prohibit-password", nullable=False)
     password_authentication: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     pubkey_authentication: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

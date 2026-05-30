@@ -196,9 +196,51 @@ def render_dropin(cfg) -> str:
     return "\n".join(lines) + "\n"
 
 
-# --- Gestion de /root/.ssh/authorized_keys ---
+# --- authorized_keys management for the administrator account ---
+#
+# The web UI and SSH share the same Linux account, and the default
+# administrator is 'root'. We manage that account's keys in its own home
+# directory (/root/.ssh/authorized_keys for root, /home/<user>/.ssh for
+# any other login). With root as the administrator, PermitRootLogin must
+# allow key-based login; MurOS defaults it to 'prohibit-password' so root
+# can connect over SSH with a key but never with a password.
 
-AUTHORIZED_KEYS_PATH = "/root/.ssh/authorized_keys"
+ADMIN_USER = os.environ.get("MUROS_ADMIN_USER", "root")
+
+
+def _home_dir(user: str) -> str:
+    """Return the home directory of a login account.
+
+    root's home is /root, not /home/root. We resolve it from the passwd
+    database when available and fall back to the conventional layout on a
+    dev box that has no such account.
+    """
+    try:
+        import pwd
+        return pwd.getpwnam(user).pw_dir or ("/root" if user == "root" else f"/home/{user}")
+    except (KeyError, ImportError):
+        return "/root" if user == "root" else f"/home/{user}"
+
+
+AUTHORIZED_KEYS_PATH = os.environ.get(
+    "MUROS_AUTHORIZED_KEYS", f"{_home_dir(ADMIN_USER)}/.ssh/authorized_keys"
+)
+
+
+def _chown_admin(path: str) -> None:
+    """Best-effort chown of a path to the administrator login account.
+
+    sshd's StrictModes refuses authorized_keys not owned by the login
+    user. The backend writes as root, so we hand ownership back to the
+    administrator account. Silently ignored when the account does not
+    exist (dev box) or on permission errors.
+    """
+    try:
+        import pwd
+        ent = pwd.getpwnam(ADMIN_USER)
+        os.chown(path, ent.pw_uid, ent.pw_gid)
+    except (KeyError, ImportError, OSError):
+        pass
 
 # Algos supportes (ordre = preference)
 SSH_KEY_TYPES = (
@@ -297,6 +339,11 @@ def add_authorized_key(key_text: str) -> dict:
     with open(AUTHORIZED_KEYS_PATH, "a", encoding="utf-8") as f:
         f.write(line)
     os.chmod(AUTHORIZED_KEYS_PATH, 0o600)
+    # sshd enforces StrictModes: the .ssh dir and authorized_keys must be
+    # owned by the login user. The backend runs as root, so chown back to
+    # the admin account after writing.
+    _chown_admin(ssh_dir)
+    _chown_admin(AUTHORIZED_KEYS_PATH)
 
     return {"added": True, "fingerprint": parsed["fingerprint"]}
 
@@ -330,6 +377,7 @@ def delete_authorized_key(key_b64: str) -> dict:
         f.writelines(new_lines)
     os.chmod(tmp, 0o600)
     os.replace(tmp, AUTHORIZED_KEYS_PATH)
+    _chown_admin(AUTHORIZED_KEYS_PATH)
     return {"deleted": True}
 
 

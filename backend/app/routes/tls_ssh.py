@@ -5,8 +5,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app import models, schemas, service_dirty
-from app.auth import current_user, verify_password
+from app import models, pam_auth, schemas, service_dirty
+from app.auth import current_user
 from app.db import get_db
 
 _auth_dep = [Depends(current_user)]
@@ -286,8 +286,8 @@ def ssh_set_root_password(
     eviter qu'une session laissee ouverte permette de changer le mdp root).
     Different du compte UI MurOS qui se change via /api/auth/change-password.
     """
-    # Verrou : on demande la reauth avec le mdp UI courant.
-    if not verify_password(data.current_ui_password, user.password_hash):
+    # Verrou : on demande la reauth avec le mdp UI courant (via PAM).
+    if not pam_auth.authenticate(user.username, data.current_ui_password):
         raise HTTPException(400, "Mot de passe MurOS actuel incorrect.")
 
     from app import ssh_config

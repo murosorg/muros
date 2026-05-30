@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { api, MetricsHistory, MetricsSummary, SystemService } from '../lib/api'
+import { api, MetricsSummary, SystemService } from '../lib/api'
 import PageHeader from '../components/PageHeader'
 import LoadingState from '../components/LoadingState'
 import { fmt } from '../lib/format'
@@ -9,8 +9,14 @@ import TimeChart from '../components/TimeChart'
 import { ErrorBlock } from '../components/Alerts'
 import { Gauge } from 'lucide-react'
 
-const HISTORY_LENGTH = 60  // 60 echantillons * 3s = 3 min
-const REFRESH_INTERVAL = 3000
+// Live dashboard: we sample the summary endpoint twice per second so the
+// charts feel alive, and keep an in-memory ring buffer covering the
+// widest selectable window. The history charts are no longer fed by the
+// backend 60s collector: everything you see here is the live stream of
+// the last few minutes, computed client side.
+const REFRESH_INTERVAL = 500          // 0.5s real-time refresh
+const MAX_WINDOW_MINUTES = 15         // widest selectable history window
+const MAX_SAMPLES = Math.ceil((MAX_WINDOW_MINUTES * 60 * 1000) / REFRESH_INTERVAL)
 
 // Wrappers around the centralized helper lib/format.ts. We keep local
 // names to minimize the diff at call sites, but the logic comes from
@@ -29,18 +35,25 @@ function usageColor(pct: number): string {
   return 'text-red-700'
 }
 
+// A timestamped point. x is a ms epoch, y the value. Every in-memory
+// series is stored this way so the time charts can plot against a real
+// time axis and the per-interface sparklines just read the y values.
+type Pt = { x: number; y: number }
+
 type History = {
-  cpu: number[]
-  mem: number[]
-  conntrack: number[]
-  ifRx: Map<string, number[]>
-  ifTx: Map<string, number[]>
+  cpu: Pt[]
+  mem: Pt[]
+  load1: Pt[]
+  load5: Pt[]
+  conntrackPct: Pt[]
+  conntrackCur: Pt[]
+  ifRx: Map<string, Pt[]>
+  ifTx: Map<string, Pt[]>
 }
 
 export default function Monitoring() {
   const [data, setData] = useState<MetricsSummary | null>(null)
-  const [history, setHistory] = useState<MetricsHistory | null>(null)
-  const [historyHours, setHistoryHours] = useState(24)
+  const [windowMinutes, setWindowMinutes] = useState(5)
   const [error, setError] = useState<string | null>(null)
   const [services, setServices] = useState<SystemService[]>([])
 
@@ -53,12 +66,11 @@ export default function Monitoring() {
     return () => clearInterval(id)
   }, [])
   const historyRef = useRef<History>({
-    cpu: [], mem: [], conntrack: [], ifRx: new Map(), ifTx: new Map(),
+    cpu: [], mem: [], load1: [], load5: [], conntrackPct: [], conntrackCur: [],
+    ifRx: new Map(), ifTx: new Map(),
   })
   const prevIfRef = useRef<Map<string, { rx: number; tx: number; ts: number }>>(new Map())
   const [ifRates, setIfRates] = useState<Map<string, { rx: number; tx: number }>>(new Map())
-  const [lastApply, setLastApply] = useState<{ firewall: string | null; network: string | null }>({ firewall: null, network: null })
-  const [pendingCount, setPendingCount] = useState<number>(0)
 
   const tick = async () => {
     try {
@@ -66,13 +78,24 @@ export default function Monitoring() {
       setData(s)
       setError(null)
 
+      const now = Date.now()
+      // Drop points older than the widest window and cap the length so
+      // the buffers stay bounded even after hours on the page.
+      const trim = (pts: Pt[]): Pt[] => {
+        const cutoff = now - MAX_WINDOW_MINUTES * 60_000
+        const out = pts.filter((p) => p.x >= cutoff)
+        return out.length > MAX_SAMPLES ? out.slice(-MAX_SAMPLES) : out
+      }
+
       const h = historyRef.current
-      h.cpu = [...h.cpu, s.cpu_usage_percent].slice(-HISTORY_LENGTH)
-      h.mem = [...h.mem, s.memory.used_percent].slice(-HISTORY_LENGTH)
-      h.conntrack = [...h.conntrack, s.conntrack.used_percent].slice(-HISTORY_LENGTH)
+      h.cpu = trim([...h.cpu, { x: now, y: s.cpu_usage_percent }])
+      h.mem = trim([...h.mem, { x: now, y: s.memory.used_percent }])
+      h.load1 = trim([...h.load1, { x: now, y: s.load[0] ?? 0 }])
+      h.load5 = trim([...h.load5, { x: now, y: s.load[1] ?? 0 }])
+      h.conntrackPct = trim([...h.conntrackPct, { x: now, y: s.conntrack.used_percent }])
+      h.conntrackCur = trim([...h.conntrackCur, { x: now, y: s.conntrack.current }])
 
       // Per-interface throughput (delta / time)
-      const now = Date.now()
       const rates = new Map<string, { rx: number; tx: number }>()
       for (const iface of s.interfaces) {
         const prev = prevIfRef.current.get(iface.name)
@@ -82,8 +105,8 @@ export default function Monitoring() {
             const rx = Math.max(0, (iface.rx_bytes - prev.rx) / dt)
             const tx = Math.max(0, (iface.tx_bytes - prev.tx) / dt)
             rates.set(iface.name, { rx, tx })
-            h.ifRx.set(iface.name, [...(h.ifRx.get(iface.name) || []), rx].slice(-HISTORY_LENGTH))
-            h.ifTx.set(iface.name, [...(h.ifTx.get(iface.name) || []), tx].slice(-HISTORY_LENGTH))
+            h.ifRx.set(iface.name, trim([...(h.ifRx.get(iface.name) || []), { x: now, y: rx }]))
+            h.ifTx.set(iface.name, trim([...(h.ifTx.get(iface.name) || []), { x: now, y: tx }]))
           }
         }
         prevIfRef.current.set(iface.name, { rx: iface.rx_bytes, tx: iface.tx_bytes, ts: now })
@@ -114,101 +137,13 @@ export default function Monitoring() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const loadHistory = async (hours: number) => {
-    try {
-      setHistory(await api.metrics.history(hours))
-    } catch (e) {
-      setError(String(e))
-    }
-  }
-
-  useEffect(() => {
-    loadHistory(historyHours)
-    const id = setInterval(() => loadHistory(historyHours), 60_000)
-    return () => clearInterval(id)
-  }, [historyHours])
-
-  // Operations widgets : derniere apply firewall + reseau + pending count.
-  // Backend refresh once per minute (applies are rare, no need to go
-  // faster). audit_log is filtered API-side by method + contains
-  // (path partial match) and we keep the last HTTP 2xx entry.
-  useEffect(() => {
-    const refreshOps = async () => {
-      try {
-        const [fw, net, pending] = await Promise.all([
-          api.logs.audit({ limit: 30, method: 'POST', contains: '/firewall/apply' }).catch(() => []),
-          api.logs.audit({ limit: 30, method: 'POST', contains: '/network/apply' }).catch(() => []),
-          api.network.pending().catch(() => ({ count: 0 })),
-        ])
-        const lastFw = fw.find((e) => e.status_code != null && e.status_code < 400)
-        const lastNet = net.find((e) => e.status_code != null && e.status_code < 400)
-        setLastApply({
-          firewall: lastFw?.timestamp || null,
-          network: lastNet?.timestamp || null,
-        })
-        setPendingCount(pending.count || 0)
-      } catch { /* silent */ }
-    }
-    refreshOps()
-    const id = window.setInterval(refreshOps, 60_000)
-    return () => window.clearInterval(id)
-  }, [])
-
-  // Real-time aggregates for the Operations widget at the top.
-  //
-  // We want to count every network interface MurOS knows about. The
-  // kernel sets operstate=UNKNOWN on virtual netdevs (wg*, tun/tap,
-  // bonds with no carrier concept, ...) even when they carry traffic
-  // just fine, so we treat 'unknown' as up. Pure plumbing interfaces
-  // (loopback, docker bridges, veth pairs) are still skipped: they
-  // are never administered through MurOS.
-  const isCountedLink = (name: string): boolean => {
-    if (name === 'lo') return false
-    const ignoredPrefixes = ['docker', 'br-', 'veth', 'virbr']
-    return !ignoredPrefixes.some((p) => name.startsWith(p))
-  }
-  const isLinkUp = (operstate: string | undefined): boolean =>
-    operstate === 'up' || operstate === 'unknown'
-  const ifaceAggregate = useMemo(() => {
-    if (!data) return { up: 0, total: 0, totalRx: 0, totalTx: 0 }
-    let up = 0
-    let total = 0
-    for (const iface of data.interfaces) {
-      if (!isCountedLink(iface.name)) continue
-      total++
-      if (isLinkUp(iface.operstate)) up++
-    }
-    let totalRx = 0
-    let totalTx = 0
-    for (const [name, r] of ifRates.entries()) {
-      if (!isCountedLink(name)) continue
-      totalRx += r.rx
-      totalTx += r.tx
-    }
-    return { up, total, totalRx, totalTx }
-  }, [data, ifRates])
-
-  // Per-interface throughput from history (cumulative delta)
-  const interfaceRates = useMemo(() => {
-    if (!history) return {}
-    const out: Record<string, { rx: { x: number; y: number }[]; tx: { x: number; y: number }[] }> = {}
-    for (const [name, samples] of Object.entries(history.interfaces)) {
-      const rx: { x: number; y: number }[] = []
-      const tx: { x: number; y: number }[] = []
-      for (let i = 1; i < samples.length; i++) {
-        const a = samples[i - 1]
-        const b = samples[i]
-        const dt = (new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()) / 1000
-        if (dt <= 0) continue
-        rx.push({ x: new Date(b.timestamp).getTime(), y: Math.max(0, (b.rx_bytes - a.rx_bytes) / dt) })
-        tx.push({ x: new Date(b.timestamp).getTime(), y: Math.max(0, (b.tx_bytes - a.tx_bytes) / dt) })
-      }
-      out[name] = { rx, tx }
-    }
-    return out
-  }, [history])
-
   const h = historyRef.current
+  // Clip an in-memory series to the selected display window. Used by both
+  // the history charts and the per-interface sparklines so everything
+  // shows the same time span.
+  const windowStart = Date.now() - windowMinutes * 60_000
+  const clip = (pts: Pt[]): Pt[] => pts.filter((p) => p.x >= windowStart)
+  const clipY = (pts: Pt[]): number[] => clip(pts).map((p) => p.y)
 
   return (
     <div>
@@ -220,47 +155,6 @@ export default function Monitoring() {
       />
 
       <div className="px-6 py-4">
-        {/* Operations summary : vue d'un coup d'oeil de l'etat firewall.
-            Pas un sparkline, juste les chiffres bruts qui comptent. */}
-        <section className="mb-6">
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-            <OperationsStat
-              label="Interfaces up"
-              value={`${ifaceAggregate.up} / ${ifaceAggregate.total}`}
-              hint={ifaceAggregate.up === ifaceAggregate.total && ifaceAggregate.total > 0 ? 'All physical links operational' : `${ifaceAggregate.total - ifaceAggregate.up} link(s) down`}
-              tone={ifaceAggregate.up === ifaceAggregate.total ? 'ok' : 'warn'}
-            />
-            <OperationsStat
-              label="Total throughput"
-              value={`${formatRate(ifaceAggregate.totalRx)} in`}
-              valueLine2={`${formatRate(ifaceAggregate.totalTx)} out`}
-              hint="Sum across all non-loopback interfaces"
-              tone="info"
-            />
-            <OperationsStat
-              label="Conntrack"
-              value={data ? data.conntrack.current.toLocaleString('en') : '-'}
-              hint={data ? `${data.conntrack.used_percent.toFixed(1)}% of ${data.conntrack.max.toLocaleString('en')}` : 'Active sessions tracked'}
-              tone={data && data.conntrack.used_percent > 80 ? 'warn' : 'info'}
-            />
-            <OperationsStat
-              label="Pending changes"
-              value={String(pendingCount)}
-              hint={pendingCount > 0 ? 'Network changes not yet applied' : 'Everything is in sync'}
-              tone={pendingCount > 0 ? 'warn' : 'ok'}
-              linkTo={pendingCount > 0 ? '/network' : undefined}
-            />
-            <OperationsStat
-              label="Last apply"
-              value={lastApply.firewall || lastApply.network
-                ? formatRelative(latestApply(lastApply))
-                : 'never'}
-              hint={lastApplyHint(lastApply)}
-              tone="info"
-            />
-          </div>
-        </section>
-
         {/* Services in two columns, listed from the oldest / most native
             Unix daemon to the most recent (order of release, as set in
             the backend catalog). No core/optional split anymore: every
@@ -302,7 +196,7 @@ export default function Monitoring() {
                 value={`${data.cpu_usage_percent.toFixed(1)}%`}
                 hint={`${data.cpu_cores} cores`}
                 colorClass={usageColor(data.cpu_usage_percent)}
-                history={h.cpu}
+                history={clipY(h.cpu)}
                 max={100}
                 sparkFormat={(n) => `${n.toFixed(1)}%`}
               />
@@ -311,7 +205,7 @@ export default function Monitoring() {
                 value={`${data.memory.used_percent.toFixed(1)}%`}
                 hint={`${formatBytes(data.memory.used_bytes)} / ${formatBytes(data.memory.total_bytes)}`}
                 colorClass={usageColor(data.memory.used_percent)}
-                history={h.mem}
+                history={clipY(h.mem)}
                 max={100}
                 sparkFormat={(n) => `${n.toFixed(1)}%`}
               />
@@ -320,7 +214,7 @@ export default function Monitoring() {
                 value={`${data.conntrack.used_percent.toFixed(1)}%`}
                 hint={`${data.conntrack.current.toLocaleString('fr')} / ${data.conntrack.max.toLocaleString('fr')} sessions`}
                 colorClass={usageColor(data.conntrack.used_percent)}
-                history={h.conntrack}
+                history={clipY(h.conntrackPct)}
                 max={100}
                 sparkFormat={(n) => `${n.toFixed(1)}%`}
               />
@@ -389,8 +283,8 @@ export default function Monitoring() {
                   <tbody>
                     {data.interfaces.map((iface) => {
                       const rate = ifRates.get(iface.name)
-                      const rx = h.ifRx.get(iface.name) || []
-                      const tx = h.ifTx.get(iface.name) || []
+                      const rx = clipY(h.ifRx.get(iface.name) || [])
+                      const tx = clipY(h.ifTx.get(iface.name) || [])
                       const maxRate = Math.max(...rx, ...tx, 1)
                       return (
                         <tr key={iface.name} className="border-t border-gray-200">
@@ -426,24 +320,23 @@ export default function Monitoring() {
               <div className="flex items-center justify-between mb-2">
                 <h2 className="text-sm font-semibold text-gray-900">History</h2>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-700">Period:</span>
+                  <span className="text-xs text-gray-700">Window:</span>
                   <select
                     className="select w-auto py-1 text-xs"
-                    value={historyHours}
-                    onChange={(e) => setHistoryHours(Number(e.target.value))}
+                    value={windowMinutes}
+                    onChange={(e) => setWindowMinutes(Number(e.target.value))}
                   >
-                    <option value={1}>1 hour</option>
-                    <option value={6}>6 hours</option>
-                    <option value={12}>12 hours</option>
-                    <option value={24}>24 hours</option>
+                    <option value={1}>1 minute</option>
+                    <option value={5}>5 minutes</option>
+                    <option value={15}>15 minutes</option>
                   </select>
                 </div>
               </div>
 
-              {history && history.samples.length === 0 && (
+              {clip(h.cpu).length < 2 && (
                 <p className="text-xs text-gray-700 mb-2">
-                  No data yet. Metrics are collected every 60 seconds,
-                  l'historique apparaitra ici progressivement.
+                  Collecting live samples, the charts fill in over the next
+                  few seconds.
                 </p>
               )}
 
@@ -451,60 +344,28 @@ export default function Monitoring() {
                 <TimeChart
                   label="CPU and memory (%)"
                   yMax={100}
+                  xSpanMs={windowMinutes * 60_000}
                   yFormat={(v) => `${v.toFixed(0)}%`}
                   series={[
-                    {
-                      name: 'CPU',
-                      color: '#dc2626',
-                      points: (history?.samples || []).map((s) => ({
-                        x: new Date(s.timestamp).getTime(),
-                        y: s.cpu_usage_percent,
-                      })),
-                    },
-                    {
-                      name: 'Memory',
-                      color: '#2563eb',
-                      points: (history?.samples || []).map((s) => ({
-                        x: new Date(s.timestamp).getTime(),
-                        y: s.memory_used_percent,
-                      })),
-                    },
+                    { name: 'CPU', color: '#dc2626', points: clip(h.cpu) },
+                    { name: 'Memory', color: '#2563eb', points: clip(h.mem) },
                   ]}
                 />
                 <TimeChart
                   label="Conntrack sessions"
+                  xSpanMs={windowMinutes * 60_000}
                   yFormat={(v) => v.toFixed(0)}
                   series={[
-                    {
-                      name: 'sessions',
-                      color: '#7c3aed',
-                      points: (history?.samples || []).map((s) => ({
-                        x: new Date(s.timestamp).getTime(),
-                        y: s.conntrack_current,
-                      })),
-                    },
+                    { name: 'sessions', color: '#7c3aed', points: clip(h.conntrackCur) },
                   ]}
                 />
                 <TimeChart
                   label="System load"
+                  xSpanMs={windowMinutes * 60_000}
                   yFormat={(v) => v.toFixed(2)}
                   series={[
-                    {
-                      name: '1 min',
-                      color: '#ea580c',
-                      points: (history?.samples || []).map((s) => ({
-                        x: new Date(s.timestamp).getTime(),
-                        y: s.load_1,
-                      })),
-                    },
-                    {
-                      name: '5 min',
-                      color: '#0891b2',
-                      points: (history?.samples || []).map((s) => ({
-                        x: new Date(s.timestamp).getTime(),
-                        y: s.load_5,
-                      })),
-                    },
+                    { name: '1 min', color: '#ea580c', points: clip(h.load1) },
+                    { name: '5 min', color: '#0891b2', points: clip(h.load5) },
                   ]}
                 />
                 {(() => {
@@ -513,27 +374,24 @@ export default function Monitoring() {
                   // transits, the loopback says nothing about the role
                   // of the machine. We also filter on the interfaces
                   // currently present in the live snapshot: a removed
-                  // iface (VLAN dropped, NIC unplugged) keeps its
-                  // history in DB but we do not want to keep showing
-                  // its graph if it no longer exists, that is misleading.
+                  // iface (VLAN dropped, NIC unplugged) is dropped from
+                  // the in-memory buffers, so it stops being charted.
                   const liveNames = new Set((data?.interfaces || []).map((i) => i.name))
-                  const names = Object.keys(interfaceRates)
+                  const names = Array.from(h.ifRx.keys())
                     .filter((n) => n !== 'lo' && liveNames.has(n))
                     .sort((a, b) => a.localeCompare(b))
-                  return names.map((name) => {
-                    const rates = interfaceRates[name]
-                    return (
-                      <TimeChart
-                        key={name}
-                        label={`Traffic ${name}`}
-                        yFormat={formatBytes}
-                        series={[
-                          { name: 'In',  color: '#0891b2', points: rates.rx },
-                          { name: 'Out', color: '#ea580c', points: rates.tx },
-                        ]}
-                      />
-                    )
-                  })
+                  return names.map((name) => (
+                    <TimeChart
+                      key={name}
+                      label={`Traffic ${name}`}
+                      xSpanMs={windowMinutes * 60_000}
+                      yFormat={formatBytes}
+                      series={[
+                        { name: 'In',  color: '#0891b2', points: clip(h.ifRx.get(name) || []) },
+                        { name: 'Out', color: '#ea580c', points: clip(h.ifTx.get(name) || []) },
+                      ]}
+                    />
+                  ))
                 })()}
               </div>
             </section>
@@ -659,70 +517,4 @@ function ServiceTable({ services, hideHeaderOnDesktop }: { services: SystemServi
   )
 }
 
-// --- Operations summary helpers ---
 
-function OperationsStat({ label, value, valueLine2, hint, tone, linkTo }: {
-  label: string
-  value: string
-  valueLine2?: string
-  hint?: string
-  tone?: 'ok' | 'warn' | 'info'
-  linkTo?: string
-}) {
-  const navigate = useNavigate()
-  const toneCls = tone === 'ok'   ? 'border-emerald-200 bg-emerald-50/30'
-                : tone === 'warn' ? 'border-amber-200 bg-amber-50/30'
-                : 'border-gray-200 bg-white'
-  const clickable = !!linkTo
-  return (
-    <div
-      className={`border rounded p-3 ${toneCls} ${clickable ? 'cursor-pointer hover:shadow-sm transition-shadow' : ''}`}
-      onClick={clickable ? () => navigate(linkTo!) : undefined}
-      title={clickable ? `Click to go to ${linkTo}` : undefined}
-    >
-      <div className="text-[10px] uppercase tracking-wider text-gray-700 mb-1">{label}</div>
-      <div className="text-lg font-semibold text-gray-900 tabular-nums leading-tight">{value}</div>
-      {valueLine2 && (
-        <div className="text-sm text-gray-700 tabular-nums leading-tight">{valueLine2}</div>
-      )}
-      {hint && <div className="text-[11px] text-gray-600 mt-1">{hint}</div>}
-    </div>
-  )
-}
-
-function latestApply(la: { firewall: string | null; network: string | null }): string | null {
-  if (!la.firewall && !la.network) return null
-  if (!la.firewall) return la.network
-  if (!la.network) return la.firewall
-  return la.firewall > la.network ? la.firewall : la.network
-}
-
-function lastApplyHint(la: { firewall: string | null; network: string | null }): string {
-  // We avoid repeating the headline number (which is the most recent of the
-  // two). Only surface the second source when it brings new information:
-  // - one source missing: mention it as never applied
-  // - both present but different: show both timestamps
-  // - both present and identical: a single line confirming sync
-  if (!la.firewall && !la.network) return 'No successful apply recorded yet'
-  if (la.firewall && !la.network) return 'Network: never applied'
-  if (la.network && !la.firewall) return 'Firewall: never applied'
-  if (la.firewall === la.network) return 'Firewall and network in sync'
-  return `Firewall: ${formatRelative(la.firewall)} . Network: ${formatRelative(la.network)}`
-}
-
-function formatRelative(ts: string | null): string {
-  if (!ts) return 'never'
-  try {
-    // Backend returns ISO without timezone (UTC implicit). Append 'Z'
-    // if missing so the browser does not interpret it as local time.
-    const d = new Date(ts.endsWith('Z') || /[+-]\d\d:\d\d$/.test(ts) ? ts : ts + 'Z')
-    const diff = Math.max(0, (Date.now() - d.getTime()) / 1000)
-    if (diff < 60) return 'just now'
-    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
-    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
-    if (diff < 86400 * 7) return `${Math.floor(diff / 86400)}d ago`
-    return d.toISOString().slice(0, 10)
-  } catch {
-    return ts
-  }
-}
