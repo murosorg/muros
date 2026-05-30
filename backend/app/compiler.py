@@ -3,6 +3,8 @@
 The output is a complete and standalone nftables script, applied with:
     nft -f <file>
 """
+import ipaddress
+
 from sqlalchemy.orm import Session, joinedload
 
 from app import models
@@ -51,20 +53,64 @@ def _compile_addresses_zones(rule: models.FirewallRule) -> str:
         else:
             parts.append("oifname { " + ", ".join(dst_ifs) + " }")
 
-    # Adresse source : groupe prime sur champ libre.
-    if rule.src_address_group and rule.src_address_group.entries:
-        vals = [e.value for e in rule.src_address_group.entries]
-        parts.append(f"ip saddr {_format_addr_set(vals)}")
-    elif rule.src_address:
-        parts.append(f"ip saddr {rule.src_address}")
-
-    if rule.dst_address_group and rule.dst_address_group.entries:
-        vals = [e.value for e in rule.dst_address_group.entries]
-        parts.append(f"ip daddr {_format_addr_set(vals)}")
-    elif rule.dst_address:
-        parts.append(f"ip daddr {rule.dst_address}")
-
+    # Address selectors are emitted by _addr_variants() so they can be
+    # family-aware (ip vs ip6): the filter table is `inet`, so an `ip
+    # saddr` clause only matches IPv4 and would silently skip IPv6.
     return " ".join(parts)
+
+
+def _addr_family(value: str) -> int | None:
+    """Return 4 or 6 for an address/CIDR/range value, or None if unknown."""
+    v = value.split("-", 1)[0].split("/", 1)[0].strip()
+    try:
+        return ipaddress.ip_address(v).version
+    except ValueError:
+        try:
+            return ipaddress.ip_network(value, strict=False).version
+        except ValueError:
+            return None
+
+
+def _addr_variants(rule: models.FirewallRule) -> list[str]:
+    """Family-aware source/destination address clauses for a rule.
+
+    Returns one clause string per address family in play so the same DB
+    rule filters both IPv4 (`ip saddr/daddr`) and IPv6 (`ip6 saddr/daddr`)
+    inside the `inet` table. A rule with no address yields one empty
+    clause (match-all). A rule mixing v4 and v6 (e.g. a group holding
+    both) yields one variant per family.
+    """
+    def _values(group, single):
+        if group and group.entries:
+            return [e.value for e in group.entries]
+        return [single] if single else []
+
+    src = _values(rule.src_address_group, rule.src_address)
+    dst = _values(rule.dst_address_group, rule.dst_address)
+    if not src and not dst:
+        return [""]
+
+    def _by_family(vals):
+        buckets: dict[int, list[str]] = {4: [], 6: []}
+        for v in vals:
+            fam = _addr_family(v)
+            if fam in (4, 6):
+                buckets[fam].append(v)
+        return buckets
+
+    s, d = _by_family(src), _by_family(dst)
+    families = [f for f in (4, 6) if s[f] or d[f]]
+
+    variants: list[str] = []
+    for fam in families:
+        kw = "ip6" if fam == 6 else "ip"
+        parts: list[str] = []
+        if s[fam]:
+            parts.append(f"{kw} saddr {_format_addr_set(s[fam]) if len(s[fam]) > 1 else s[fam][0]}")
+        if d[fam]:
+            parts.append(f"{kw} daddr {_format_addr_set(d[fam]) if len(d[fam]) > 1 else d[fam][0]}")
+        variants.append(" ".join(parts))
+    return variants or [""]
 
 
 def _compile_proto_ports(rule: models.FirewallRule) -> list[str]:
@@ -90,7 +136,10 @@ def _compile_proto_ports(rule: models.FirewallRule) -> list[str]:
     dport = _format_ports(rule.dst_port)
 
     if proto == "icmp":
-        return ["ip protocol icmp"]
+        # Match both ICMP (v4) and ICMPv6 in the inet table, so a single
+        # "allow ICMP" rule covers ping/diagnostics on both families
+        # instead of silently leaving IPv6 ICMP unmatched.
+        return ["meta l4proto { icmp, ipv6-icmp }"]
 
     # Protocole "any" (ou absent) : si des ports sont renseignes, on
     # genere une ligne par protocole port-compatible (tcp + udp). Sinon,
@@ -141,13 +190,15 @@ def _compile_rule(rule: models.FirewallRule) -> list[str]:
     if rule.dst_zone is not None and not _zone_interfaces(rule.dst_zone):
         return []
 
-    common = _compile_addresses_zones(rule)
+    zone_part = _compile_addresses_zones(rule)
+    addr_variants = _addr_variants(rule)
     proto_variants = _compile_proto_ports(rule)
     action = rule.action
 
     lines: list[str] = []
-    for proto_part in proto_variants:
-        match = " ".join(p for p in (common, proto_part) if p)
+    for addr_part in addr_variants:
+      for proto_part in proto_variants:
+        match = " ".join(p for p in (zone_part, addr_part, proto_part) if p)
         pieces = [match] if match else []
         if rule.rate_limit:
             pieces.append(_format_rate_limit(rule.rate_limit))
@@ -401,6 +452,10 @@ def compile_ruleset(db: Session) -> str:
     out.append("        type filter hook forward priority filter; policy drop;")
     out.append("        ct state established,related accept")
     out.append("        ct state invalid drop")
+    # Allow transit ICMPv6: NDP and especially Packet-Too-Big are required
+    # for routed IPv6 to work at all (PMTUD breaks silently otherwise).
+    # Mirrors the input chain's icmpv6 baseline.
+    out.append("        ip6 nexthdr icmpv6 accept")
     for line in chains["forward"]:
         out.append(line)
     out.append("    }")

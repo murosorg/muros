@@ -2,6 +2,19 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [v0.9.0-rc26] - 2026-05-30
+
+### Added
+- IPv6 firewall filtering (lot 1 of IPv6 support). Address-based rules are
+  now family-aware: the compiler emits `ip saddr/daddr` for IPv4 values
+  and `ip6 saddr/daddr` for IPv6 values inside the `inet` table, instead
+  of only ever matching IPv4. A rule (or address group) mixing both
+  families expands to one variant per family. ICMP rules now match both
+  ICMP and ICMPv6 (`meta l4proto { icmp, ipv6-icmp }`), and the forward
+  chain gained the ICMPv6 baseline (NDP / Packet-Too-Big) required for
+  routed IPv6 to work. Previously any address or ICMP rule silently
+  skipped IPv6 traffic, which the drop policy then blackholed.
+
 ## [v0.9.0-rc25] - 2026-05-30
 
 ### Added
