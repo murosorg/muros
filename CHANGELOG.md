@@ -4,7 +4,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-## [v0.9.0-rc102] - 2026-05-30
+## [v0.9.0-rc103] - 2026-05-30
 
 ### Added
 - Stateful DHCPv6 server. A new "DHCPv6 server" page (Services section)
