@@ -33,6 +33,18 @@ def test_security_headers_and_api_proxy():
     assert "location / { try_files $uri $uri/ /index.html; }" in out
 
 
+def test_content_security_policy_and_permissions_policy():
+    out = render_site_conf(_cfg())
+    assert "add_header Content-Security-Policy " in out
+    # Scripts are locked to same-origin (no 'unsafe-inline' / 'unsafe-eval').
+    assert "script-src 'self';" in out
+    assert "default-src 'self';" in out
+    assert "frame-ancestors 'none';" in out
+    # Google Fonts origins are allow-listed (index.html pulls their stylesheets).
+    assert "font-src 'self' https://fonts.gstatic.com;" in out
+    assert "add_header Permissions-Policy " in out
+
+
 def test_wildcard_listen_uses_default_server_and_http2():
     out = render_site_conf(_cfg(listen_address="0.0.0.0"))
     assert "listen 443 ssl default_server;" in out
