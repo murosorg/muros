@@ -139,6 +139,18 @@ def set_password(username: str, new_password: str) -> dict:
     password: because the web account and the SSH account are the same
     Linux user, the new password applies to both at once.
     """
+    # Defense in depth: chpasswd reads "user:password" lines from stdin, so a
+    # newline (or NUL) in either field would let a caller inject an extra
+    # line and rewrite another account's password. The change-password route
+    # already enforces the password policy (which rejects these), but guard
+    # here too so no future caller can reopen the hole. A ':' in the username
+    # would likewise split the field.
+    for field, value in (("username", username), ("password", new_password)):
+        if any(c in value for c in ("\n", "\r", "\0")):
+            raise RuntimeError(f"Invalid {field}: control characters are not allowed.")
+    if ":" in username:
+        raise RuntimeError("Invalid username: ':' is not allowed.")
+
     if not APPLY_ENABLED:
         return {"applied": False, "message": "dry-run: MUROS_APPLY off, password unchanged."}
 

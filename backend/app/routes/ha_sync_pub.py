@@ -2,6 +2,8 @@
 # Copyright (c) 2026 MurOS contributors.
 """Routes HTTP de l'API MurOS (sous-module)."""
 
+import hmac
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
@@ -19,6 +21,14 @@ def _read_sync_token_header(request: Request) -> str | None:
     return request.headers.get("X-Muros-Sync-Token")
 
 
+def _token_ok(provided: str | None, expected: str | None) -> bool:
+    """Constant-time comparison of the sync token to avoid leaking it
+    through response-timing differences."""
+    if not provided or not expected:
+        return False
+    return hmac.compare_digest(provided, expected)
+
+
 @ha_sync_pub_router.get("/sync/ping", response_model=schemas.HaSyncPingOut)
 def ha_sync_ping(request: Request, db: Session = Depends(get_db)):
     """Ping accessible via token sync uniquement. Renvoie le role et la version."""
@@ -27,7 +37,7 @@ def ha_sync_ping(request: Request, db: Session = Depends(get_db)):
     cfg = ha_sync.get_config(db)
     if not cfg.enabled:
         raise HTTPException(503, "HA sync disabled on this node.")
-    if not token or token != cfg.peer_token:
+    if not _token_ok(token, cfg.peer_token):
         raise HTTPException(401, "Invalid token.")
     from app import VERSION  # type: ignore
     try:
@@ -46,7 +56,7 @@ async def ha_sync_receive(request: Request, db: Session = Depends(get_db)):
     cfg = ha_sync.get_config(db)
     if not cfg.enabled:
         raise HTTPException(503, "HA sync disabled on this node.")
-    if not token or token != cfg.peer_token:
+    if not _token_ok(token, cfg.peer_token):
         raise HTTPException(401, "Invalid token.")
     body = await request.body()
     try:

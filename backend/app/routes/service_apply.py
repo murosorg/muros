@@ -14,9 +14,17 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app import service_dirty
+from app.auth import current_user
 from app.db import get_db
 
-service_apply_router = APIRouter(prefix="/api/services", tags=["services"])
+# Require an authenticated session like every other API router. These
+# endpoints expose service apply-state and the Save/Apply audit log (which
+# includes operator usernames), so they must not be reachable anonymously.
+_auth_dep = [Depends(current_user)]
+
+service_apply_router = APIRouter(
+    prefix="/api/services", tags=["services"], dependencies=_auth_dep,
+)
 
 
 @service_apply_router.get("/pending")

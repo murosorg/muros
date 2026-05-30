@@ -193,7 +193,10 @@ def restore_backup(name: str) -> dict:
     """
     path = _resolve(name)
     with tarfile.open(path, "r:gz") as tar, tempfile.TemporaryDirectory() as tmp:
-        tar.extractall(tmp)
+        # filter="data" (Python 3.12+) refuses entries that would escape the
+        # destination (absolute paths, "..", symlinks/links pointing outside),
+        # neutralizing tar path-traversal even if an archive is tampered with.
+        tar.extractall(tmp, filter="data")
         tmp_db = Path(tmp) / "muros.db"
         if tmp_db.is_file():
             # Close the SQLAlchemy pool before overwriting the file to
