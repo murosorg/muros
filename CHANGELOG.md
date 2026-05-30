@@ -4,6 +4,24 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [v0.9.0-rc78] - 2026-05-30
+
+### Changed
+- Filter rule form redesigned around a plain "From -> To" traffic flow.
+  Each endpoint is now a single dropdown that can be a zone, "any zone" or
+  "This firewall", and the netfilter chain (input/forward/output) is
+  derived automatically from that choice. The "Chain" jargon and the
+  separate chain selector in Advanced options are gone.
+- Creating a rule no longer forces it into the active tab's chain. The
+  chain follows the From -> To selection, so a rule "To the firewall" can
+  be created from any tab; the list then jumps to the tab the new rule
+  landed in. Previously, standing on the default Forward tab made it
+  impossible to add an input or output rule without first switching tabs.
+- Rules list tabs relabeled from the raw chain names to "Through
+  firewall" / "To firewall" / "From firewall", each with an explanatory
+  tooltip. The empty-state hint now reflects the actual default policy
+  (accept on the output chain, drop elsewhere).
+
 ## [v0.9.0-rc77] - 2026-05-30
 
 ### Changed

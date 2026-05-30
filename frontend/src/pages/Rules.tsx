@@ -17,6 +17,21 @@ import { useConfirm } from '../components/ConfirmModal'
 type Chain = 'forward' | 'input' | 'output'
 const CHAINS: Chain[] = ['forward', 'input', 'output']
 
+// Plain-language tab labels. The underlying netfilter chain names
+// (forward/input/output) are an implementation detail the operator
+// should not have to learn, so we surface a "From/To the firewall"
+// wording instead, matching the RuleForm "Traffic flow" endpoints.
+const CHAIN_TAB_LABEL: Record<Chain, string> = {
+  forward: 'Through firewall',
+  input: 'To firewall',
+  output: 'From firewall',
+}
+const CHAIN_TAB_HINT: Record<Chain, string> = {
+  forward: 'Traffic routed between zones (LAN to WAN, DMZ to LAN...). The most common case.',
+  input: 'Traffic addressed to the firewall itself (web UI, SSH, hosted services).',
+  output: 'Traffic originated by the firewall itself towards a zone.',
+}
+
 // Position >= 900 = catch-all rule (final drop all). Handled specially:
 // no drag, no delete, "default" badge, distinct styling. This is the
 // seed convention from compiler.py.
@@ -385,8 +400,9 @@ export default function Rules() {
                   (chain === c ? 'bg-steel-100 text-gray-900 font-medium' : 'bg-white text-gray-800 hover:bg-gray-50')
                 }
                 onClick={() => setChain(c)}
+                title={CHAIN_TAB_HINT[c]}
               >
-                <span className="capitalize">{c}</span>
+                <span>{CHAIN_TAB_LABEL[c]}</span>
                 <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-gray-100 text-gray-700">
                   {countByChain[c]}
                 </span>
@@ -450,8 +466,10 @@ export default function Rules() {
                 <tr><td colSpan={13}>
                   <EmptyState
                     icon={<Shield size={20} />}
-                    text={filter ? 'No rule matches the filter' : `No rule in the ${chain} chain`}
-                    hint={filter ? undefined : `Default policy applies: traffic in the ${chain} chain is dropped unless an explicit accept rule is added.`}
+                    text={filter ? 'No rule matches the filter' : `No "${CHAIN_TAB_LABEL[chain].toLowerCase()}" rule yet`}
+                    hint={filter ? undefined : (defaultPolicyByChain[chain] === 'accept'
+                      ? 'Default policy applies: this traffic is allowed unless an explicit drop rule is added.'
+                      : 'Default policy applies: this traffic is dropped unless an explicit accept rule is added.')}
                     action={!filter && (
                       <button className="btn-primary" onClick={() => setCreating(true)}>Add a rule</button>
                     )}
@@ -606,13 +624,19 @@ export default function Rules() {
           defaultChain={chain}
           onCancel={() => setCreating(false)}
           onSubmit={async (data) => {
-            // Auto position = last non-catch-all position + 10. If the
-            // chain is empty, start at 10. The backend will renumber if
-            // the admin drags and drops afterwards.
-            const sameChain = rules.filter((r) => r.chain === chain && !isCatchAll(r))
+            // The chain is derived by the form from the From -> To choice;
+            // the active tab only seeds the initial endpoints. Honor the
+            // derived chain so an operator can create a "to the firewall"
+            // rule while standing on the "through firewall" tab.
+            const targetChain = ((data.chain as Chain) || chain)
+            // Auto position = last non-catch-all position + 10 in that
+            // chain. The backend renumbers on drag-and-drop afterwards.
+            const sameChain = rules.filter((r) => r.chain === targetChain && !isCatchAll(r))
             const maxPos = sameChain.reduce((m, r) => Math.max(m, r.position), 0)
-            await api.rules.create({ ...data, chain, position: maxPos + 10 })
+            await api.rules.create({ ...data, chain: targetChain, position: maxPos + 10 })
             setCreating(false)
+            // Jump to the tab the new rule actually landed in.
+            if (targetChain !== chain) setChain(targetChain)
             reload()
           }}
         />
