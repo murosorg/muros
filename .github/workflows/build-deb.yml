@@ -168,7 +168,8 @@ jobs:
         # a dependency missing from the built venv fails the import here
         # instead of silently breaking login on a customer box.
         run: |
-          docker exec muros /opt/muros/backend/venv/bin/python -c \
+          docker exec -w /opt/muros/backend muros \
+            /opt/muros/backend/venv/bin/python -c \
             "import app.main, app.totp, pam, pyotp, six, qrcode; print('imports ok')"
       - name: PAM login returns a token
         run: |
