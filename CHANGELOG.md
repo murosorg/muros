@@ -2,6 +2,17 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [v0.9.0-rc17] - 2026-05-30
+
+### Changed
+- Default firewall rules now follow the OPNsense model: the LAN is the
+  trusted zone and gets an "allow LAN to firewall" (input) plus an "allow
+  LAN to any" (forward) rule out of the box. Without this the input
+  policy drop blocked LAN clients from reaching box services such as DNS
+  (53) and NTP (123) even though those services were enabled by default.
+  The WAN stays default-deny inbound. These bootstrap rules carry a
+  "restrict once configured" comment and can be tightened from the UI.
+
 ## [v0.9.0-rc16] - 2026-05-30
 
 ### Fixed
