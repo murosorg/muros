@@ -2,6 +2,35 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [v0.9.0-rc28] - 2026-05-30
+
+### Added
+- CI regression coverage for the per-service config generators. The
+  backend pytest job now exercises the rendering path of WireGuard (VPN),
+  SNMP, NTP (chrony), DHCP (Kea) and DNS (Unbound) on every push and pull
+  request, so a change that breaks the VPN or SNMP config is caught in CI
+  instead of on a customer box. Tests are pure / DB-only (no systemd, no
+  netlink) and assert the key invariants: WireGuard interface and peer
+  sections, disabled peers excluded, X25519 keypair round-trip, SNMP
+  one-rocommunity-per-CIDR plus the empty-network loopback guard-rail, the
+  chrony "allow all" gating on server mode, valid idle Kea JSON, and the
+  Unbound access-control plus defensive allowlist.
+
+## [v0.9.0-rc29] - 2026-05-30
+
+### Added
+- Unattended installer ISO builder (`packaging/iso/`). `build-iso.sh`
+  turns a stock Debian 13 (trixie) netinst image into a fully automated
+  MurOS installer: it injects the `preseed.cfg` answers into the
+  installer initrd, patches the BIOS (isolinux) and UEFI (grub) boot
+  menus for hands-off boot, and repacks a hybrid bootable ISO with
+  xorriso. The install partitions the first disk (guided LVM), lays down
+  a minimal Debian base, then runs the official `install.sh` to register
+  apt.muros.org and pull the muros package. No installer question is
+  asked, so building appliances no longer requires clicking through the
+  Debian installer by hand. Root password is configurable via
+  `MUROS_ROOT_PASSWORD`; see `packaging/iso/README.md`.
+
 ## [v0.9.0-rc27] - 2026-05-30
 
 ### Added
