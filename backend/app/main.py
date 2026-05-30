@@ -142,7 +142,7 @@ app.add_middleware(
 )
 
 
-from app.audit import audit_middleware as _audit_middleware
+from app.audit import audit_middleware as _audit_middleware  # noqa: E402  (after app/CORS setup to avoid an import cycle)
 
 
 @app.middleware("http")

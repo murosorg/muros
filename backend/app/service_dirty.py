@@ -24,6 +24,7 @@ mark_clean).
 """
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
@@ -127,9 +128,6 @@ def recent_log(db: Session, name: str | None = None, limit: int = 50) -> list[di
         }
         for r in rows
     ]
-
-
-import hashlib
 
 
 def _sha256_text(t: str) -> str:

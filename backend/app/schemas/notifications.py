@@ -5,7 +5,7 @@ import ipaddress
 import re
 from datetime import datetime
 from typing import Annotated, Literal
-from pydantic import AfterValidator, BaseModel, Field
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 
 Action = Literal["accept", "drop", "reject"]
 Chain = Literal["input", "forward", "output"]
@@ -57,8 +57,7 @@ class NotificationConfigIn(BaseModel):
 class NotificationConfigOut(NotificationConfigIn):
     id: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class NotificationRuleOut(BaseModel):
@@ -68,8 +67,7 @@ class NotificationRuleOut(BaseModel):
     throttle_minutes: int
     description: str | None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class NotificationRuleUpdate(BaseModel):
@@ -87,8 +85,7 @@ class NotificationLogOut(BaseModel):
     error: str | None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class NotificationTestResult(BaseModel):
@@ -112,8 +109,7 @@ class SnmpConfigIn(BaseModel):
 class SnmpConfigOut(SnmpConfigIn):
     id: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class SnmpStatus(BaseModel):

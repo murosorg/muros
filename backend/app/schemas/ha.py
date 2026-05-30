@@ -139,8 +139,7 @@ class HaSyncConfigIn(BaseModel):
 class HaSyncConfigOut(HaSyncConfigIn):
     id: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class HaSyncLogOut(BaseModel):
@@ -153,8 +152,7 @@ class HaSyncLogOut(BaseModel):
     triggered_by: str
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class HaSyncRole(BaseModel):

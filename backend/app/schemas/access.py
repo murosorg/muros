@@ -4,7 +4,7 @@
 import ipaddress
 import re
 from typing import Annotated, Literal
-from pydantic import AfterValidator, BaseModel, Field, field_validator, model_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 Action = Literal["accept", "drop", "reject"]
 Chain = Literal["input", "forward", "output"]
@@ -116,11 +116,8 @@ class SshConfigIn(BaseModel):
 class SshConfigOut(SshConfigIn):
     id: int
 
-    class Config:
-        from_attributes = True
-        # Le model DB a des champs en plus (permit_root_login, etc.) qu'on
-        # ignore silencieusement ici.
-        extra = "ignore"
+    # The DB model has extra fields (permit_root_login, etc.) we ignore here.
+    model_config = ConfigDict(from_attributes=True, extra="ignore")
 
 
 class SshStatus(BaseModel):
@@ -241,8 +238,7 @@ class HttpConfigIn(BaseModel):
 class HttpConfigOut(HttpConfigIn):
     id: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class HttpApplyResult(BaseModel):

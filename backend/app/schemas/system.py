@@ -293,7 +293,6 @@ class AuditLogOut(BaseModel):
     duration_ms: int
     action_summary: str | None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 

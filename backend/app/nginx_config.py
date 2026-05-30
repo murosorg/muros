@@ -26,8 +26,8 @@ SITE_CONF_BAK = Path("/etc/nginx/sites-available/muros.muros-bak")
 def _server_block(listen_lines: list[str], tls: bool) -> list[str]:
     """Bloc server commun, en HTTP ou HTTPS."""
     block = ["server {"]
-    for l in listen_lines:
-        block.append(f"    {l}")
+    for line in listen_lines:
+        block.append(f"    {line}")
     block.extend([
         "    server_name _;",
         "",
@@ -116,7 +116,7 @@ def render_site_conf(cfg) -> str:
     if redirect:
         parts.extend([
             "server {",
-            *(f"    {l}" for l in http_listen),
+            *(f"    {line}" for line in http_listen),
             "    server_name _;",
             "    return 301 https://$host$request_uri;",
             "}",

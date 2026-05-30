@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app import models, pam_auth, schemas
-from app.auth import current_user, require_admin
+from app.auth import require_admin
 from app.db import get_db
 
 log = logging.getLogger("muros.users")

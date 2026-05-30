@@ -129,10 +129,10 @@ def _build_config(db: Session) -> dict:
             .filter(DhcpStaticLease.pool_id == p.id)
             .all()
         )
-        for l in leases:
-            res = {"hw-address": l.mac, "ip-address": l.ip}
-            if l.hostname:
-                res["hostname"] = l.hostname
+        for lease in leases:
+            res = {"hw-address": lease.mac, "ip-address": lease.ip}
+            if lease.hostname:
+                res["hostname"] = lease.hostname
             reservations.append(res)
 
         subnet = {

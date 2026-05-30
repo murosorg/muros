@@ -5,7 +5,7 @@ import ipaddress
 import re
 from datetime import datetime
 from typing import Annotated, Literal
-from pydantic import AfterValidator, BaseModel, Field
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 
 Action = Literal["accept", "drop", "reject"]
 Chain = Literal["input", "forward", "output"]
@@ -112,8 +112,7 @@ class WireGuardConfigIn(BaseModel):
 class WireGuardConfigOut(WireGuardConfigIn):
     id: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class WireGuardPeerIn(BaseModel):
@@ -149,8 +148,7 @@ class WireGuardPresharedKeyOut(BaseModel):
 class WireGuardPeerOut(WireGuardPeerIn):
     id: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class WireGuardKeypair(BaseModel):
@@ -193,8 +191,7 @@ class IpsecConnectionIn(BaseModel):
 class IpsecConnectionOut(IpsecConnectionIn):
     id: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class IpsecApplyResult(BaseModel):
@@ -213,8 +210,7 @@ class IpsecCaOut(BaseModel):
     created_at: datetime
     expires_at: datetime | None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class IpsecCaGenerate(BaseModel):
@@ -239,8 +235,7 @@ class IpsecCertOut(BaseModel):
     # On expose has_key (presence d'une cle privee) mais pas la cle elle-meme.
     has_key: bool
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class IpsecCertGenerate(BaseModel):

@@ -14,7 +14,7 @@ _auth_dep = [Depends(current_user)]
 
 
 # --- VPN : WireGuard ---
-from app import service_dirty
+from app import service_dirty  # noqa: E402
 
 
 def _stage_wireguard(db: Session, summary: str | None = None) -> None:

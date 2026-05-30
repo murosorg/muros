@@ -57,14 +57,16 @@ async def ha_sync_receive(request: Request, db: Session = Depends(get_db)):
             direction="receive", success=False, error=str(exc)[:500],
             duration_ms=0, db_size_bytes=len(body), triggered_by="peer-push",
         )
-        db.add(entry); db.commit()
+        db.add(entry)
+        db.commit()
         raise HTTPException(400, str(exc))
     # Log succes
     entry = models.HaSyncLog(
         direction="receive", success=True, error=None,
         duration_ms=0, db_size_bytes=len(body), triggered_by="peer-push",
     )
-    db.add(entry); db.commit()
+    db.add(entry)
+    db.commit()
     ha_sync._rotate_log(db, keep=50)
     return result
 
