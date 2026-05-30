@@ -98,7 +98,7 @@ Log in as `root` with the existing system root password (MurOS does not change i
 
 ### Apply
 
-An orange banner appears at the top: **"2 unapplied network changes"**. Click **Apply**. A confirmation countdown modal opens (10s by default). Check that you still have UI access then **Confirm**.
+An orange banner appears at the top: **"2 unapplied network changes"**. Click **Apply**. A confirmation countdown modal opens (60s by default). Check that you still have UI access then **Confirm**.
 
 ---
 
@@ -121,7 +121,7 @@ need:
 The WAN zone keeps no rule toward the firewall, so the box stays closed
 from the Internet.
 
-Click **Apply**. A confirmation countdown modal opens (10s by default).
+Click **Apply**. A confirmation countdown modal opens (60s by default).
 **Confirm** once you have verified your SSH/UI still works.
 
 ---

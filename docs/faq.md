@@ -58,8 +58,8 @@ systemctl restart ssh
 
 MurOS implements an **automatic rollback** on changes that may lock you
 out of admin access. After the apply, a confirmation modal opens with a
-short countdown (10s by default); if you do not confirm, the previous
-config is restored:
+countdown (60s by default, configurable: 10/30/60/120/300); if you do not
+confirm, the previous config is restored:
 
 | Action | Auto-rollback |
 |---|---|
@@ -76,7 +76,7 @@ config is restored automatically by a backend thread that scans for
 expired pending_apply records every 5 seconds.
 
 If you were blocked in the meantime:
-* Wait for the countdown to expire (about 10s), the previous config is restored
+* Wait for the countdown to expire (60s by default), the previous config is restored
 * Reconnect with the old parameters
 
 **Special case interfaces/routes**: if you change the admin interface IP
