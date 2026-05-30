@@ -20,6 +20,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   WAN is unaffected. Toggle and lease domain on the DNS server page;
   a DHCP apply now also refreshes the DNS records.
 
+## [v0.9.0-rc21] - 2026-05-30
+
+### Fixed
+- Logs: removed the phantom "muros-nft.service" entry from the System
+  journal viewer dropdown. There is no such systemd unit (nftables is
+  loaded by muros-boot.service at boot and applied directly by the
+  backend), so selecting it returned nothing. The journal unit list is
+  now realigned with the service catalog.
+
 ## [v0.9.0-rc20] - 2026-05-30
 
 ### Changed
