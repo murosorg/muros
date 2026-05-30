@@ -556,6 +556,38 @@ export type SyslogApplyResult = {
   conf_preview?: string | null
 }
 
+export type DynDnsEntry = {
+  id: number
+  enabled: boolean
+  provider: string
+  server: string
+  hostname: string
+  username: string | null
+  custom_url: string | null
+  last_ip: string | null
+  last_status: string | null
+  last_error: string | null
+  last_update_at: string | null
+}
+
+export type DynDnsEntryInput = {
+  enabled: boolean
+  provider: string
+  server: string
+  hostname: string
+  username?: string | null
+  password?: string | null
+  custom_url?: string | null
+}
+
+export type DynDnsProviderPreset = { label: string; server: string; mode: string }
+
+export type DynDnsUpdateResult = {
+  ip: string | null
+  results: Array<{ hostname: string; status: string; ip?: string; error?: string | null }>
+  reason?: string | null
+}
+
 export const api = {
   health: () => request<Health>('GET', '/api/health'),
   systemInfo: () => request<SystemInfo>('GET', '/api/system/info'),
@@ -1042,6 +1074,19 @@ export const api = {
       request<SyslogConfig>('PUT', '/api/syslog/config', data),
     apply: () => request<SyslogApplyResult>('POST', '/api/syslog/apply'),
     pending: () => request<ServicePending>('GET', '/api/syslog/pending'),
+  },
+
+  dyndns: {
+    providers: () => request<Record<string, DynDnsProviderPreset>>('GET', '/api/dyndns/providers'),
+    publicIp: () => request<{ ip: string | null }>('GET', '/api/dyndns/public-ip'),
+    list: () => request<DynDnsEntry[]>('GET', '/api/dyndns'),
+    create: (data: DynDnsEntryInput) => request<DynDnsEntry>('POST', '/api/dyndns', data),
+    update: (id: number, data: DynDnsEntryInput) =>
+      request<DynDnsEntry>('PUT', `/api/dyndns/${id}`, data),
+    remove: (id: number) => request<{ deleted: number }>('DELETE', `/api/dyndns/${id}`),
+    updateNow: (id: number) =>
+      request<DynDnsUpdateResult>('POST', `/api/dyndns/${id}/update-now`),
+    updateNowAll: () => request<DynDnsUpdateResult>('POST', '/api/dyndns/update-now'),
   },
 
   dhcp: {

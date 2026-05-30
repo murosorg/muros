@@ -4,6 +4,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [v0.9.0-rc95] - 2026-05-30
+
+### Added
+- Dynamic DNS client. A new "Dynamic DNS" page (Network section) keeps
+  one or more hostnames pointed at the firewall public IP, so VPN
+  endpoints and published services keep resolving on a dynamic-IP WAN.
+  Built in, no extra package: plain HTTPS updates using the dyndns2
+  protocol (No-IP, DynDNS, Dynu, OVH presets) or a custom update URL
+  with {ip} / {hostname} placeholders (DuckDNS, etc.). The public IP is
+  discovered from outside via echo endpoints, which is correct even
+  behind ISP CGNAT/PPPoE. A daemon-less background thread refreshes every
+  few minutes and only pushes when the IP changes; an "Update now" button
+  forces an immediate refresh. Per-hostname status (last IP, result,
+  timestamp) is shown in the UI. New `DynDnsEntry` model, REST API under
+  `/api/dyndns`, and a pure URL-builder / response-classifier test suite.
+
 ## [v0.9.0-rc94] - 2026-05-30
 
 ### Changed

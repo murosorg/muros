@@ -21,6 +21,7 @@ const RoutesPage = lazy(() => import('./pages/Routes'))
 const WanPage = lazy(() => import('./pages/Wan'))
 const Qos = lazy(() => import('./pages/Qos'))
 const Syslog = lazy(() => import('./pages/Syslog'))
+const DynDns = lazy(() => import('./pages/DynDns'))
 const Logs = lazy(() => import('./pages/Logs'))
 const Monitoring = lazy(() => import('./pages/Monitoring'))
 const System = lazy(() => import('./pages/System'))
@@ -97,6 +98,7 @@ export default function App() {
           <Route path="/wan" element={<WanPage />} />
           <Route path="/qos" element={<Qos />} />
           <Route path="/syslog" element={<Syslog />} />
+          <Route path="/dyndns" element={<DynDns />} />
           <Route path="/logs" element={<Logs />} />
           <Route path="/monitoring" element={<Navigate to="/" replace />} />
           <Route path="/zones" element={<Zones />} />

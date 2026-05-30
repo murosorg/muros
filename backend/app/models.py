@@ -1117,3 +1117,30 @@ class SyslogConfig(Base):
     format: Mapped[str] = mapped_column(String(8), default="rfc5424", nullable=False)
     comment: Mapped[str | None] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class DynDnsEntry(Base):
+    """One dynamic-DNS hostname kept in sync with the public IP.
+
+    No on-disk config: a background thread (app.dyndns) pushes updates to
+    the provider over HTTPS. `provider` is a preset key (noip, dyndns,
+    dynu, ovh) using the dyndns2 protocol, or 'custom' with an explicit
+    update URL (placeholders {ip} / {hostname}). last_* columns hold the
+    outcome of the most recent attempt for the UI.
+    """
+
+    __tablename__ = "dyndns_entry"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    provider: Mapped[str] = mapped_column(String(32), default="noip", nullable=False)
+    server: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    hostname: Mapped[str] = mapped_column(String(255), nullable=False)
+    username: Mapped[str | None] = mapped_column(String(255))
+    password: Mapped[str | None] = mapped_column(String(255))
+    custom_url: Mapped[str | None] = mapped_column(String(512))
+    last_ip: Mapped[str | None] = mapped_column(String(64))
+    last_status: Mapped[str | None] = mapped_column(String(32))
+    last_error: Mapped[str | None] = mapped_column(String(255))
+    last_update_at: Mapped[datetime | None] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

@@ -29,6 +29,7 @@ from app.routes import (
     ra_router,
     qos_router,
     syslog_router,
+    dyndns_router,
 )
 from app.routing import apply_all_routes, enable_ip_forwarding
 from app.seed import (
@@ -127,6 +128,11 @@ async def lifespan(app: FastAPI):
         log.exception("rollback.restore_from_db failed (non blocking)")
     from app import updates as _updates_mod
     _updates_mod.ensure_updates_checker_started()
+    try:
+        from app import dyndns as _dyndns_mod
+        _dyndns_mod.ensure_scheduler_started()
+    except Exception:
+        log.exception("dyndns.ensure_scheduler_started failed (non blocking)")
     log.info("MurOS API ready")
     yield
     log.info("MurOS API shutting down")
@@ -291,3 +297,4 @@ app.include_router(setup_router)
 app.include_router(ra_router)
 app.include_router(qos_router)
 app.include_router(syslog_router)
+app.include_router(dyndns_router)
