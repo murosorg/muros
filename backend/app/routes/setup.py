@@ -115,7 +115,7 @@ def setup_apply(data: SetupApplyIn, db: Session = Depends(get_db)):
     # The seeded "allow LAN to firewall" rule already lets the LAN reach
     # SSH/UI/services, so the any-source accepts are no longer needed and
     # would otherwise expose management to the WAN.
-    removed = (
+    (
         db.query(models.FirewallRule)
         .filter(
             models.FirewallRule.chain == "input",

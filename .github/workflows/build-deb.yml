@@ -125,15 +125,25 @@ jobs:
           path: artifacts
       - name: Boot a systemd debian:trixie container
         run: |
+          # The stock debian:trixie image is minimal and ships no init, so
+          # /sbin/init does not exist. Boot bash as PID 1, install systemd
+          # (systemd-sysv provides /sbin/init), then exec it so systemd
+          # becomes PID 1 and we get a real boot to test the package against.
           docker run -d --name muros --privileged --cgroupns=host \
             -v /sys/fs/cgroup:/sys/fs/cgroup:rw \
             -v "$PWD/artifacts:/artifacts:ro" \
-            debian:trixie /sbin/init
-          for i in $(seq 1 30); do
+            -e container=docker -e DEBIAN_FRONTEND=noninteractive \
+            debian:trixie bash -c '
+              apt-get update -qq
+              apt-get install -y --no-install-recommends systemd systemd-sysv dbus
+              exec /sbin/init'
+          for i in $(seq 1 60); do
             state=$(docker exec muros systemctl is-system-running 2>/dev/null || true)
             case "$state" in running|degraded) echo "systemd: $state"; break;; esac
-            sleep 1
+            sleep 2
           done
+          docker exec muros systemctl is-system-running 2>/dev/null || \
+            { echo "systemd did not come up"; docker logs muros | tail -30; exit 1; }
       - name: Install the freshly built .deb
         run: |
           docker exec muros bash -c 'apt-get update -qq'

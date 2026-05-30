@@ -31,6 +31,11 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
+      - name: Ruff lint
+        working-directory: backend
+        # Static guardrail: catches unused imports/variables, ambiguous
+        # names, stray semicolons, undefined names, etc. before they ship.
+        run: ruff check app
       - name: Run pytest
         working-directory: backend
         run: pytest -q
