@@ -213,6 +213,20 @@ def _restore_dhcp(db) -> None:
         log.warning("DHCP reconcile failed: %r", exc)
 
 
+def _restore_dhcp6(db) -> None:
+    """Reconcile the Kea DHCPv6 config from the DB at boot.
+
+    IPv6 counterpart of _restore_dhcp: regenerate kea-dhcp6.conf from the
+    DB so stateful DHCPv6 pools come back after a reboot. Best-effort.
+    """
+    from app.services import dhcp6_apply
+    try:
+        dhcp6_apply.apply(db)
+        log.info("Kea DHCPv6 reconciled from DB")
+    except Exception as exc:  # noqa: BLE001
+        log.warning("DHCPv6 reconcile failed: %r", exc)
+
+
 def _restore_wireguard(db) -> None:
     """Reecrit /etc/wireguard/<iface>.conf et monte l'interface si activee."""
     from app import wireguard, models, service_dirty
@@ -471,6 +485,7 @@ def main() -> int:
             _restore_routes(db)
             _restore_nftables(db)
             _restore_dhcp(db)
+            _restore_dhcp6(db)
             _restore_wireguard(db)
             _restore_ipsec(db)
             _restore_ha(db)

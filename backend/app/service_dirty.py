@@ -37,6 +37,7 @@ from app.models import ServiceApplyState, ServiceApplyLog
 # sync with the routes that wire mark_dirty / mark_clean.
 KNOWN_SERVICES: tuple[str, ...] = (
     "dhcp",
+    "dhcp6",
     "dns",
     "snmp",
     "wireguard",
@@ -153,6 +154,20 @@ def _reconcile_dhcp(db: Session, source: str) -> bool:
         match = (_sha256_text(expected) == on_disk) if expected else (on_disk is None)
         if is_dirty(db, "dhcp") and match:
             mark_clean(db, "dhcp", summary=f"{source}: on-disk conf already matches DB")
+            return True
+    except Exception:  # noqa: BLE001
+        pass
+    return False
+
+
+def _reconcile_dhcp6(db: Session, source: str) -> bool:
+    try:
+        from app.services import dhcp6_apply
+        expected = dhcp6_apply.render(db)
+        on_disk = _sha256_path(dhcp6_apply.CONF_PATH)
+        match = (_sha256_text(expected) == on_disk) if expected else (on_disk is None)
+        if is_dirty(db, "dhcp6") and match:
+            mark_clean(db, "dhcp6", summary=f"{source}: on-disk conf already matches DB")
             return True
     except Exception:  # noqa: BLE001
         pass
@@ -427,6 +442,7 @@ def reconcile_all(db: Session, source: str = "reconcile") -> dict[str, bool]:
     _reconcile_ssh_admin_flag(db, source)
     return {
         "dhcp":      _reconcile_dhcp(db, source),
+        "dhcp6":     _reconcile_dhcp6(db, source),
         "dns":       _reconcile_dns(db, source),
         "snmp":      _reconcile_snmp(db, source),
         "ha":        _reconcile_ha(db, source),

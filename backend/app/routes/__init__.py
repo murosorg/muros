@@ -28,6 +28,7 @@ from .ipv6 import ra_router
 from .qos import qos_router
 from .syslog import syslog_router
 from .dyndns import dyndns_router
+from .dhcp6 import dhcp6_router
 
 __all__ = [
     'auth_router',
@@ -54,4 +55,5 @@ __all__ = [
     'qos_router',
     'syslog_router',
     'dyndns_router',
+    'dhcp6_router',
 ]

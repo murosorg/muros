@@ -30,6 +30,7 @@ from app.routes import (
     qos_router,
     syslog_router,
     dyndns_router,
+    dhcp6_router,
 )
 from app.routing import apply_all_routes, enable_ip_forwarding
 from app.seed import (
@@ -298,3 +299,4 @@ app.include_router(ra_router)
 app.include_router(qos_router)
 app.include_router(syslog_router)
 app.include_router(dyndns_router)
+app.include_router(dhcp6_router)

@@ -34,6 +34,7 @@ const SSH = lazy(() => import('./pages/SSH'))
 const HttpAccess = lazy(() => import('./pages/HttpAccess'))
 const Diagnostic = lazy(() => import('./pages/Diagnostic'))
 const DhcpPage = lazy(() => import('./pages/Dhcp'))
+const Dhcp6Page = lazy(() => import('./pages/Dhcp6'))
 const DnsPage = lazy(() => import('./pages/Dns'))
 const NtpPage = lazy(() => import('./pages/Ntp'))
 const UsersPage = lazy(() => import('./pages/Users'))
@@ -118,6 +119,7 @@ export default function App() {
           <Route path="/ssh" element={<SSH />} />
           <Route path="/diagnostic" element={<Diagnostic />} />
           <Route path="/services/dhcp" element={<DhcpPage />} />
+          <Route path="/services/dhcp6" element={<Dhcp6Page />} />
           <Route path="/services/dns" element={<DnsPage />} />
           <Route path="/services/ntp" element={<NtpPage />} />
           <Route path="/system/time" element={<Navigate to="/services/ntp" replace />} />

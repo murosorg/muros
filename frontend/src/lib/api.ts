@@ -588,6 +588,52 @@ export type DynDnsUpdateResult = {
   reason?: string | null
 }
 
+export type Dhcp6Config = {
+  id: number
+  enabled: boolean
+  default_lease_seconds: number
+}
+
+export type Dhcp6Pool = {
+  id: number
+  interface_id: number
+  interface_name: string | null
+  range_start: string
+  range_end: string
+  dns_servers: string | null
+  lease_seconds: number | null
+  enabled: boolean
+  comment: string | null
+}
+
+export type Dhcp6PoolInput = {
+  interface_id: number
+  range_start: string
+  range_end: string
+  dns_servers?: string | null
+  lease_seconds?: number | null
+  enabled: boolean
+  comment?: string | null
+}
+
+export type Dhcp6Status = {
+  enabled: boolean
+  installed: boolean
+  service_state: string
+  version: string | null
+  pools_count: number
+  active_leases_count: number
+  config_path: string
+  leases_path: string
+}
+
+export type Dhcp6ActiveLease = {
+  expiry: number
+  duid: string
+  ip: string
+  hostname: string | null
+}
+
 export const api = {
   health: () => request<Health>('GET', '/api/health'),
   systemInfo: () => request<SystemInfo>('GET', '/api/system/info'),
@@ -1087,6 +1133,21 @@ export const api = {
     updateNow: (id: number) =>
       request<DynDnsUpdateResult>('POST', `/api/dyndns/${id}/update-now`),
     updateNowAll: () => request<DynDnsUpdateResult>('POST', '/api/dyndns/update-now'),
+  },
+
+  dhcp6: {
+    getConfig: () => request<Dhcp6Config>('GET', '/api/dhcp6/config'),
+    updateConfig: (data: { enabled: boolean; default_lease_seconds: number }) =>
+      request<Dhcp6Config>('PUT', '/api/dhcp6/config', data),
+    status: () => request<Dhcp6Status>('GET', '/api/dhcp6/status'),
+    activeLeases: () => request<Dhcp6ActiveLease[]>('GET', '/api/dhcp6/leases/active'),
+    pools: () => request<Dhcp6Pool[]>('GET', '/api/dhcp6/pools'),
+    createPool: (data: Dhcp6PoolInput) => request<Dhcp6Pool>('POST', '/api/dhcp6/pools', data),
+    updatePool: (id: number, data: Dhcp6PoolInput) =>
+      request<Dhcp6Pool>('PUT', `/api/dhcp6/pools/${id}`, data),
+    deletePool: (id: number) => request<void>('DELETE', `/api/dhcp6/pools/${id}`),
+    apply: () => request<{ message: string }>('POST', '/api/dhcp6/apply'),
+    pending: () => request<ServicePending>('GET', '/api/dhcp6/pending'),
   },
 
   dhcp: {

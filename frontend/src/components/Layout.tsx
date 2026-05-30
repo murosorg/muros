@@ -24,6 +24,7 @@ const navItems: { to: string; label: string; section: string | null; service?: s
   { to: '/firewall/services', label: 'Services', section: 'Firewall' },
   { to: '/nat', label: 'NAT', section: 'Firewall' },
   { to: '/services/dhcp', label: 'DHCP server', section: 'Services', service: 'dhcp' },
+  { to: '/services/dhcp6', label: 'DHCPv6 server', section: 'Services', service: 'dhcp6' },
   { to: '/services/dns', label: 'DNS server', section: 'Services', service: 'dns' },
   { to: '/services/ntp', label: 'NTP server', section: 'Services' },
   { to: '/vpn/wireguard', label: 'WireGuard', section: 'VPN', service: 'wireguard' },

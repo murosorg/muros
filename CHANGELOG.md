@@ -4,6 +4,23 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [v0.9.0-rc102] - 2026-05-30
+
+### Added
+- Stateful DHCPv6 server. A new "DHCPv6 server" page (Services section)
+  hands out IPv6 addresses from a per-interface pool using ISC Kea
+  (kea-dhcp6-server), the IPv6 counterpart of the existing Kea DHCPv4
+  server. The /64 subnet is derived from the pool range, DNS servers are
+  pushed (defaulting to the firewall IPv6), and the config is always
+  valid (idle daemon when disabled or pool-less), like the IPv4 side.
+  Works together with the IPv6 Router Advertisements page: clients only
+  request a DHCPv6 lease when the RA Managed (M) flag is set, which the
+  UI calls out explicitly. New `Dhcp6Config` / `Dhcp6Pool` models, REST
+  API under `/api/dhcp6`, dirty tracking, boot reconcile, lease reader,
+  and an in-memory DB test suite for the config builder. This completes
+  the four-feature gap-closing batch (QoS, remote syslog, dynamic DNS,
+  DHCPv6) versus OPNsense for the typical SMB deployment.
+
 ## [v0.9.0-rc101] - 2026-05-30
 
 ### Changed
