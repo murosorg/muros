@@ -832,9 +832,21 @@ export const api = {
     // UI does not have to hardcode the list.
     get: () => request<{
       apply_confirm_timeout: { value: number; default: number; choices: number[] }
+      identity: { hostname: string; timezone: string; locale: string; keymap: string }
     }>('GET', '/api/system/settings'),
     setApplyConfirmTimeout: (value: number) =>
       request<{ value: number }>('PUT', '/api/system/settings/apply-confirm-timeout', { value }),
+    // Available timezones/locales/keymaps for the System page selects,
+    // sourced from timedatectl/localectl (no hardcoded list).
+    getIdentityChoices: () => request<{
+      timezones: string[]; locales: string[]; keymaps: string[]
+    }>('GET', '/api/system/settings/identity/choices'),
+    // Apply any subset of the basic identity/locale knobs. Omitted
+    // fields are left unchanged.
+    setIdentity: (body: { hostname?: string; timezone?: string; locale?: string; keymap?: string }) =>
+      request<{ hostname: string; timezone: string; locale: string; keymap: string }>(
+        'PUT', '/api/system/settings/identity', body,
+      ),
   },
 
   notifications: {

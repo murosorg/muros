@@ -358,9 +358,147 @@ function GeneralTab() {
           <div>Licence : <span className="font-mono">AGPL-3.0</span></div>
         </div>
       </Section>
+      <IdentitySettings />
       <ApplyConfirmTimeoutSetting />
       <PowerActions />
     </>
+  )
+}
+
+/**
+ * Basic system identity and locale settings.
+ *
+ * Hostname, timezone, locale and console keymap are left at neutral
+ * defaults by the unattended installer. They are not firewall config,
+ * but an operator who logs into a shell or the physical console wants to
+ * set them. The keymap in particular matters at the physical console:
+ * a wrong layout makes typing the root password error-prone. Each field
+ * is applied live and persisted by systemd (hostnamectl/timedatectl/
+ * localectl). Only changed fields are sent on Save.
+ */
+function IdentitySettings() {
+  const [current, setCurrent] = useState<{
+    hostname: string; timezone: string; locale: string; keymap: string
+  } | null>(null)
+  const [hostname, setHostname] = useState('')
+  const [timezone, setTimezone] = useState('')
+  const [locale, setLocale] = useState('')
+  const [keymap, setKeymap] = useState('')
+  const [choices, setChoices] = useState<{ timezones: string[]; locales: string[]; keymaps: string[] }>(
+    { timezones: [], locales: [], keymaps: [] },
+  )
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  const load = useCallback(() => {
+    api.systemSettings.get().then((data) => {
+      setCurrent(data.identity)
+      setHostname(data.identity.hostname)
+      setTimezone(data.identity.timezone)
+      setLocale(data.identity.locale)
+      setKeymap(data.identity.keymap)
+    }).catch((e) => setErr((e as Error).message))
+    api.systemSettings.getIdentityChoices().then(setChoices).catch(() => {})
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  const dirty = current !== null && (
+    hostname !== current.hostname || timezone !== current.timezone ||
+    locale !== current.locale || keymap !== current.keymap
+  )
+
+  const save = async () => {
+    if (!current) return
+    const body: { hostname?: string; timezone?: string; locale?: string; keymap?: string } = {}
+    if (hostname !== current.hostname) body.hostname = hostname.trim()
+    if (timezone !== current.timezone) body.timezone = timezone.trim()
+    if (locale !== current.locale) body.locale = locale.trim()
+    if (keymap !== current.keymap) body.keymap = keymap.trim()
+    setSaving(true); setErr(null)
+    try {
+      const r = await api.systemSettings.setIdentity(body)
+      setCurrent(r)
+      setHostname(r.hostname); setTimezone(r.timezone); setLocale(r.locale); setKeymap(r.keymap)
+      toast.success('System settings updated')
+    } catch (e) {
+      setErr((e as Error).message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Section title="System settings">
+      {err && <div className="mb-3"><ErrorBlock message={err} /></div>}
+      <div className="border border-gray-200 rounded-md p-4 space-y-4">
+        <div className="text-sm text-gray-700">
+          Basic identity and locale, applied live and kept across reboots.
+          The console keymap matters when logging in at the physical
+          console: a wrong layout makes the password hard to type.
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <label className="block">
+            <div className="text-xs font-medium text-gray-600 mb-1">Hostname</div>
+            <input
+              className="input"
+              value={hostname}
+              onChange={(e) => setHostname(e.target.value)}
+              placeholder="muros"
+              spellCheck={false}
+            />
+          </label>
+          <label className="block">
+            <div className="text-xs font-medium text-gray-600 mb-1">Timezone</div>
+            <input
+              className="input"
+              list="tz-choices"
+              value={timezone}
+              onChange={(e) => setTimezone(e.target.value)}
+              placeholder="Etc/UTC"
+              spellCheck={false}
+            />
+            <datalist id="tz-choices">
+              {choices.timezones.map((t) => <option key={t} value={t} />)}
+            </datalist>
+          </label>
+          <label className="block">
+            <div className="text-xs font-medium text-gray-600 mb-1">Locale</div>
+            <input
+              className="input"
+              list="locale-choices"
+              value={locale}
+              onChange={(e) => setLocale(e.target.value)}
+              placeholder="en_US.UTF-8"
+              spellCheck={false}
+            />
+            <datalist id="locale-choices">
+              {choices.locales.map((l) => <option key={l} value={l} />)}
+            </datalist>
+          </label>
+          <label className="block">
+            <div className="text-xs font-medium text-gray-600 mb-1">Console keymap</div>
+            <input
+              className="input"
+              list="keymap-choices"
+              value={keymap}
+              onChange={(e) => setKeymap(e.target.value)}
+              placeholder="us"
+              spellCheck={false}
+            />
+            <datalist id="keymap-choices">
+              {choices.keymaps.map((k) => <option key={k} value={k} />)}
+            </datalist>
+          </label>
+        </div>
+        <div className="flex items-center gap-3">
+          <button className="btn-primary" onClick={save} disabled={!dirty || saving}>
+            {saving ? 'Saving...' : 'Save'}
+          </button>
+          {dirty && !saving && <span className="text-xs text-gray-500">Unsaved changes</span>}
+        </div>
+      </div>
+    </Section>
   )
 }
 

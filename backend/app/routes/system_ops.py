@@ -603,13 +603,63 @@ def get_system_settings():
     list (single source of truth).
     """
     from app import settings as app_settings
+    from app import sysconfig
     return {
         "apply_confirm_timeout": {
             "value": app_settings.get_apply_confirm_timeout(),
             "default": app_settings.APPLY_CONFIRM_TIMEOUT_DEFAULT,
             "choices": list(app_settings.APPLY_CONFIRM_TIMEOUT_CHOICES),
         },
+        "identity": sysconfig.get_settings(),
     }
+
+
+@system_settings_router.get("/identity/choices")
+def get_identity_choices():
+    """Available timezones, locales and keymaps for the System page selects.
+
+    The lists come straight from timedatectl/localectl so the UI never
+    hardcodes them (single source of truth, matches the running host).
+    """
+    from app import sysconfig
+    return {
+        "timezones": sysconfig.list_timezones(),
+        "locales": sysconfig.list_locales(),
+        "keymaps": sysconfig.list_keymaps(),
+    }
+
+
+@system_settings_router.put("/identity")
+def set_identity(payload: dict):
+    """Apply basic system identity/locale settings.
+
+    Accepts any subset of ``{hostname, timezone, locale, keymap}``; a
+    field left out (or null) is unchanged. Each value is validated before
+    it is applied, and an invalid one yields a 400 without touching the
+    rest. These knobs are applied live and persisted by systemd
+    (hostnamectl / timedatectl / localectl).
+    """
+    from app import sysconfig
+
+    def _opt(key: str) -> str | None:
+        val = payload.get(key)
+        if val is None:
+            return None
+        if not isinstance(val, str):
+            raise HTTPException(400, f"{key} must be a string")
+        return val
+
+    try:
+        return sysconfig.apply_identity(
+            hostname=_opt("hostname"),
+            timezone=_opt("timezone"),
+            locale=_opt("locale"),
+            keymap=_opt("keymap"),
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(500, str(exc))
 
 
 @system_settings_router.put("/apply-confirm-timeout")
