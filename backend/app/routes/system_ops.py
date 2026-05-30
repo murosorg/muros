@@ -285,6 +285,7 @@ def ntp_servers(db: Session = Depends(get_db)):
         servers=ntp.get_servers(),
         config_path=ntp.get_config_path(),
         serve_lan=cfg.serve_lan,
+        enabled=cfg.enabled,
     )
 
 
@@ -293,6 +294,7 @@ def ntp_set_servers(data: schemas.NtpServersIn, db: Session = Depends(get_db)):
     from app import ntp
     cfg = ntp.get_config(db)
     cfg.serve_lan = data.serve_lan
+    cfg.enabled = data.enabled
     db.commit()
     try:
         ntp.apply_config(db, servers=data.servers)
@@ -306,6 +308,7 @@ def ntp_set_servers(data: schemas.NtpServersIn, db: Session = Depends(get_db)):
         servers=ntp.get_servers(),
         config_path=ntp.get_config_path(),
         serve_lan=cfg.serve_lan,
+        enabled=cfg.enabled,
     )
 
 

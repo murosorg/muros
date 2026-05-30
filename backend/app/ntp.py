@@ -197,10 +197,16 @@ def apply_config(db, servers: list[str] | None = None) -> None:
     on save and by muros-boot so NTP server mode survives a reboot.
     Exposure is controlled at the firewall, not here.
     """
+    cfg = get_config(db)
+    if not cfg.enabled:
+        # Admin turned NTP off: stop chrony and keep it down across reboots.
+        _disable(_chrony_unit())
+        return
     srv = [s.strip() for s in (servers if servers is not None else get_servers()) if s.strip()]
     if not srv:
         srv = list(DEFAULT_SERVERS)
-    set_servers(srv, get_config(db).serve_lan)
+    set_servers(srv, cfg.serve_lan)
+    _enable(_chrony_unit())
 
 
 def _restart(service: str) -> None:
@@ -208,4 +214,20 @@ def _restart(service: str) -> None:
         subprocess.check_call(["systemctl", "restart", service], timeout=10)
     except (subprocess.SubprocessError, FileNotFoundError):
         # Silent : in dev (MUROS_APPLY off) there is no systemctl / no rights.
+        pass
+
+
+def _enable(service: str) -> None:
+    """Enable and start the unit (no-op in dev / without rights)."""
+    try:
+        subprocess.check_call(["systemctl", "enable", "--now", service], timeout=10)
+    except (subprocess.SubprocessError, FileNotFoundError):
+        pass
+
+
+def _disable(service: str) -> None:
+    """Stop the unit and keep it down across reboots."""
+    try:
+        subprocess.check_call(["systemctl", "disable", "--now", service], timeout=10)
+    except (subprocess.SubprocessError, FileNotFoundError):
         pass

@@ -71,6 +71,8 @@ class NtpServersIn(BaseModel):
     servers: list[str]
     # Serve NTP to LAN clients (chrony server mode). Default on.
     serve_lan: bool = True
+    # Master switch: when False, chrony is stopped and disabled at boot.
+    enabled: bool = True
 
 
 class NtpServersOut(BaseModel):
@@ -79,6 +81,8 @@ class NtpServersOut(BaseModel):
     # When True, chrony answers NTP requests on every interface
     # (chrony 'allow all'); exposure is then controlled at the firewall.
     serve_lan: bool = True
+    # False when the admin turned NTP (chrony) off from the page.
+    enabled: bool = True
 
 
 # --- DNS ---

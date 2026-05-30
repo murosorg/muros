@@ -620,8 +620,8 @@ export const api = {
   ntp: {
     status: () => request<NtpStatus>('GET', '/api/ntp/status'),
     servers: () => request<NtpServers>('GET', '/api/ntp/servers'),
-    setServers: (servers: string[], serveLan: boolean) =>
-      request<NtpServers>('PUT', '/api/ntp/servers', { servers, serve_lan: serveLan }),
+    setServers: (servers: string[], serveLan: boolean, enabled: boolean) =>
+      request<NtpServers>('PUT', '/api/ntp/servers', { servers, serve_lan: serveLan, enabled }),
   },
 
   dns: {
@@ -1471,6 +1471,7 @@ export type NtpServers = {
   servers: string[]
   config_path: string
   serve_lan: boolean
+  enabled: boolean
 }
 
 export type DnsConfig = {

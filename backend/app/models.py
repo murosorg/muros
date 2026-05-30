@@ -436,6 +436,9 @@ class NtpConfig(Base):
     __tablename__ = "ntp_config"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
     serve_lan: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # When False, chrony is stopped and disabled at boot. Time sync is then
+    # off until the admin re-enables it from the NTP page. Default on.
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
 
 class NatRule(Base):

@@ -23,14 +23,16 @@ export default function Ntp() {
   const [config, setConfig] = useState<NtpServers | null>(null)
   const [serversText, setServersText] = useState<string>('')
   const [serveLan, setServeLan] = useState(true)
+  const [enabled, setEnabled] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [working, setWorking] = useState(false)
+  const [toggleBusy, setToggleBusy] = useState(false)
 
   const reload = useCallback(() => {
     Promise.all([api.ntp.status(), api.ntp.servers()])
       .then(([s, c]) => {
         setStatus(s); setConfig(c); setServersText(c.servers.join(' '))
-        setServeLan(c.serve_lan); setError(null)
+        setServeLan(c.serve_lan); setEnabled(c.enabled); setError(null)
       })
       .catch((e) => setError(e.message))
   }, [])
@@ -45,9 +47,30 @@ export default function Ntp() {
     setWorking(true)
     try {
       const list = serversText.split(/\s+/).map((s) => s.trim()).filter(Boolean)
-      const c = await api.ntp.setServers(list, serveLan)
-      setConfig(c); setServersText(c.servers.join(' ')); setServeLan(c.serve_lan); setError(null)
+      const c = await api.ntp.setServers(list, serveLan, enabled)
+      setConfig(c); setServersText(c.servers.join(' ')); setServeLan(c.serve_lan)
+      setEnabled(c.enabled); setError(null)
     } catch (e) { setError((e as Error).message) } finally { setWorking(false) }
+  }
+
+  // Master enable/disable toggle in the page header. Flips the persisted
+  // state and applies it immediately (chrony is enabled+started or
+  // stopped+disabled). Disabling asks for confirmation since it stops
+  // time synchronization.
+  const toggleService = async () => {
+    const next = !enabled
+    if (!next && !window.confirm(
+      'Disable NTP? chrony will be stopped and disabled at boot, and the box '
+      + 'clock will no longer be kept in sync until you re-enable it.'
+    )) return
+    setToggleBusy(true)
+    try {
+      const list = serversText.split(/\s+/).map((s) => s.trim()).filter(Boolean)
+      const c = await api.ntp.setServers(list, serveLan, next)
+      setConfig(c); setServersText(c.servers.join(' ')); setServeLan(c.serve_lan)
+      setEnabled(c.enabled); setError(null)
+      api.ntp.status().then(setStatus).catch(() => {})
+    } catch (e) { setError((e as Error).message) } finally { setToggleBusy(false) }
   }
 
   const dirty = !!config && (
@@ -66,6 +89,12 @@ export default function Ntp() {
           + 'is read from timedatectl and chronyc tracking; the server list is '
           + 'written to /etc/chrony/conf.d/muros.conf and chrony is restarted on save.'
         }
+        serviceEnabled={enabled}
+        onServiceEnabledChange={toggleService}
+        serviceToggleBusy={toggleBusy}
+        serviceToggleTitle={enabled
+          ? 'NTP enabled. Click to stop chrony and disable it at boot.'
+          : 'NTP disabled. Click to start chrony and enable it at boot.'}
       />
       <div className="px-6 py-4 space-y-6">
         {error && <ErrorBlock message={error} onDismiss={() => setError(null)} />}

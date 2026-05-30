@@ -203,6 +203,20 @@ def _migrate_schema() -> None:
             ))
             conn.commit()
 
+        # ntp-enable-toggle : let the admin stop/disable chrony from the
+        # NTP page. Existing rows default to enabled (chrony ships on by
+        # default), matching the install-time state.
+        try:
+            ntpcols = {c["name"] for c in insp.get_columns("ntp_config")}
+        except Exception:
+            ntpcols = set()
+        if ntpcols and "enabled" not in ntpcols:
+            conn.execute(text(
+                "ALTER TABLE ntp_config ADD COLUMN enabled "
+                "BOOLEAN NOT NULL DEFAULT 1"
+            ))
+            conn.commit()
+
         # rc128 : drop the legacy "Deny all (catch-all)" rule on the
         # forward chain. The chain already has policy drop in the
         # compiler output, so the explicit catch-all rule is redundant
