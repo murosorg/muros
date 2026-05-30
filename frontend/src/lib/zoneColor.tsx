@@ -1,6 +1,6 @@
-// Couleur deterministe par zone, derivee d'un hash simple du nom.
-// Reutilisable partout (Zones, Rules, Network) pour faire correspondre
-// visuellement une zone a sa couleur peu importe la page.
+// Deterministic per-zone color, derived from a simple hash of the name.
+// Reusable everywhere (Zones, Rules, Network) so a zone maps to the same
+// color visually regardless of the page.
 
 const PALETTE: { bg: string; text: string; border: string; dot: string }[] = [
   { bg: 'bg-sky-100',     text: 'text-sky-800',     border: 'border-sky-200',     dot: 'bg-sky-500'     },
@@ -15,7 +15,7 @@ const PALETTE: { bg: string; text: string; border: string; dot: string }[] = [
   { bg: 'bg-orange-100',  text: 'text-orange-800',  border: 'border-orange-200',  dot: 'bg-orange-500'  },
 ]
 
-// Hash simple FNV-like. Stable et rapide, suffisant pour les noms de zone.
+// Simple FNV-like hash. Stable and fast, good enough for zone names.
 function hashStr(s: string): number {
   let h = 2166136261 >>> 0
   for (let i = 0; i < s.length; i++) {
@@ -27,7 +27,7 @@ function hashStr(s: string): number {
 
 export function zoneColor(name: string | null | undefined) {
   if (!name) return PALETTE[0]
-  // Cas frequents en pseudo-conventions : couleurs lisibles a l'oeil.
+  // Common pseudo-convention cases: easily recognizable colors.
   const lower = name.toLowerCase()
   if (lower === 'wan' || lower === 'internet') return PALETTE[2]   // amber
   if (lower === 'lan' || lower === 'local')    return PALETTE[1]   // emerald

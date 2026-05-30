@@ -315,11 +315,11 @@ export const auth = {
 let onUnauthorized: ((expired: boolean) => void) | null = null
 export function setUnauthorizedHandler(h: (expired: boolean) => void) { onUnauthorized = h }
 
-// `hadValidSession` passe a true des qu'un appel authentifie a reussi
-// pendant CE chargement de page. Un 401 ulterieur signifie alors une vraie
-// expiration de session (a afficher), tandis qu'un 401 sur le premier
-// appel (token perime laisse dans localStorage par un dev) ne doit PAS
-// afficher la banniere "Session expired" qui serait trompeuse.
+// `hadValidSession` flips to true as soon as an authenticated call
+// succeeds during THIS page load. A later 401 then means a real session
+// expiration (worth showing), whereas a 401 on the first call (a stale
+// token left in localStorage by a dev) must NOT show the misleading
+// "Session expired" banner.
 let hadValidSession = false
 
 // Backend reachability bus. The request wrapper fires `muros:backend-down`
@@ -348,9 +348,9 @@ async function request<T>(method: string, path: string, body?: unknown, opts?: {
   const token = auth.token
   if (token) headers['Authorization'] = `Bearer ${token}`
 
-  // AbortController : si le backend bloque (DNS HS, apt qui rame...) on
-  // libere le navigateur apres timeoutMs ms plutot que laisser un spinner
-  // colle. Defaut : pas de timeout cote client.
+  // AbortController: if the backend stalls (DNS down, slow apt...) we free
+  // the browser after timeoutMs ms instead of leaving a stuck spinner.
+  // Default: no client-side timeout.
   const ctrl = opts?.timeoutMs ? new AbortController() : null
   const timer = ctrl && opts?.timeoutMs
     ? window.setTimeout(() => ctrl.abort(), opts.timeoutMs)
@@ -414,9 +414,9 @@ async function request<T>(method: string, path: string, body?: unknown, opts?: {
     } catch { /* */ }
     throw new Error(detail || `${res.status} ${res.statusText}`)
   }
-  // L'appel a reussi avec un token : on a une vraie session valide cote
-  // serveur. Marquer pour distinguer "session expiree" d'un "token perime
-  // jamais valide ce chargement".
+  // The call succeeded with a token: we have a real valid session on the
+  // server side. Mark it to distinguish "expired session" from a "stale
+  // token never valid this load".
   if (token) hadValidSession = true
   if (res.status === 204) return undefined as T
   return res.json()
@@ -636,8 +636,8 @@ export const api = {
 
   apply: {
     status: () => request<ApplyStatus>('GET', '/api/firewall/apply/status'),
-    // Defaut 60s aligne avec safe_apply / pending_apply / apply.py backend.
-    // Convention MurOS unique pour tous les rollbacks (cf RollbackModal).
+    // Default 60s aligned with safe_apply / pending_apply / apply.py backend.
+    // Single MurOS convention for all rollbacks (cf RollbackModal).
     // timeout omitted -> the backend resolves it from the configurable
     // `apply_confirm_timeout` setting (60s by default). Pass a value only
     // to override it explicitly (e.g. the setup wizard).
@@ -767,9 +767,9 @@ export const api = {
     status: () => request<UpdateStatus>('GET', '/api/updates'),
     check: () => request<UpdateStatus>('POST', '/api/updates/check'),
     install: () => request<UpdateInstallResult>('POST', '/api/updates/install'),
-    // 30s : marge sur les 25s apt-get update cote backend. Si le serveur
-    // est completement bloque (DNS HS, mirrors down), on libere le bouton
-    // au lieu de laisser l'utilisateur sur "Verification..." indefini.
+    // 30s: margin over the backend 25s apt-get update. If the server is
+    // completely stuck (DNS down, mirrors down), we free the button
+    // instead of leaving the user on "Checking..." indefinitely.
     checkAll: () => request<{ apt: UpdateStatus; muros: MurosUpdateStatus; last_check_at: string | null }>('POST', '/api/updates/check-all', undefined, { timeoutMs: 30000 }),
     murosStatus: () => request<MurosUpdateStatus>('GET', '/api/updates/muros'),
     installMuros: () => request<UpdateInstallResult>('POST', '/api/updates/muros/install'),
@@ -782,7 +782,7 @@ export const api = {
   },
 
   hardening: {
-    // Read-only : la drop-in est livree par le paquet et appliquee au postinst.
+    // Read-only: the drop-in is shipped by the package and applied at postinst.
     status: () => request<HardeningStatus>('GET', '/api/hardening'),
   },
 
