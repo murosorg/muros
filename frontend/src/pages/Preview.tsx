@@ -37,7 +37,8 @@ export default function Preview() {
     setApplying(true)
     setApplyError(null)
     try {
-      await api.apply.run(10)
+      // Timeout omitted: the backend uses the configured apply_confirm_timeout.
+      await api.apply.run()
       setConfirmApply(false)
     } catch (e) {
       setApplyError(String(e))
@@ -80,9 +81,9 @@ export default function Preview() {
           <ErrorBlock message={applyError} />
         )}
         <p className="text-sm text-gray-800 mb-2">
-          The ruleset is about to be pushed to the firewall. A 10-second timer will start:
-          if you do not confirm the apply via the bottom banner, the previous ruleset will be restored
-          automatically.
+          The ruleset is about to be pushed to the firewall. A confirmation timer will start
+          (60s by default, configurable): if you do not confirm the apply via the bottom banner,
+          the previous ruleset will be restored automatically.
         </p>
         <p className="text-xs text-gray-700">
           If you are developing on your local machine, apply runs in dry-run mode (nothing is actually applied).

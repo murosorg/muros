@@ -138,7 +138,7 @@ export default function RulesetModal({ onClose }: { onClose: () => void }) {
         <div className="px-5 py-3 border-t border-gray-200 flex items-center justify-between gap-2">
           <div className="text-xs text-gray-600">
             Check = <code className="font-mono">nft -c -f -</code> (read-only).
-            Apply = real load + 10s rollback timer.
+            Apply = real load + confirmation countdown (auto-rollback if not confirmed).
           </div>
           <div className="flex gap-2">
             <button className="btn-secondary" onClick={runCheck} disabled={checking || loading}>
