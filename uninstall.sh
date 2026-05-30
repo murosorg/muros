@@ -172,9 +172,32 @@ rm -f /etc/chrony/conf.d/muros.conf
 systemctl unmask systemd-timesyncd.service 2>/dev/null || true
 
 # DNS : MurOS ecrit /etc/resolv.conf directement et garde un backup
-# .muros-bak. Si l'admin avait une conf DNS pre-MurOS on la restaure.
-if [ -f /etc/resolv.conf.muros-bak ]; then
+# .muros-bak (sauvegarde du postinst au 1er install). Deux backups
+# possibles, on les essaie du plus specifique au plus general :
+#  - .muros-pre-unbound : pose quand l'admin a active "Unbound comme
+#    resolveur systeme" (resolv.conf = nameserver 127.0.0.1). C'est LE
+#    cas qui casse apt apres uninstall : Unbound est arrete/supprime mais
+#    resolv.conf pointe toujours sur 127.0.0.1 mort, donc chaque requete
+#    DNS attend un timeout avant de tomber sur le fallback et `apt update`
+#    rame / bloque a 0%.
+#  - .muros-bak : sauvegarde de l'ancien resolv.conf pre-MurOS.
+if [ -f /etc/resolv.conf.muros-pre-unbound ]; then
+  mv /etc/resolv.conf.muros-pre-unbound /etc/resolv.conf
+  rm -f /etc/resolv.conf.muros-bak 2>/dev/null || true
+elif [ -f /etc/resolv.conf.muros-bak ]; then
   mv /etc/resolv.conf.muros-bak /etc/resolv.conf
+fi
+# Filet de securite : si resolv.conf pointe encore UNIQUEMENT sur le
+# resolveur local 127.0.0.1 (Unbound, desormais arrete), apt et tout le
+# reste n'ont plus de DNS. On le remplace par des resolveurs publics
+# pour que la box reste utilisable juste apres la desinstallation.
+if [ -f /etc/resolv.conf ]; then
+  RC_LOCAL=$(grep -E '^[[:space:]]*nameserver[[:space:]]+127\.' /etc/resolv.conf 2>/dev/null | wc -l)
+  RC_PUBLIC=$(grep -E '^[[:space:]]*nameserver[[:space:]]+' /etc/resolv.conf 2>/dev/null \
+              | grep -Ecv 'nameserver[[:space:]]+127\.')
+  if [ "$RC_LOCAL" -gt 0 ] && [ "$RC_PUBLIC" -eq 0 ]; then
+    printf 'nameserver 1.1.1.1\nnameserver 8.8.8.8\n' > /etc/resolv.conf
+  fi
 fi
 # Drop-in resolved si on l'a pose (cas avance ou l'admin avait
 # installe systemd-resolved a la main)

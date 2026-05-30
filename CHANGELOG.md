@@ -2,6 +2,18 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [v0.9.0-rc11] - 2026-05-30
+
+### Fixed
+- Uninstall no longer leaves the box without working DNS. When "Unbound
+  as system resolver" was enabled, `/etc/resolv.conf` pointed at
+  127.0.0.1; after removing MurOS (and Unbound) every DNS lookup stalled
+  on the dead local resolver, so `apt update` hung at 0% and reinstalling
+  was impossible. uninstall.sh now restores the pre-Unbound resolver
+  backup and, as a safety net, replaces a loopback-only resolv.conf with
+  public resolvers. install.sh applies the same DNS preflight so a box
+  stuck in that state can still be reinstalled.
+
 ## [v0.9.0-rc10] - 2026-05-30
 
 ### Changed

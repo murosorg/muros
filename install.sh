@@ -32,6 +32,22 @@ echo "=============================================================="
 
 echo "[1/4] Prerequisites"
 
+# DNS preflight. A box that had MurOS's "Unbound as system resolver"
+# enabled keeps /etc/resolv.conf pointing at 127.0.0.1; after an
+# uninstall Unbound is gone, so every DNS lookup stalls on a dead local
+# resolver and apt hangs at 0%. If resolv.conf has only a loopback
+# nameserver, fall back to public resolvers so this installer (and apt)
+# can actually reach the repository.
+if [ -f /etc/resolv.conf ]; then
+  RC_LOCAL=$(grep -E '^[[:space:]]*nameserver[[:space:]]+127\.' /etc/resolv.conf 2>/dev/null | wc -l)
+  RC_PUBLIC=$(grep -E '^[[:space:]]*nameserver[[:space:]]+' /etc/resolv.conf 2>/dev/null \
+              | grep -Ecv 'nameserver[[:space:]]+127\.')
+  if [ "$RC_LOCAL" -gt 0 ] && [ "$RC_PUBLIC" -eq 0 ]; then
+    echo "    -> /etc/resolv.conf only points at a local resolver; using public DNS for install"
+    printf 'nameserver 1.1.1.1\nnameserver 8.8.8.8\n' > /etc/resolv.conf
+  fi
+fi
+
 # Detection d'un etat dpkg cassé herite d'une MAJ ratée : si muros est
 # marqué "ReinstReq" / "half-configured" / "half-installed", apt-get
 # refuse de bouger tant qu'on n'a pas reinstalle, mais l'archive d'origine
