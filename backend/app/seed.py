@@ -194,10 +194,23 @@ def seed_if_empty(db: Session) -> None:
             src_zone_id=None, protocol="icmp",
             comment="ICMP (ping)",
         ),
+        # Default "allow LAN to firewall", same spirit as OPNsense's
+        # built-in "allow LAN to any" rule: the LAN is the trusted zone,
+        # so LAN clients can reach the box services (DNS, NTP, GUI, ...)
+        # out of the box. Without this the input policy drop would block
+        # NTP (123) and DNS (53) from the LAN even though the services
+        # run. Restrict once zones are wired.
+        models.FirewallRule(
+            position=40, chain="input", action="accept",
+            src_zone_id=lan.id,
+            comment="LAN to firewall (OPNsense-style default, restrict once configured)",
+        ),
+        # Default "allow LAN to any" (egress to Internet and other zones),
+        # mirroring OPNsense's default LAN rule. Restrict once configured.
         models.FirewallRule(
             position=10, chain="forward", action="accept",
-            src_zone_id=lan.id, dst_zone_id=wan.id,
-            comment="LAN egress to Internet",
+            src_zone_id=lan.id, dst_zone_id=None,
+            comment="LAN to any (OPNsense-style default allow)",
         ),
         # No explicit catch-all drop: the forward chain has policy drop,
         # which already denies anything not matched by a previous rule.
