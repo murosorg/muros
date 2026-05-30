@@ -18,7 +18,8 @@
 # Environment variables (all optional):
 #   MUROS_ROOT_PASSWORD   root password for the installed system
 #                         (default: muros). Change it after first login.
-#   DEBIAN_VERSION        netinst version to fetch (default: 13.0.0)
+#   DEBIAN_VERSION        netinst point release to fetch (default: the
+#                         latest published under debian-cd/current)
 #   DEBIAN_ARCH           amd64 (default) or arm64
 #   NETINST_ISO           path to an already-downloaded netinst ISO
 #                         (skips the download)
@@ -31,7 +32,7 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT_PASSWORD="${MUROS_ROOT_PASSWORD:-muros}"
-DEBIAN_VERSION="${DEBIAN_VERSION:-13.0.0}"
+DEBIAN_VERSION="${DEBIAN_VERSION:-}"
 ARCH="${DEBIAN_ARCH:-amd64}"
 OUTPUT="${OUTPUT:-${HERE}/muros-installer-${ARCH}.iso}"
 WORK="$(mktemp -d /tmp/muros-iso.XXXXXX)"
@@ -51,9 +52,30 @@ if [ -n "${NETINST_ISO:-}" ]; then
   echo "[1/5] Using provided netinst ISO: ${SRC_ISO}"
 else
   SRC_ISO="${WORK}/netinst.iso"
-  URL="https://cdimage.debian.org/debian-cd/current/${ARCH}/iso-cd/debian-${DEBIAN_VERSION}-${ARCH}-netinst.iso"
+  BASE="https://cdimage.debian.org/debian-cd/current/${ARCH}/iso-cd"
+  # The point release in current/ moves over time (13.0.0, 13.5.0, ...).
+  # Discover the published netinst filename instead of hardcoding it,
+  # unless the caller pinned DEBIAN_VERSION explicitly.
+  if [ -n "${DEBIAN_VERSION}" ]; then
+    ISO_NAME="debian-${DEBIAN_VERSION}-${ARCH}-netinst.iso"
+  else
+    echo "[1/5] Resolving latest netinst under ${BASE}"
+    ISO_NAME="$(wget -qO- "${BASE}/" \
+      | grep -oE "debian-[0-9.]+-${ARCH}-netinst\.iso" \
+      | sort -V | tail -1)"
+    if [ -z "${ISO_NAME}" ]; then
+      echo "Could not determine the current Debian netinst filename from ${BASE}/." >&2
+      echo "Pin one with DEBIAN_VERSION=X.Y.Z or pass NETINST_ISO=/path/to.iso." >&2
+      exit 1
+    fi
+  fi
+  URL="${BASE}/${ISO_NAME}"
   echo "[1/5] Downloading ${URL}"
-  wget -q --show-progress -O "${SRC_ISO}" "${URL}"
+  if ! wget -q --show-progress -O "${SRC_ISO}" "${URL}"; then
+    echo "Download failed: ${URL}" >&2
+    echo "Check connectivity, or pin DEBIAN_VERSION / pass NETINST_ISO." >&2
+    exit 1
+  fi
 fi
 
 # ---------------------------------------------------------------------
@@ -126,14 +148,18 @@ fi
 #    El Torito boot layout captured from the source image.
 # ---------------------------------------------------------------------
 echo "[5/5] Repacking ISO -> ${OUTPUT}"
+# Reuse the El Torito / isohybrid boot layout captured from the source
+# image. The reported arguments are single-quoted (paths, modification
+# date); parse them through 'eval set --' so the quotes are honoured
+# instead of reaching xorriso as literal characters.
 MKISOFS_ARGS="$(xorriso -indev "${SRC_ISO}" -report_el_torito as_mkisofs 2>/dev/null \
   | grep -v '^-V' | tr '\n' ' ')"
-# shellcheck disable=SC2086
+eval "set -- ${MKISOFS_ARGS}"
 xorriso -as mkisofs \
   -V 'MUROS_INSTALL' \
-  ${MKISOFS_ARGS} \
+  "$@" \
   -o "${OUTPUT}" \
-  "${EXTRACT}" 2>/dev/null
+  "${EXTRACT}"
 
 echo
 echo "Done. Unattended MurOS installer: ${OUTPUT}"

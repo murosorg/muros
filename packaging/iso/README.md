@@ -38,7 +38,7 @@ Output: `muros-installer-amd64.iso`.
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `MUROS_ROOT_PASSWORD` | `muros` | Root password of the installed system. Change it after first login. |
-| `DEBIAN_VERSION` | `13.0.0` | netinst point release to download. |
+| `DEBIAN_VERSION` | latest in `current/` | netinst point release to download. Auto-detected unless pinned (e.g. `13.5.0`). |
 | `DEBIAN_ARCH` | `amd64` | `amd64` or `arm64`. |
 | `NETINST_ISO` | (unset) | Use a locally downloaded netinst ISO instead of downloading. |
 | `OUTPUT` | `./muros-installer-<arch>.iso` | Output path. |
