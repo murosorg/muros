@@ -207,12 +207,6 @@ Delivered features move to [`CHANGELOG.md`](CHANGELOG.md). Current state:
 - **V2.0** (planned): IPS / IDS Suricata, captive portal, LDAP / AD
   integration, WireGuard self-service via LDAP, 2FA, OpenVPN
 
-### Out of scope, by design
-
-SD-WAN with application steering, HTTP proxy / web filter with HTTPS
-interception, gateway antivirus, dynamic routing (OSPF / BGP), reverse
-proxy / HTTP load balancer, OpenVPN, non-Debian distributions.
-
 ## About the name
 
 MurOS is unrelated to **Murus**, the commercial macOS firewall front-end
