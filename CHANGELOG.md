@@ -4,6 +4,25 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [v0.9.0-rc76] - 2026-05-30
+
+### Fixed
+- Firewall rule form: creating a rule from the Input or Output tab no
+  longer falls back to the Forward layout. The form opened with two zone
+  selectors and could save a nonsensical "any zone -> any zone" rule on a
+  single-ended chain, because the reset effect ignored the chain the page
+  opened it with. It now honors the active chain and shows "This firewall"
+  for the fixed endpoint (destination on input, source on output).
+- Chain/zone invariant is now enforced end to end: the API clears the
+  destination zone on input rules and the source zone on output rules
+  (rule create and update), and the nftables compiler ignores the zone
+  that does not apply to the chain, so a stale selection can never compile
+  into a rule that never matches.
+- Rules list filter: the always-on "Default policy" row is now hidden
+  while a text filter is active, so the list visibly narrows to the
+  matching rules (and shows "No rule matches the filter" when empty). The
+  filter also matches the source port and the chain name.
+
 ## [v0.9.0-rc74] - 2026-05-30
 
 ### Added

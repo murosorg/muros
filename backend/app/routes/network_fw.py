@@ -588,6 +588,16 @@ def update_rule(rule_id: int, data: schemas.FirewallRuleUpdate, db: Session = De
         if getattr(rule, k) != v:
             setattr(rule, k, v)
             changed = True
+    # Enforce the chain/zone invariant on the resulting rule: the firewall
+    # itself is a fixed endpoint on input (no destination zone) and output
+    # (no source zone). Clear the stale zone even if the client did not
+    # touch it (e.g. the chain changed but a zone was left behind).
+    if rule.chain == "input" and rule.dst_zone_id is not None:
+        rule.dst_zone_id = None
+        changed = True
+    elif rule.chain == "output" and rule.src_zone_id is not None:
+        rule.src_zone_id = None
+        changed = True
     if changed:
         rule.dirty = True
     db.commit()

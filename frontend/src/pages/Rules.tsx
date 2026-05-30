@@ -237,8 +237,11 @@ export default function Rules() {
         const dZone = zonesById.get(r.dst_zone_id ?? -1)?.name || ''
         const blob = [
           r.comment, sZone, dZone, r.src_address, r.dst_address,
-          r.protocol, r.dst_port, r.action,
+          r.protocol, r.src_port, r.dst_port, r.action, r.chain,
         ].filter(Boolean).join(' ').toLowerCase()
+        // Keep the catch-all in the pool so the default-policy row stays
+        // consistent; it is hidden from the rendered list while a filter
+        // is active (see catchAllRules below).
         return blob.includes(needle) || isCatchAll(r)
       })
     }
@@ -282,7 +285,12 @@ export default function Rules() {
           ? 'Default policy (accept).'
           : 'Default policy (drop).',
       } as unknown as FirewallRule)
-  const catchAllRules = syntheticCatchAll ? [syntheticCatchAll] : dbCatchAll
+  // The default-policy row is always-on context, not a search hit. While
+  // a text filter is active, hide it so the list narrows down to the
+  // matching rules only (and the empty state can show "No rule matches").
+  const catchAllRules = filter.trim()
+    ? []
+    : (syntheticCatchAll ? [syntheticCatchAll] : dbCatchAll)
 
   const toggleEnabled = async (r: FirewallRule) => {
     await api.rules.update(r.id, { enabled: !r.enabled })
@@ -336,7 +344,10 @@ export default function Rules() {
     const newOrder = reorderLocal(sourceId, target.id, false)
     // Optimistic update: replace the rules of the current chain locally
     const otherChains = rules.filter((r) => r.chain !== chain)
-    setRules([...otherChains, ...newOrder, ...catchAllRules])
+    // Preserve the real DB catch-all rows (never the synthetic placeholder
+    // nor an empty list when a filter is active) so the optimistic state
+    // stays faithful until the reorder reload lands.
+    setRules([...otherChains, ...newOrder, ...dbCatchAll])
     try {
       await api.rules.reorder(chain, newOrder.map((r) => r.id))
       reload()

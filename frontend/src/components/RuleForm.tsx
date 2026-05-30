@@ -56,9 +56,16 @@ export default function RuleForm({ rule, zones, defaultChain, onSubmit, onCancel
   const [addressGroups, setAddressGroups] = useState<AddressGroup[]>([])
   const [showAdvanced, setShowAdvanced] = useState(false)
 
+  // Reset the form whenever the edited rule changes. For a brand new rule
+  // (no `rule` prop) we must honor the chain the page opened us with,
+  // otherwise the form would silently fall back to "forward" and expose
+  // two zone selectors even on the input/output chains (where one side is
+  // the firewall itself). Carrying a stale dst_zone into an input rule, or
+  // src_zone into an output rule, produced nonsensical "any zone -> any
+  // zone" rules.
   useEffect(() => {
-    setData(rule || empty)
-  }, [rule])
+    setData(rule || { ...empty, chain: defaultChain || empty.chain })
+  }, [rule, defaultChain])
 
   useEffect(() => {
     void api.serviceGroups.list().then(setServiceGroups).catch(() => undefined)

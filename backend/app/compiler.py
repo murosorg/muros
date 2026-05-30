@@ -86,6 +86,16 @@ def _compile_addresses_zones(rule: models.FirewallRule) -> str:
     src_ifs = _zone_interfaces(rule.src_zone)
     dst_ifs = _zone_interfaces(rule.dst_zone)
 
+    # The firewall itself is a fixed endpoint on the single-ended chains:
+    # the input hook has no outgoing interface (oifname never matches) and
+    # the output hook has no incoming interface (iifname never matches).
+    # Ignore the zone that does not apply so a stale selection (e.g. left
+    # over from an older rule) cannot turn the rule into a dead match.
+    if rule.chain == "output":
+        src_ifs = []
+    if rule.chain == "input":
+        dst_ifs = []
+
     if src_ifs:
         parts.append(_ifname_match("iifname", src_ifs))
 
