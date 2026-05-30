@@ -51,19 +51,19 @@ def _server_block(listen_lines: list[str], tls: bool) -> list[str]:
         "    add_header X-Frame-Options DENY always;",
         "    add_header X-Content-Type-Options nosniff always;",
         "    add_header Referrer-Policy strict-origin-when-cross-origin always;",
-        # Content-Security-Policy: lock the SPA to its own origin. 'unsafe-inline'
-        # is required for style only (React inline styles + the QR SVGs injected
-        # via dangerouslySetInnerHTML); scripts stay 'self' (no inline JS, no
-        # eval in the Vite build). The Google Fonts origins are allow-listed
-        # because index.html pulls the Inter / JetBrains Mono stylesheets.
+        # Content-Security-Policy: lock the SPA to its own origin. Everything is
+        # served from 'self' (no web fonts, no CDN). 'unsafe-inline' is required
+        # for style only (React inline styles + the QR SVGs injected via
+        # dangerouslySetInnerHTML); scripts stay 'self' (no inline JS, no eval in
+        # the Vite build).
         "    add_header Content-Security-Policy \""
         "default-src 'self'; "
         "base-uri 'self'; "
         "frame-ancestors 'none'; "
         "object-src 'none'; "
         "script-src 'self'; "
-        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
-        "font-src 'self' https://fonts.gstatic.com; "
+        "style-src 'self' 'unsafe-inline'; "
+        "font-src 'self'; "
         "img-src 'self' data:; "
         "connect-src 'self'; "
         "form-action 'self'\" always;",

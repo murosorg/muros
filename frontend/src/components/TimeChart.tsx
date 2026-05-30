@@ -80,14 +80,14 @@ export default function TimeChart({
         {yTicks.map((t, i) => (
           <g key={i}>
             <line x1={padding.left} x2={width - padding.right} y1={sy(t)} y2={sy(t)} stroke="#e5e7eb" strokeWidth={1} />
-            <text x={padding.left - 6} y={sy(t) + 3} textAnchor="end" fontSize="9" fill="#6b7280" fontFamily="JetBrains Mono">
+            <text x={padding.left - 6} y={sy(t) + 3} textAnchor="end" fontSize="9" fill="#6b7280" fontFamily="ui-monospace, monospace">
               {yFormat(t)}
             </text>
           </g>
         ))}
         {/* Axe X */}
         {xTicks.map((t, i) => (
-          <text key={i} x={sx(t)} y={height - 4} textAnchor="middle" fontSize="9" fill="#6b7280" fontFamily="JetBrains Mono">
+          <text key={i} x={sx(t)} y={height - 4} textAnchor="middle" fontSize="9" fill="#6b7280" fontFamily="ui-monospace, monospace">
             {formatTime(t)}
           </text>
         ))}

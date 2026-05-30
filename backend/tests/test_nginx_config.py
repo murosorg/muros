@@ -40,8 +40,9 @@ def test_content_security_policy_and_permissions_policy():
     assert "script-src 'self';" in out
     assert "default-src 'self';" in out
     assert "frame-ancestors 'none';" in out
-    # Google Fonts origins are allow-listed (index.html pulls their stylesheets).
-    assert "font-src 'self' https://fonts.gstatic.com;" in out
+    # Everything is served from 'self' (no web fonts / no CDN allow-list).
+    assert "font-src 'self';" in out
+    assert "googleapis" not in out and "gstatic" not in out
     assert "add_header Permissions-Policy " in out
 
 
