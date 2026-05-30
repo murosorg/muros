@@ -70,7 +70,8 @@ export default function RulesetModal({ onClose }: { onClose: () => void }) {
     // est restaure automatically.
     setApplying(true)
     try {
-      await api.apply.run(10, lockout?.blocked ? true : false)
+      // Timeout omitted: the backend uses the configured apply_confirm_timeout.
+      await api.apply.run(undefined, lockout?.blocked ? true : false)
       onClose()
     } catch (e) {
       setCheck({ ok: false, message: 'Apply failed: ' + (e as Error).message })
@@ -87,7 +88,7 @@ export default function RulesetModal({ onClose }: { onClose: () => void }) {
           <div>
             <h2 className="text-base font-semibold text-gray-900">Apply configuration</h2>
             <p className="text-xs text-gray-600 mt-0.5">
-              Compile the nftables ruleset from rules, NAT, zones and interfaces. Review then apply (auto-rollback after 10s without confirmation).
+              Compile the nftables ruleset from rules, NAT, zones and interfaces. Review then apply (auto-rollback if you do not confirm in the modal that follows).
             </p>
           </div>
           <div className="flex items-center gap-2">

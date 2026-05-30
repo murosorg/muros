@@ -558,9 +558,12 @@ export const api = {
     status: () => request<ApplyStatus>('GET', '/api/firewall/apply/status'),
     // Defaut 60s aligne avec safe_apply / pending_apply / apply.py backend.
     // Convention MurOS unique pour tous les rollbacks (cf RollbackModal).
-    run: (timeout = 60, acknowledgeLockout = false) =>
+    // timeout omitted -> the backend resolves it from the configurable
+    // `apply_confirm_timeout` setting (60s by default). Pass a value only
+    // to override it explicitly (e.g. the setup wizard).
+    run: (timeout?: number, acknowledgeLockout = false) =>
       request<ApplyStatus>('POST', '/api/firewall/apply', {
-        timeout_seconds: timeout,
+        ...(timeout !== undefined ? { timeout_seconds: timeout } : {}),
         acknowledge_lockout: acknowledgeLockout,
       }),
     confirm: () => request<ApplyStatus>('POST', '/api/firewall/apply/confirm'),
