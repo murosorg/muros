@@ -156,19 +156,6 @@ class SshApplyResult(BaseModel):
     rollback_timeout_seconds: int | None = None
 
 
-class SshRootPasswordIn(BaseModel):
-    new_password: str
-    # Mot de passe MurOS UI de l'admin courant, exige comme verrou.
-    # On ne demande pas l'ancien mdp root (souvent inconnu sur cloud-init),
-    # mais on exige que l'admin se reauthentifie avec son mdp UI.
-    current_ui_password: str
-
-
-class SshRootPasswordResult(BaseModel):
-    applied: bool
-    message: str
-
-
 class SshInstallResult(BaseModel):
     installed: bool
     already_present: list[str]

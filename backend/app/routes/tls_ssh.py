@@ -5,7 +5,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app import models, pam_auth, schemas, service_dirty
+from app import models, schemas, service_dirty
 from app.auth import current_user
 from app.db import get_db
 
@@ -269,30 +269,6 @@ def ssh_add_key(data: schemas.SshKeyAdd):
     from app import ssh_config
     try:
         return ssh_config.add_authorized_key(data.key_text)
-    except ValueError as exc:
-        raise HTTPException(400, str(exc))
-    except RuntimeError as exc:
-        raise HTTPException(500, str(exc))
-
-
-@ssh_router.post("/root-password", response_model=schemas.SshRootPasswordResult)
-def ssh_set_root_password(
-    data: schemas.SshRootPasswordIn,
-    user: models.User = Depends(current_user),
-):
-    """Change le mot de passe Linux du compte root.
-
-    Exige le mot de passe UI MurOS de l'admin courant comme verrou (pour
-    eviter qu'une session laissee ouverte permette de changer le mdp root).
-    Different du compte UI MurOS qui se change via /api/auth/change-password.
-    """
-    # Verrou : on demande la reauth avec le mdp UI courant (via PAM).
-    if not pam_auth.authenticate(user.username, data.current_ui_password):
-        raise HTTPException(400, "Mot de passe MurOS actuel incorrect.")
-
-    from app import ssh_config
-    try:
-        return ssh_config.change_root_password(data.new_password)
     except ValueError as exc:
         raise HTTPException(400, str(exc))
     except RuntimeError as exc:

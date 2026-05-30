@@ -79,3 +79,24 @@ def set_apply_confirm_timeout(value: int) -> int:
         )
     _set(APPLY_CONFIRM_TIMEOUT_KEY, str(value))
     return value
+
+
+# --- First-boot setup wizard --------------------------------------------
+
+# True once the operator has completed the onboarding wizard (assigned the
+# WAN and LAN interfaces to their zones). Until then the UI redirects to
+# the wizard and the firewall keeps its permissive "any -> box" bootstrap
+# rules so the admin is never locked out before zones are wired.
+SETUP_COMPLETED_KEY: Final[str] = "setup_completed"
+
+
+def is_setup_completed() -> bool:
+    try:
+        return _get(SETUP_COMPLETED_KEY) == "1"
+    except Exception as exc:  # noqa: BLE001
+        log.warning("could not read setup_completed: %s", exc)
+        return False
+
+
+def set_setup_completed(value: bool) -> None:
+    _set(SETUP_COMPLETED_KEY, "1" if value else "0")

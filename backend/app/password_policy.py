@@ -6,8 +6,7 @@ Regles ANSSI/CIS minimales :
   - Refus des mdp les plus communs (top 200 fuites publiques)
   - Refus des mdp qui contiennent le username
 
-Utilise par auth.change_password (UI MurOS) et ssh_config.change_root_password
-(compte Linux root).
+Utilise par auth.change_password (UI MurOS).
 """
 from __future__ import annotations
 

@@ -235,6 +235,17 @@ export type User = {
   last_login: string | null
 }
 
+export type SetupInterface = {
+  name: string
+  zone: string | null
+  ip_address: string | null
+}
+
+export type SetupState = {
+  completed: boolean
+  interfaces: SetupInterface[]
+}
+
 export type LoginResult = {
   access_token?: string
   token_type: string
@@ -590,6 +601,12 @@ export const api = {
       ),
   },
 
+  setup: {
+    state: () => request<SetupState>('GET', '/api/setup/state'),
+    apply: (data: { wan_interface: string; lan_interface: string; lan_cidr: string }) =>
+      request<SetupState>('POST', '/api/setup/apply', data),
+  },
+
   network: {
     pending: () => request<{
       count: number
@@ -791,8 +808,6 @@ export const api = {
       request<{ added: boolean; fingerprint?: string | null; message?: string | null }>('POST', '/api/ssh/keys', { key_text }),
     deleteKey: (key_b64: string) =>
       request<{ deleted: boolean }>('DELETE', `/api/ssh/keys/${encodeURIComponent(key_b64)}`),
-    setRootPassword: (new_password: string, current_ui_password: string) =>
-      request<{ applied: boolean; message: string }>('POST', '/api/ssh/root-password', { new_password, current_ui_password }),
     toggleService: (enabled: boolean) =>
       request<SshServiceToggleResult>('POST', '/api/ssh/service/toggle', { enabled }),
   },

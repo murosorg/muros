@@ -2,6 +2,20 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [v0.9.0-rc23] - 2026-05-30
+
+### Added
+- First-boot setup wizard. Until the operator assigns the network
+  interfaces, the UI redirects to a one-step wizard that asks which NIC is
+  the WAN (Internet, DHCP client) and which is the trusted LAN (with its
+  CIDR). Applying it wires the zones and drops the permissive "any to
+  firewall" bootstrap rules, so the box reaches its final posture (LAN
+  reaches the firewall and its services, WAN default-deny) instead of
+  staying in the open bootstrap state. Services keep listening on every
+  interface; access is enforced by the firewall zones, not per-service
+  binds. Boxes already configured (zones assigned, or upgraded) skip the
+  wizard. New /api/setup/state and /api/setup/apply endpoints.
+
 ## [v0.9.0-rc24] - 2026-05-30
 
 ### Added

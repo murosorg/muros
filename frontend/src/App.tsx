@@ -10,6 +10,7 @@ import Layout from './components/Layout'
 // of the very first paint.
 // Dashboard fusionne avec Monitoring : un seul ecran de supervision.
 import Login from './pages/Login'
+const Setup = lazy(() => import('./pages/Setup'))
 const Rules = lazy(() => import('./pages/Rules'))
 const Services = lazy(() => import('./pages/Services'))
 const Preview = lazy(() => import('./pages/Preview'))
@@ -33,7 +34,7 @@ const DhcpPage = lazy(() => import('./pages/Dhcp'))
 const DnsPage = lazy(() => import('./pages/Dns'))
 const NtpPage = lazy(() => import('./pages/Ntp'))
 const UsersPage = lazy(() => import('./pages/Users'))
-import { auth, setUnauthorizedHandler } from './lib/api'
+import { api, auth, setUnauthorizedHandler } from './lib/api'
 import { ToastHost } from './components/Toast'
 import BackendUnreachableOverlay from './components/BackendUnreachableOverlay'
 
@@ -55,6 +56,22 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
+// Gate the app behind the first-boot wizard. Until the operator has
+// assigned the WAN/LAN interfaces, every authenticated route redirects to
+// /setup. Checked once per mount; failures fail open (show the app) so a
+// transient API error never bricks access to a configured box.
+function RequireSetup({ children }: { children: React.ReactNode }) {
+  const [state, setState] = useState<'loading' | 'ok' | 'setup'>('loading')
+  useEffect(() => {
+    api.setup.state()
+      .then((s) => setState(s.completed ? 'ok' : 'setup'))
+      .catch(() => setState('ok'))
+  }, [])
+  if (state === 'loading') return null
+  if (state === 'setup') return <Navigate to="/setup" replace />
+  return <>{children}</>
+}
+
 export default function App() {
   return (
     <BrowserRouter>
@@ -66,7 +83,8 @@ export default function App() {
       <BackendUnreachableOverlay />
       <Routes>
         <Route path="/login" element={<Login />} />
-        <Route element={<RequireAuth><Layout /></RequireAuth>}>
+        <Route path="/setup" element={<RequireAuth><Setup /></RequireAuth>} />
+        <Route element={<RequireAuth><RequireSetup><Layout /></RequireSetup></RequireAuth>}>
           <Route path="/" element={<Monitoring />} />
           <Route path="/firewall/rules" element={<Rules />} />
           <Route path="/firewall/services" element={<Services />} />

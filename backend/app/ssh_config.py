@@ -436,41 +436,6 @@ def apply_config(cfg) -> dict:
     }
 
 
-def change_root_password(new_password: str) -> dict:
-    """Change le mot de passe du compte Linux root via chpasswd.
-
-    Ne touche pas au compte UI MurOS (qui est gere via /api/auth/*).
-    """
-    from app import password_policy
-    try:
-        password_policy.validate(new_password, username="root")
-    except password_policy.PasswordPolicyError as exc:
-        raise ValueError("Mot de passe refuse : " + " ; ".join(exc.reasons)) from exc
-
-    if not APPLY_ENABLED:
-        return {"applied": False, "message": "dry-run : MUROS_APPLY off."}
-
-    if os.geteuid() != 0:
-        raise RuntimeError("Cannot change root password: MurOS must run as root.")
-
-    # On utilise chpasswd qui lit "user:password" sur stdin.
-    proc = subprocess.run(
-        ["chpasswd"],
-        input=f"root:{new_password}\n",
-        capture_output=True, text=True, timeout=10,
-    )
-    if proc.returncode != 0:
-        raise RuntimeError(
-            f"chpasswd a echoue (code {proc.returncode}) : "
-            f"{(proc.stderr or '').strip()[:200]}"
-        )
-    return {
-        "applied": True,
-        "message": "Mot de passe Linux du compte root mis a jour. "
-                   "Utilisable pour SSH si l'authentification par mot de passe est activee.",
-    }
-
-
 def _reload_sshd() -> None:
     """Reload sshd via systemctl. Sur Debian/Ubuntu le service est 'ssh'."""
     for unit in ("ssh", "sshd"):

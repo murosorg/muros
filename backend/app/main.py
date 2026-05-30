@@ -25,6 +25,7 @@ from app.routes import (
     wan_router,
     dhcp_router, dns_services_router,
     service_apply_router,
+    setup_router,
 )
 from app.metrics_history import start as start_metrics_collector, stop as stop_metrics_collector
 from app.routing import apply_all_routes, enable_ip_forwarding
@@ -286,3 +287,4 @@ app.include_router(wan_router)
 app.include_router(dhcp_router)
 app.include_router(dns_services_router)
 app.include_router(service_apply_router)
+app.include_router(setup_router)

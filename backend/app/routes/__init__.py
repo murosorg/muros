@@ -23,6 +23,7 @@ from .firewall_groups import service_groups_router, address_groups_router
 from .wan import wan_router
 from .services import dhcp_router, dns_services_router
 from .service_apply import service_apply_router
+from .setup import setup_router
 
 __all__ = [
     'auth_router',
@@ -44,4 +45,5 @@ __all__ = [
     'wan_router',
     'dhcp_router', 'dns_services_router',
     'service_apply_router',
+    'setup_router',
 ]

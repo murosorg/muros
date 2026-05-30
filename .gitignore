@@ -46,3 +46,4 @@ shots/
 # Site docs are generated from docs/ + CHANGELOG.md by pages.yml CI
 site/docs/*.md
 .dust-conv-files/
+context.md.prev
