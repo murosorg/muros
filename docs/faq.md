@@ -75,6 +75,17 @@ If you do not confirm in the modal that follows the apply, the previous
 config is restored automatically by a backend thread that scans for
 expired pending_apply records every 5 seconds.
 
+**Lockout pre-check.** The confirmation alone cannot detect every
+lockout: a stateful firewall keeps your current session alive through
+`ct state established,related accept` even after you delete the rule that
+allows new management connections, so you could confirm a ruleset that
+blocks the next reconnect. Before a firewall apply, MurOS statically
+evaluates the input chain against a NEW connection from your source to
+the web UI and SSH ports. If no accept path remains, the Apply modal
+shows a blocking warning you must acknowledge before proceeding. The
+check is skipped (no false alarm) when your source is not on a directly
+connected subnet, since the ingress zone cannot be determined reliably.
+
 If you were blocked in the meantime:
 * Wait for the countdown to expire (60s by default), the previous config is restored
 * Reconnect with the old parameters

@@ -117,19 +117,26 @@ export default function RuleForm({ rule, zones, defaultChain, onSubmit, onCancel
 
   const chainLocked = !!defaultChain && !rule
 
-  // Warn the operator when the rule being edited is a forward accept
-  // with no matcher at all: it accepts every flow and effectively
-  // disables filtering. Common foot-gun when "unblocking" a service.
-  const overlyPermissive =
-    data.chain === 'forward' &&
-    data.action === 'accept' &&
-    (data.enabled ?? true) &&
+  // Warn the operator when an accept rule has no matcher at all. On the
+  // forward chain it accepts every routed flow (turns the box into an
+  // open router); on the input chain it exposes every service/port on
+  // the firewall to every source. Common foot-gun when "unblocking" a
+  // service. The output chain is left out (firewall-originated traffic).
+  const enabled = data.enabled ?? true
+  const noService =
+    !data.src_port && !data.dst_port && !data.service_group_id &&
+    (!data.protocol || data.protocol === 'any')
+  const forwardWideOpen =
+    data.chain === 'forward' && data.action === 'accept' && enabled &&
     !data.src_zone_id && !data.dst_zone_id &&
     !data.src_address && !data.dst_address &&
     !data.src_address_group_id && !data.dst_address_group_id &&
-    !data.src_port && !data.dst_port &&
-    !data.service_group_id &&
-    (!data.protocol || data.protocol === 'any')
+    noService
+  const inputWideOpen =
+    data.chain === 'input' && data.action === 'accept' && enabled &&
+    !data.src_zone_id && !data.src_address && !data.src_address_group_id &&
+    noService
+  const overlyPermissive = forwardWideOpen || inputWideOpen
 
   return (
     <div className="space-y-5">
@@ -379,12 +386,20 @@ export default function RuleForm({ rule, zones, defaultChain, onSubmit, onCancel
         )}
       </div>
 
-      {overlyPermissive && (
+      {forwardWideOpen && (
         <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-3 py-2">
           This rule accepts every forwarded flow (no zone, address,
           protocol or port set). It effectively disables filtering on
           the forward chain. Restrict it to a zone, subnet or service
           before saving.
+        </div>
+      )}
+      {inputWideOpen && (
+        <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+          This rule accepts every connection to the firewall itself (no
+          source, protocol or port set). It exposes every service the
+          firewall runs to all sources. Restrict it to a source zone,
+          subnet or a specific service before saving.
         </div>
       )}
 

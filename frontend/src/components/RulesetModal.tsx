@@ -70,12 +70,15 @@ export default function RulesetModal({ onClose }: { onClose: () => void }) {
     // est restaure automatically.
     setApplying(true)
     try {
-      await api.apply.run(10)
+      await api.apply.run(10, lockout?.blocked ? true : false)
       onClose()
     } catch (e) {
       setCheck({ ok: false, message: 'Apply failed: ' + (e as Error).message })
     } finally { setApplying(false) }
   }
+
+  const lockoutBlocked = !!lockout?.blocked
+  const applyDisabled = applying || loading || (lockoutBlocked && !ackLockout)
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
@@ -107,6 +110,22 @@ export default function RulesetModal({ onClose }: { onClose: () => void }) {
           </div>
         )}
 
+        {lockoutBlocked && (
+          <div className="px-5 py-3 text-sm border-b border-red-200 bg-red-50 text-red-800">
+            <div className="font-semibold mb-1">Management lockout warning</div>
+            <p className="text-xs leading-relaxed mb-2">{lockout?.message}</p>
+            <label className="flex items-start gap-2 text-xs font-medium">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={ackLockout}
+                onChange={(e) => setAckLockout(e.target.checked)}
+              />
+              <span>I understand this may block new management connections, apply anyway.</span>
+            </label>
+          </div>
+        )}
+
         <div className="flex-1 overflow-auto">
           {loading && <div className="p-6 text-sm text-gray-700">Compilation...</div>}
           {error && <div className="p-4"><div className="border border-red-300 bg-red-50 text-red-800 px-3 py-2 rounded text-sm">{error}</div></div>}
@@ -124,8 +143,12 @@ export default function RulesetModal({ onClose }: { onClose: () => void }) {
             <button className="btn-secondary" onClick={runCheck} disabled={checking || loading}>
               {checking ? 'Checking...' : 'Test the syntax'}
             </button>
-            <button className="btn-primary" onClick={doApply} disabled={applying || loading}>
-              {applying ? 'Applying...' : 'Apply'}
+            <button
+              className={lockoutBlocked ? 'btn-danger' : 'btn-primary'}
+              onClick={doApply}
+              disabled={applyDisabled}
+            >
+              {applying ? 'Applying...' : lockoutBlocked ? 'Apply anyway' : 'Apply'}
             </button>
           </div>
         </div>

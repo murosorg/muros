@@ -2,6 +2,25 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+- Management-lockout guard on firewall applies. Before applying, MurOS
+  statically evaluates the input chain against a new connection from the
+  operator's source to the web UI and SSH ports. If the ruleset would
+  block new management connections (the commit-confirm modal cannot catch
+  this because conntrack keeps the current session alive), the Apply
+  modal shows a blocking warning that must be acknowledged. New endpoint
+  `GET /api/firewall/apply/lockout-check`; `POST /api/firewall/apply`
+  refuses with 409 unless `acknowledge_lockout` is set.
+
+### Changed
+- Dashboard reorganized: KPIs (CPU, memory, conntrack, load) moved to a
+  full-width top row; services and storage side by side below. The
+  service list now groups essential (always-on) services and only shows
+  optional ones when active or in error, with a summary line for the
+  rest.
+
 ## [v0.9.0-rc53] - 2026-05-30
 
 ### Added

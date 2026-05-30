@@ -30,15 +30,43 @@ const isCatchAll = (r: FirewallRule) => r.position >= 900
 // We flag it with an amber warning so it stands out in the table.
 function isOverlyPermissive(r: FirewallRule): boolean {
   if (!r.enabled || isCatchAll(r)) return false
-  if (r.chain !== 'forward' || r.action !== 'accept') return false
-  const hasMatcher =
-    !!r.src_zone_id || !!r.dst_zone_id ||
-    !!r.src_address || !!r.dst_address ||
-    !!r.src_address_group_id || !!r.dst_address_group_id ||
-    !!r.src_port || !!r.dst_port ||
-    !!r.service_group_id ||
+  if (r.action !== 'accept') return false
+  const hasService =
+    !!r.src_port || !!r.dst_port || !!r.service_group_id ||
     (!!r.protocol && r.protocol !== 'any')
-  return !hasMatcher
+  // forward: any zone/address on either side, or a service, narrows it.
+  if (r.chain === 'forward') {
+    const hasMatcher =
+      !!r.src_zone_id || !!r.dst_zone_id ||
+      !!r.src_address || !!r.dst_address ||
+      !!r.src_address_group_id || !!r.dst_address_group_id ||
+      hasService
+    return !hasMatcher
+  }
+  // input: the destination is the firewall, so only the source side and
+  // the service narrow it. No source + no service = every port exposed.
+  if (r.chain === 'input') {
+    const hasMatcher =
+      !!r.src_zone_id || !!r.src_address || !!r.src_address_group_id ||
+      hasService
+    return !hasMatcher
+  }
+  return false
+}
+
+// Badge shown in the zone column for the endpoint that is the firewall
+// itself: destination on the input chain, source on the output chain.
+// Keeps the table consistent with RuleForm's "This firewall" endpoint.
+function FirewallBadge() {
+  return (
+    <span
+      className="inline-flex items-center gap-1 text-xs text-gray-600 bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5"
+      title="The firewall itself"
+    >
+      <Shield size={11} className="text-gray-500" />
+      This firewall
+    </span>
+  )
 }
 
 function ActionCell({ action }: { action: FirewallRule['action'] }) {
@@ -452,7 +480,9 @@ export default function Rules() {
                         {isOverlyPermissive(r) && (
                           <span
                             className="inline-flex items-center text-amber-600"
-                            title="This rule accepts every forwarded flow (no zone, address, protocol or port set). It effectively disables filtering on the forward chain. Restrict it to a zone, subnet or service."
+                            title={r.chain === 'input'
+                              ? 'This rule accepts every connection to the firewall itself (no source, protocol or port set). It exposes every service the firewall runs to all sources. Restrict it to a source zone, subnet or service.'
+                              : 'This rule accepts every forwarded flow (no zone, address, protocol or port set). It effectively disables filtering on the forward chain. Restrict it to a zone, subnet or service.'}
                           >
                             <AlertTriangle size={14} />
                           </span>
@@ -460,13 +490,17 @@ export default function Rules() {
                       </div>
                     </td>
                     <td className={`px-2 py-1.5 ${!r.enabled ? 'opacity-60' : ''}`}>
-                      {srcZone ? <ZoneBadge name={srcZone.name} /> : <span className="text-xs text-gray-500 italic">any</span>}
+                      {r.chain === 'output'
+                        ? <FirewallBadge />
+                        : srcZone ? <ZoneBadge name={srcZone.name} /> : <span className="text-xs text-gray-500 italic">any</span>}
                     </td>
                     <td className={`px-2 py-1.5 font-mono text-xs ${!r.src_address ? 'text-gray-500 italic' : 'text-gray-800'} ${!r.enabled ? 'opacity-60' : ''}`}>
                       {r.src_address || 'any'}
                     </td>
                     <td className={`px-2 py-1.5 ${!r.enabled ? 'opacity-60' : ''}`}>
-                      {dstZone ? <ZoneBadge name={dstZone.name} /> : <span className="text-xs text-gray-500 italic">any</span>}
+                      {r.chain === 'input'
+                        ? <FirewallBadge />
+                        : dstZone ? <ZoneBadge name={dstZone.name} /> : <span className="text-xs text-gray-500 italic">any</span>}
                     </td>
                     <td className={`px-2 py-1.5 font-mono text-xs ${!r.dst_address ? 'text-gray-500 italic' : 'text-gray-800'} ${!r.enabled ? 'opacity-60' : ''}`}>
                       {r.dst_address || 'any'}
