@@ -13,6 +13,7 @@ import Modal from '../components/Modal'
 import Toggle from '../components/Toggle'
 import FormActions from '../components/FormActions'
 import { ErrorBlock } from '../components/Alerts'
+import ChangelogNotes from '../components/ChangelogNotes'
 import { useConfirm } from '../components/ConfirmModal'
 import { toast } from '../components/Toast'
 import { fmt } from '../lib/format'
@@ -1541,9 +1542,9 @@ function UpdatesTab() {
                 <span className="text-gray-700"> ({formatDateFR(muros.release_published_at)})</span>
               )}
             </summary>
-            <pre className="mt-2 text-xs whitespace-pre-wrap font-mono text-gray-800 bg-gray-50 border border-gray-200 rounded p-3">
-              {muros.release_notes}
-            </pre>
+            <div className="mt-2 bg-gray-50 border border-gray-200 rounded p-3">
+              <ChangelogNotes text={muros.release_notes} />
+            </div>
           </details>
         )}
       </Section>

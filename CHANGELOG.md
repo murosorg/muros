@@ -4,6 +4,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [v0.9.0-rc74] - 2026-05-30
+
+### Added
+- Tests for the changelog parser (parsing, version matching, fallback to
+  the latest released section, and missing-file handling).
+
+### Changed
+- Release notes are now rendered with a small built-in formatter (headings
+  and bullet lists) instead of raw text, shared between the dashboard
+  version card and the System updates page.
+
 ## [v0.9.0-rc70] - 2026-05-30
 
 ### Added

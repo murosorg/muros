@@ -8,6 +8,7 @@ import Sparkline from '../components/Sparkline'
 import TimeChart from '../components/TimeChart'
 import { ErrorBlock } from '../components/Alerts'
 import { Gauge, Package, CheckCircle2, ArrowUpCircle } from 'lucide-react'
+import ChangelogNotes from '../components/ChangelogNotes'
 
 // Live dashboard: we sample the summary endpoint twice per second so the
 // charts feel alive, and keep an in-memory ring buffer covering the
@@ -424,9 +425,9 @@ function VersionCard() {
                     <span className="text-gray-600"> ({fmt.date(muros.release_published_at)})</span>
                   )}
                 </summary>
-                <pre className="mt-2 text-xs whitespace-pre-wrap font-mono text-gray-800 bg-gray-50 border border-gray-200 rounded p-3 max-h-56 overflow-auto">
-                  {muros.release_notes}
-                </pre>
+                <div className="mt-2 bg-gray-50 border border-gray-200 rounded p-3 max-h-56 overflow-auto">
+                  <ChangelogNotes text={muros.release_notes} />
+                </div>
               </details>
             ) : (
               <p className="text-[11px] text-gray-600 mt-3">
