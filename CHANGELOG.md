@@ -4,6 +4,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [v0.9.0-rc104] - 2026-05-30
+
+### Added
+- End-to-end integration test `packaging/tests/integration-services.sh`.
+  Run on a real Debian 13 VM (backend with `MUROS_APPLY=1`), it logs into
+  the REST API and, for each of the four new services (QoS, remote
+  syslog, dynamic DNS, DHCPv6), configures and applies the feature, then
+  asserts the real system state (tc htb/fq_codel qdiscs, rsyslog drop-in
+  and `rsyslogd -N1`, `kea-dhcp6 -t` validation and active unit) before
+  reverting every change it made. Complements the post-install
+  `smoke-test.sh` with live apply-path coverage.
+
 ## [v0.9.0-rc103] - 2026-05-30
 
 ### Added
