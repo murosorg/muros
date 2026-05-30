@@ -12,10 +12,13 @@ PRAGMAs set on each connection:
 - busy_timeout=5000: avoids "database is locked" on brief concurrent
   writes.
 """
+import logging
 import os
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 from sqlalchemy.pool import NullPool
+
+log = logging.getLogger("muros.db")
 
 DB_PATH = os.environ.get("MUROS_DB", "muros.db")
 DB_URL = f"sqlite:///{DB_PATH}"
@@ -244,5 +247,5 @@ def _migrate_schema() -> None:
             ))
             if res.rowcount:
                 conn.commit()
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001
+            log.debug("Legacy catch-all rule cleanup skipped: %s", exc)

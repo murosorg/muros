@@ -11,6 +11,10 @@ from app import models, schemas
 from app.auth import current_user
 from app.db import get_db
 
+import logging
+
+log = logging.getLogger("muros.vpn")
+
 _auth_dep = [Depends(current_user)]
 
 
@@ -48,8 +52,8 @@ def _stage_ipsec(db: Session, summary: str | None = None) -> None:
     revoked = [c for c in certs if c.revoked]
     try:
         ipsec.write_conf(conns, ca=ca, certs=certs, revoked_certs=revoked)
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001
+        log.debug("Deferred IPsec config write (will retry on next apply): %s", exc)
     service_dirty.mark_dirty(db, "ipsec", summary=summary)
 
 

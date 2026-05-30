@@ -4,6 +4,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [v0.9.0-rc107] - 2026-05-30
+
+### Changed
+- Best-effort error handling no longer swallows exceptions silently in the
+  WAN routes, the IPsec staging path and the legacy-rule DB migration.
+  These blocks now log at debug level (with a `# noqa: BLE001` matching the
+  codebase convention), so a systemctl, routing or migration hiccup leaves
+  a trace instead of vanishing. Added `muros.wan`, `muros.vpn` and
+  `muros.db` loggers for that.
+- Translated the remaining French docstrings and comments in the WAN routes
+  module to English, in line with the English-only repository policy.
+
 ## [v0.9.0-rc105] - 2026-05-30
 
 ### Added

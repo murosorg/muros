@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (c) 2026 MurOS contributors.
-"""REST CRUD pour les WAN gateways du multi-WAN failover.
+"""REST CRUD for the multi-WAN failover gateways.
 
-Le daemon muros-wan-monitor consomme cette table et maintient `status`,
+The muros-wan-monitor daemon consumes this table and maintains `status`,
 `consecutive_failures`, `consecutive_successes`, `last_probe_at`,
-`last_change_at`. L'admin n'edite que la conf, jamais ces champs runtime.
+`last_change_at`. The admin only edits the config, never these runtime
+fields.
 """
 from datetime import datetime, timezone
 
@@ -17,35 +18,38 @@ from app.models import Interface, WanGateway
 from app.schemas.network import WanActiveOut, WanGatewayIn, WanGatewayOut
 from app import network as net
 
+import logging
 import subprocess
+
+log = logging.getLogger("muros.wan")
 
 _auth_dep = [Depends(current_user)]
 
 
 def _sync_monitor_service(db: Session) -> None:
-    """Start/stop muros-wan-monitor selon presence de WANs actifs.
+    """Start/stop muros-wan-monitor depending on whether any WAN is active.
 
-    Idle CPU pour rien quand aucun WAN n'est declare ; demarre des qu'il
-    y a au moins une row enabled. Best-effort : si systemctl indisponible
-    (tests, dev sur Mac, etc.) on swallow l'erreur.
+    Avoids burning idle CPU when no WAN is declared; starts as soon as
+    there is at least one enabled row. Best-effort: if systemctl is not
+    available (tests, dev on a Mac, etc.) the error is logged and ignored.
     """
     has_active = db.query(WanGateway).filter(WanGateway.enabled.is_(True)).count() > 0
     cmd = ["systemctl", "enable" if has_active else "disable", "--now",
            "muros-wan-monitor.service"]
     try:
         subprocess.run(cmd, capture_output=True, timeout=10)
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001
+        log.debug("Could not (de)activate the WAN monitor service: %s", exc)
 
 wan_router = APIRouter(prefix="/api/wan", tags=["wan"], dependencies=_auth_dep)
 
 
 @wan_router.get("/status")
 def wan_get_status():
-    """Etat live du daemon muros-wan-monitor (service_state + version).
+    """Live state of the muros-wan-monitor daemon (service_state + version).
 
-    Le monitor probe les gateways listees et bascule la default route
-    selon priorite. Version = version du paquet muros installe.
+    The monitor probes the listed gateways and switches the default route
+    by priority. Version = version of the installed muros package.
     """
     from app.service_state import service_state, pkg_version
     return {
@@ -84,13 +88,13 @@ def create_gateway(payload: WanGatewayIn, db: Session = Depends(get_db)):
     db.add(g)
     db.commit()
     db.refresh(g)
-    # Pose la default dans la table dediee. Best-effort : si l'interface
-    # n'est pas encore prete, le monitor reposera la default sur le
-    # prochain probe up.
+    # Install the default route in the dedicated table. Best-effort: if
+    # the interface is not ready yet, the monitor will reinstall it on the
+    # next successful probe.
     try:
         net.wan_set_table_default(g.id, iface.name, g.gateway)
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001
+        log.debug("Deferred WAN default route install (gw %s): %s", g.id, exc)
     _sync_monitor_service(db)
     return _to_out(g)
 
@@ -120,8 +124,8 @@ def update_gateway(gw_id: int, payload: WanGatewayIn, db: Session = Depends(get_
     if iface_changed or gw_changed:
         try:
             net.wan_set_table_default(g.id, iface.name, g.gateway)
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001
+            log.debug("Deferred WAN default route update (gw %s): %s", g.id, exc)
     _sync_monitor_service(db)
     return _to_out(g)
 
@@ -146,11 +150,11 @@ def delete_gateway(gw_id: int, db: Session = Depends(get_db)):
 
 @wan_router.get("/active", response_model=WanActiveOut)
 def get_active(db: Session = Depends(get_db)):
-    """WAN qui porte la default route en ce moment.
+    """The WAN currently carrying the default route.
 
-    Parmi les enabled+up, le plus prioritaire (plus petite valeur
-    `priority`). Si aucun candidat, on indique `all_down` ou
-    `no_gateway` selon le cas, pour aider le diag UI.
+    Among the enabled+up gateways, the highest priority (lowest `priority`
+    value). If there is no candidate, report `all_down` or `no_gateway`
+    depending on the case, to help the UI diagnostics.
     """
     enabled = [
         g for g in db.query(WanGateway).order_by(WanGateway.priority).all()
@@ -167,7 +171,7 @@ def get_active(db: Session = Depends(get_db)):
 
 @wan_router.post("/gateways/{gw_id}/probe", response_model=WanGatewayOut)
 def probe_now(gw_id: int, db: Session = Depends(get_db)):
-    """Force un probe immediat. Utile pour les tests / l'UI 'Test now'."""
+    """Force an immediate probe. Useful for tests / the UI 'Test now'."""
     g = db.query(WanGateway).filter(WanGateway.id == gw_id).first()
     if not g:
         raise HTTPException(404, "Unknown WAN gateway")
@@ -178,8 +182,8 @@ def probe_now(gw_id: int, db: Session = Depends(get_db)):
     except ValueError as e:
         raise HTTPException(400, str(e))
     g.last_probe_at = datetime.now(timezone.utc)
-    # Probe manuel : on ne touche pas aux compteurs anti-flap (geres par
-    # le daemon). On expose juste le resultat brut via le status.
+    # Manual probe: we do not touch the anti-flap counters (managed by the
+    # daemon). We only expose the raw result through the status.
     g.status = "up" if ok else "down"
     db.commit()
     db.refresh(g)
