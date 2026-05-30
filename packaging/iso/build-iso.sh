@@ -17,7 +17,10 @@
 #
 # Environment variables (all optional):
 #   MUROS_ROOT_PASSWORD   root password for the installed system
-#                         (default: muros). Change it after first login.
+#                         (default: root). Kept deliberately simple and
+#                         AZERTY/QWERTY-safe so first console login is not
+#                         blocked by a keymap mismatch. Change it after
+#                         first login.
 #   DEBIAN_VERSION        netinst point release to fetch (default: the
 #                         latest published under debian-cd/current)
 #   DEBIAN_ARCH           amd64 (default) or arm64
@@ -31,7 +34,7 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-ROOT_PASSWORD="${MUROS_ROOT_PASSWORD:-muros}"
+ROOT_PASSWORD="${MUROS_ROOT_PASSWORD:-root}"
 DEBIAN_VERSION="${DEBIAN_VERSION:-}"
 ARCH="${DEBIAN_ARCH:-amd64}"
 OUTPUT="${OUTPUT:-${HERE}/muros-installer-${ARCH}.iso}"
