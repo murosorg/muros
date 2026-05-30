@@ -1,22 +1,22 @@
-"""Backup distant : pousse les snapshots tar.gz vers un serveur via rsync/SSH.
+"""Remote backup: push tar.gz snapshots to a server via rsync/SSH.
 
-Configuration persistee dans `MUROS_BACKUP_DIR/remote.json`. C'est volontaire-
-ment hors DB pour eviter une migration et garder le secret (la cle SSH) hors
-sauvegardes SQLite.
+Configuration persisted in `MUROS_BACKUP_DIR/remote.json`. This is
+deliberately out of the DB to avoid a migration and keep the secret (the
+SSH key) out of the SQLite backups.
 
-Modele :
-- enabled       : bool, active ou non l'envoi
-- host          : nom DNS ou IP du serveur de destination
-- user          : utilisateur SSH (souvent 'muros-backup' ou 'backup')
-- port          : port SSH (defaut 22)
-- path          : chemin distant absolu, ex `/srv/backups/firewall-01`
-- ssh_key_path  : chemin local vers la cle privee (defaut /var/lib/muros/ssh/id_ed25519)
-- last_push_at  : ISO timestamp du dernier push reussi
-- last_error    : message d'erreur du dernier echec
+Model:
+- enabled       : bool, enables the push or not
+- host          : DNS name or IP of the destination server
+- user          : SSH user (often 'muros-backup' or 'backup')
+- port          : SSH port (default 22)
+- path          : absolute remote path, e.g. `/srv/backups/firewall-01`
+- ssh_key_path  : local path to the private key (default /var/lib/muros/ssh/id_ed25519)
+- last_push_at  : ISO timestamp of the last successful push
+- last_error    : error message of the last failure
 
-L'admin doit deposer la cle publique correspondante sur le serveur distant
-manuellement. MurOS ne genere pas la cle (point sensible : on prefere que
-l'admin verifie l'empreinte).
+The admin must place the matching public key on the remote server
+manually. MurOS does not generate the key (sensitive point: we prefer the
+admin to verify the fingerprint).
 """
 from __future__ import annotations
 
@@ -45,9 +45,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "last_error": None,
 }
 
-# Hote : lettres, chiffres, point, tiret. Pas d'option SSH dissimulee.
+# Host: letters, digits, dot, dash. No hidden SSH option.
 _VALID_HOST = re.compile(r"^[A-Za-z0-9][A-Za-z0-9\.\-]{0,253}$")
-# User : lettres, chiffres, underscore, tiret, point. Pas de @ ni espace.
+# User: letters, digits, underscore, dash, dot. No @ or space.
 _VALID_USER = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_\-\.]{0,31}$")
 
 
@@ -76,8 +76,8 @@ def _save(cfg: dict[str, Any]) -> None:
         CONFIG_PATH.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
     except PermissionError as exc:
         raise RuntimeError(
-            f"impossible d'ecrire {CONFIG_PATH} : {exc}. Verifier les droits "
-            f"sur {BACKUP_DIR} (en dev, exporter MUROS_BACKUP_DIR=/tmp/muros)."
+            f"unable to write {CONFIG_PATH}: {exc}. Check the permissions "
+            f"on {BACKUP_DIR} (in dev, export MUROS_BACKUP_DIR=/tmp/muros)."
         ) from exc
     # 0600: the config references an SSH key, we protect it.
     try:
@@ -153,7 +153,7 @@ def _build_rsync_cmd(cfg: dict[str, Any], src: Path) -> list[str]:
     return [
         "rsync",
         "-av",
-        "--mkpath",  # cree le dossier distant s'il manque (rsync >= 3.2)
+        "--mkpath",  # creates the remote directory if missing (rsync >= 3.2)
         "--timeout=30",
         "-e", rsync_ssh,
         str(src),
@@ -162,10 +162,10 @@ def _build_rsync_cmd(cfg: dict[str, Any], src: Path) -> list[str]:
 
 
 def push_backup(name: str) -> dict:
-    """Envoie un snapshot vers la cible distante via rsync."""
+    """Send a snapshot to the remote target via rsync."""
     cfg = get_config()
     if not cfg["enabled"]:
-        raise RuntimeError("backup distant desactive")
+        raise RuntimeError("remote backup disabled")
     if not all(cfg[k] for k in ("host", "user", "path")):
         raise RuntimeError("incomplete config (host, user and path required)")
 
@@ -176,7 +176,7 @@ def push_backup(name: str) -> dict:
         return {
             "pushed": False,
             "dry_run": True,
-            "message": "MUROS_APPLY n'est pas active",
+            "message": "MUROS_APPLY is not enabled",
             "command": " ".join(shlex.quote(p) for p in cmd),
         }
 
@@ -209,11 +209,11 @@ def push_backup(name: str) -> dict:
 
 
 def generate_ssh_key(force: bool = False) -> dict:
-    """Genere une paire SSH ed25519 au chemin configure (defaut
+    """Generate an ed25519 SSH key pair at the configured path (default
     /var/lib/muros/ssh/id_ed25519).
 
-    Retourne la cle publique pour que l'admin la copie sur le serveur distant.
-    Refuse de regenerer si une cle existe deja, sauf si force=True.
+    Returns the public key so the admin can copy it onto the remote server.
+    Refuses to regenerate if a key already exists, unless force=True.
     """
     cfg = get_config()
     key_path = Path(cfg.get("ssh_key_path") or DEFAULT_CONFIG["ssh_key_path"])
@@ -234,19 +234,19 @@ def generate_ssh_key(force: bool = False) -> dict:
             "public_key": pub,
         }
 
-    # Note : on ne gate PAS la generation par MUROS_APPLY.
+    # Note: we do NOT gate the generation on MUROS_APPLY.
     # ssh-keygen does not touch the kernel, it is just a file in a dedicated
     # directory. The admin needs to be able to generate the key even
-    # en mode dry-run pour la preparer avant le passage en prod.
+    # in dry-run mode to prepare it before going to prod.
 
     # Create the parent directory with 0700 (the private key must be protected)
     try:
         key_path.parent.mkdir(parents=True, exist_ok=True)
     except PermissionError as exc:
         raise RuntimeError(
-            f"impossible de creer {key_path.parent} : {exc}. "
-            f"Changer le chemin de la cle dans la config (champ 'ssh_key_path') "
-            f"ou lancer le backend avec les droits suffisants."
+            f"unable to create {key_path.parent}: {exc}. "
+            f"Change the key path in the config ('ssh_key_path' field) "
+            f"or run the backend with sufficient privileges."
         ) from exc
     try:
         os.chmod(key_path.parent, 0o700)
@@ -261,7 +261,7 @@ def generate_ssh_key(force: bool = False) -> dict:
         except OSError:
             pass
 
-    # ed25519 = court, rapide, sur. Comment = hostname pour reperage.
+    # ed25519 = short, fast, secure. Comment = hostname for identification.
     import socket
     comment = f"muros@{socket.gethostname()}"
     try:
@@ -270,7 +270,7 @@ def generate_ssh_key(force: bool = False) -> dict:
             capture_output=True, text=True, timeout=20,
         )
     except (subprocess.SubprocessError, FileNotFoundError) as exc:
-        raise RuntimeError(f"ssh-keygen a echoue : {exc}") from exc
+        raise RuntimeError(f"ssh-keygen failed: {exc}") from exc
     if res.returncode != 0:
         raise RuntimeError(res.stderr.strip() or f"ssh-keygen exit {res.returncode}")
 
@@ -278,7 +278,7 @@ def generate_ssh_key(force: bool = False) -> dict:
     try:
         pub = pub_path.read_text(encoding="utf-8").strip()
     except OSError as exc:
-        raise RuntimeError(f"unable to read {pub_path} : {exc}") from exc
+        raise RuntimeError(f"unable to read {pub_path}: {exc}") from exc
 
     return {
         "generated": True,
@@ -304,10 +304,10 @@ def get_public_key() -> dict:
 
 
 def test_connection(override: dict | None = None) -> dict:
-    """Verifie qu'on peut joindre la cible. Lance `ssh user@host true`.
+    """Check that the target is reachable. Runs `ssh user@host true`.
 
-    Si `override` est fourni, on teste avec ces valeurs au lieu de la conf
-    persistee. Permet a l'UI de tester avant Enregistrer.
+    If `override` is provided, we test with those values instead of the
+    persisted config. Lets the UI test before Save.
     """
     cfg = get_config()
     if override:
@@ -319,14 +319,14 @@ def test_connection(override: dict | None = None) -> dict:
         return {
             "ok": False,
             "dry_run": False,
-            "message": "Renseignez l'hote et l'utilisateur avant de tester.",
+            "message": "Fill in the host and the user before testing.",
         }
     if not APPLY_ENABLED:
         return {
             "ok": False,
             "dry_run": True,
             "message": (
-                f"Mode dry-run (MUROS_APPLY desactive). En production, on tenterait "
+                f"Dry-run mode (MUROS_APPLY disabled). In production, we would try "
                 f"ssh -p {cfg['port']} {cfg['user']}@{cfg['host']} true"
             ),
         }

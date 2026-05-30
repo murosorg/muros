@@ -1,13 +1,13 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (c) 2026 MurOS contributors.
-"""WireGuard : tunnels VPN site-a-site et road-warrior.
+"""WireGuard: site-to-site and road-warrior VPN tunnels.
 
-MurOS s'appuie sur deux paquets Debian : wireguard (module noyau + wg-quick)
-et wireguard-tools (commande `wg`).
+MurOS relies on two Debian packages: wireguard (kernel module + wg-quick)
+and wireguard-tools (the `wg` command).
 
-Approche : une seule interface WireGuard `wg0` par defaut, geree via un
-fichier `/etc/wireguard/wg0.conf` rendu depuis la DB SQLite. Activation
-au boot via `wg-quick@wg0.service`.
+Approach: a single WireGuard interface `wg0` by default, managed via a
+`/etc/wireguard/wg0.conf` file rendered from the SQLite DB. Brought up at
+boot via `wg-quick@wg0.service`.
 """
 from __future__ import annotations
 
@@ -84,9 +84,9 @@ def get_status() -> dict:
 
 
 def install_packages() -> dict:
-    """Installe wireguard + wireguard-tools via apt.
+    """Install wireguard + wireguard-tools via apt.
 
-    Idempotente : verifie d'abord la presence des binaires.
+    Idempotent: checks first whether the binaries are present.
     """
     already = _which("wg") and _which("wg-quick")
     if already:
@@ -154,14 +154,14 @@ def install_packages() -> dict:
     }
 
 
-# --- Generation de cles ---
+# --- Key generation ---
 
 def _curve25519_keys() -> tuple[str, str]:
-    """Genere une paire de cles X25519 en Python pur (lib cryptography).
+    """Generate an X25519 key pair in pure Python (cryptography lib).
 
-    Retourne (private_key_b64, public_key_b64) au format WireGuard.
-    Cle privee doit etre fixee a 32 octets, avec les 3 bits forces selon
-    la spec X25519 (Curve25519 cofactor clamping).
+    Returns (private_key_b64, public_key_b64) in WireGuard format.
+    The private key must be set to 32 bytes, with the 3 bits forced per
+    the X25519 spec (Curve25519 cofactor clamping).
     """
     from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
     from cryptography.hazmat.primitives import serialization
@@ -308,19 +308,19 @@ def reload(cfg, peers: list) -> dict:
 
 
 def apply_config(cfg, peers: list, *, defer_start: bool = False) -> dict:
-    """Ecrit /etc/wireguard/<iface>.conf et reconfigure l'interface.
+    """Write /etc/wireguard/<iface>.conf and reconfigure the interface.
 
-    Si l'interface n'existe pas et que cfg.enabled : `wg-quick up <iface>`.
-    Si elle existe et que cfg.enabled : reload a chaud via `wg syncconf`.
-    Si !cfg.enabled : `wg-quick down <iface>` + on retire le fichier conf.
+    If the interface does not exist and cfg.enabled: `wg-quick up <iface>`.
+    If it exists and cfg.enabled: hot reload via `wg syncconf`.
+    If !cfg.enabled: `wg-quick down <iface>` + remove the conf file.
 
-    En dry-run (MUROS_APPLY=false) : log seulement.
+    In dry-run (MUROS_APPLY=false): log only.
 
-    defer_start: utilise `wg-quick up <iface>` directement plutot que
-    `systemctl enable --now`, ce qui evite un deadlock quand on est
-    appele depuis muros-boot.service (Before=network-online.target),
-    car wg-quick@.service a After=network-online.target. La persistance
-    au reboot est assuree par `systemctl enable` (sans --now).
+    defer_start: uses `wg-quick up <iface>` directly rather than
+    `systemctl enable --now`, which avoids a deadlock when called from
+    muros-boot.service (Before=network-online.target), because
+    wg-quick@.service has After=network-online.target. Reboot persistence
+    is ensured by `systemctl enable` (without --now).
     """
     iface = cfg.interface_name or "wg0"
     conf_path = WG_DIR / f"{iface}.conf"
@@ -334,9 +334,9 @@ def apply_config(cfg, peers: list, *, defer_start: bool = False) -> dict:
             )
             if conf_path.exists():
                 conf_path.unlink()
-        return {"message": f"WireGuard {iface} desactive.", "interface": iface}
+        return {"message": f"WireGuard {iface} disabled.", "interface": iface}
 
-    # Generation conf.
+    # Generate conf.
     text = render_config(cfg, peers)
 
     if not APPLY_ENABLED:
@@ -500,8 +500,8 @@ def render_peer_qr_svg(config_text: str) -> str:
         return buf.getvalue().decode("utf-8")
     except ImportError:
         raise RuntimeError(
-            "Le module Python 'qrcode' n'est pas installe. Ajoutez 'qrcode' a"
-            " requirements.txt et relancez l'install pour les QR codes."
+            "The Python module 'qrcode' is not installed. Add 'qrcode' to"
+            " requirements.txt and reinstall to enable QR codes."
         )
 
 

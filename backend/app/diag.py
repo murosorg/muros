@@ -2,8 +2,8 @@
 # Copyright (c) 2026 MurOS contributors.
 """Network diagnostic tools exposed through the UI.
 
-Wrappers safe autour de ping / traceroute / dig / tcpdump avec validation
-stricte des entrees (anti-injection) et timeout court.
+Safe wrappers around ping / traceroute / dig / tcpdump with strict input
+validation (anti-injection) and a short timeout.
 """
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ def _validate_target(target: str) -> str:
     """Verifie que target est une IP ou un hostname valide. Anti-injection."""
     if not target or len(target) > 253:
         raise ValueError("Empty target or too long.")
-    # Test IP d'abord
+    # Test IP first
     try:
         ipaddress.ip_address(target)
         return target
@@ -136,11 +136,11 @@ def dns_lookup(target: str, record_type: str = "A", resolver: str | None = None)
 # --- Port TCP/UDP test (nc) ---
 
 def port_test(target: str, port: int, protocol: str = "tcp", timeout: int = 5) -> dict:
-    """Teste si un port distant est ouvert, via nc (netcat-openbsd).
+    """Test whether a remote port is open, via nc (netcat-openbsd).
 
-    protocol : 'tcp' (defaut, nc -z) ou 'udp' (nc -zu, moins fiable car
-    UDP n'a pas de handshake : on ne sait que si le port est ferme par ICMP
-    Port Unreachable; sinon ca dit 'open' meme si rien n'ecoute).
+    protocol : 'tcp' (default, nc -z) or 'udp' (nc -zu, less reliable
+    because UDP has no handshake: we only know if the port is closed via
+    ICMP Port Unreachable; otherwise it says 'open' even if nothing listens).
     """
     target = _validate_target(target)
     if not 1 <= port <= 65535:
@@ -173,12 +173,12 @@ def port_test(target: str, port: int, protocol: str = "tcp", timeout: int = 5) -
 # --- tcpdump (lecture brieve) ---
 
 def conntrack_show(zone: str | None = None, limit: int = 200) -> dict:
-    """Liste les connexions conntrack actives (kernel netfilter).
+    """List the active conntrack connections (kernel netfilter).
 
-    `zone` filtre par direction (`reply`, `original`, None=tout) ou par
-    IP/host quand il contient un point. C'est un wrapper safe autour de
-    `conntrack -L`. Resultat tronque a `limit` lignes pour eviter de
-    saturer l'UI.
+    `zone` filters by direction (`reply`, `original`, None=all) or by
+    IP/host when it contains a dot. This is a safe wrapper around
+    `conntrack -L`. Result truncated to `limit` lines to avoid flooding
+    the UI.
     """
     if not _which("conntrack"):
         return {
@@ -188,8 +188,8 @@ def conntrack_show(zone: str | None = None, limit: int = 200) -> dict:
         }
     cmd = ["conntrack", "-L", "-n", "-o", "extended,timestamp"]
     if zone:
-        # On accepte un filtre sous forme d'IP ou de proto. Aucun shell
-        # n'est implique, conntrack rejettera les filtres invalides.
+        # We accept a filter as an IP or a proto. No shell is involved,
+        # conntrack will reject invalid filters.
         z = zone.strip()
         if len(z) > 64:
             raise ValueError("Filter too long (max 64 chars).")
@@ -206,7 +206,7 @@ def conntrack_show(zone: str | None = None, limit: int = 200) -> dict:
 
 
 def list_interfaces() -> list[str]:
-    """Liste les interfaces reseau du systeme pour le select de l'UI."""
+    """List the system network interfaces for the UI select."""
     try:
         proc = subprocess.run(
             ["ip", "-o", "link", "show"],
@@ -214,7 +214,7 @@ def list_interfaces() -> list[str]:
         )
         if proc.returncode != 0:
             return []
-        # Format : "1: lo: <LOOPBACK,UP,LOWER_UP> ..."
+        # Format: "1: lo: <LOOPBACK,UP,LOWER_UP> ..."
         names = []
         for line in proc.stdout.splitlines():
             m = re.match(r"^\d+:\s+([^:@]+)[:@]", line)
@@ -225,14 +225,14 @@ def list_interfaces() -> list[str]:
         return []
 
 
-# --- Snapshots etat systeme (read-only, sans argument) ---
+# --- System state snapshots (read-only, no argument) ---
 #
-# Trois dumps utiles a tout admin firewall qui debugge a distance :
-# `ip route show` pour la table de routage, `ip addr show` pour les
-# adresses par interface, et `nft list ruleset` pour voir la ruleset
-# active (celle que MurOS a effectivement chargee, pas celle en DB).
-# Chacun s'execute via subprocess, timeout court (5s), aucun argument
-# utilisateur => zero risque d'injection.
+# Three dumps useful to any firewall admin debugging remotely:
+# `ip route show` for the routing table, `ip addr show` for the
+# per-interface addresses, and `nft list ruleset` to see the active
+# ruleset (the one MurOS actually loaded, not the one in DB).
+# Each runs via subprocess, short timeout (5s), no user argument
+# => zero injection risk.
 
 
 def show_routes() -> dict:
@@ -363,12 +363,11 @@ def public_ip(family: str = "auto") -> dict:
 
 
 def tcpdump_capture(interface: str, count: int = 50, filter_expr: str | None = None) -> dict:
-    """Capture quelques paquets via tcpdump puis stop.
+    """Capture a few packets via tcpdump then stop.
 
-    Le filter_expr est passe tel quel a tcpdump (syntaxe BPF). C'est un
-    point d'injection volontaire mais limite : tcpdump tourne sans shell,
-    donc on ne peut pas injecter de commande, juste un filtre BPF
-    eventuellement invalide.
+    The filter_expr is passed as-is to tcpdump (BPF syntax). This is a
+    deliberate but limited injection point: tcpdump runs without a shell,
+    so no command can be injected, only a possibly invalid BPF filter.
     """
     interface = _validate_interface(interface)
     count = max(1, min(count, 500))

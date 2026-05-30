@@ -2,11 +2,11 @@
 # Copyright (c) 2026 MurOS contributors.
 """IPsec via strongSwan (swanctl/vici).
 
-MurOS s'appuie sur le paquet Debian `strongswan` (et son plugin
-`strongswan-swanctl` pour l'interface moderne). Les tunnels sont decrits
-dans `/etc/swanctl/conf.d/muros.conf` au format swanctl, rendu depuis la
-DB SQLite. Le daemon `strongswan-starter.service` (Debian) charge la conf
-au demarrage, et `swanctl --load-all` permet un reload a chaud.
+MurOS relies on the Debian package `strongswan` (and its plugin
+`strongswan-swanctl` for the modern interface). Tunnels are described in
+`/etc/swanctl/conf.d/muros.conf` in the swanctl format, rendered from the
+SQLite DB. The `strongswan-starter.service` daemon (Debian) loads the
+config at startup, and `swanctl --load-all` allows a hot reload.
 """
 from __future__ import annotations
 
@@ -79,22 +79,22 @@ def _ipsec_service_installed() -> str | None:
 
 
 def _swanctl_version() -> str | None:
-    """Version strongSwan via dpkg (source de verite).
+    """strongSwan version via dpkg (source of truth).
 
-    On evite le binaire `swanctl --version` qui peut sortir en code non
-    zero a cause de warnings plugin parasites sur Debian, donnant un
-    "version indisponible" trompeur. La VRAIE version est celle que dpkg
-    a installee : c'est celle qu'on affiche, et c'est instantane.
+    We avoid the `swanctl --version` binary which can exit non-zero
+    because of spurious plugin warnings on Debian, giving a misleading
+    "version unavailable". The REAL version is the one dpkg installed:
+    that is the one we display, and it is instant.
     """
     from app.service_state import pkg_version
     return pkg_version("strongswan", "strongSwan")
 
 
 def _list_active_sas() -> list[dict]:
-    """Retourne les Security Associations actives via `swanctl --list-sas`.
+    """Return the active Security Associations via `swanctl --list-sas`.
 
-    Format brut, parse minimal : on retient le nom de la connexion et l'etat.
-    Le parsing fin viendra en phase 2 quand on aura un modele formel.
+    Raw format, minimal parsing: we keep the connection name and the state.
+    Fine-grained parsing will come in phase 2 with a formal model.
     """
     if not _which("swanctl"):
         return []
@@ -110,7 +110,7 @@ def _list_active_sas() -> list[dict]:
     for line in out.splitlines():
         if not line:
             continue
-        # Ligne de header IKE_SA : "name[1]: ESTABLISHED ..."
+        # IKE_SA header line: "name[1]: ESTABLISHED ..."
         if not line.startswith(" ") and ":" in line and "[" in line:
             name = line.split("[", 1)[0].strip()
             rest = line.split(":", 1)[1].strip()
@@ -121,12 +121,12 @@ def _list_active_sas() -> list[dict]:
 
 
 def get_status() -> dict:
-    """Etat live IPsec : paquets, service, version, SAs actives.
+    """Live IPsec state: packages, service, version, active SAs.
 
-    `installed` se base uniquement sur swanctl, qui est l'interface moderne
-    livree par strongswan-swanctl. Le binaire historique `ipsec` n'est plus
-    distribue par defaut sur Debian 12+, le tester ferait remonter "non
-    installe" alors que strongswan tourne bien.
+    `installed` relies solely on swanctl, the modern interface shipped by
+    strongswan-swanctl. The legacy `ipsec` binary is no longer distributed
+    by default on Debian 12+; testing it would report "not installed" even
+    though strongswan runs fine.
     """
     from app.service_state import service_state as _state
     installed = _which("swanctl")
@@ -185,8 +185,8 @@ def install_packages() -> dict:
 
     if os.geteuid() != 0:
         raise RuntimeError(
-            "Installation impossible : MurOS doit tourner en root. "
-            f"Installer manuellement : apt install -y {' '.join(IPSEC_PACKAGES)}"
+            "Installation impossible: MurOS must run as root. "
+            f"Install manually: apt install -y {' '.join(IPSEC_PACKAGES)}"
         )
 
     try:
@@ -276,13 +276,13 @@ def render_swanctl_conf(connections: list, certs_by_id: dict | None = None) -> s
         remote_lines = ["        remote {"]
         if auth_mode == "cert":
             remote_lines.append("            auth = pubkey")
-            # cacerts : la CA muros valide tout cert signe par elle.
+            # cacerts: the muros CA validates any cert it signed.
             remote_lines.append(f"            cacerts = {ipsec_pki.CA_FILENAME}")
-            # Si un cert distant precis est attendu, on l'ajoute en
-            # validation supplementaire via id.
+            # If a specific remote cert is expected, add it as an
+            # extra validation via id.
             remote_cert = certs_by_id.get(c.remote_cert_id) if c.remote_cert_id else None
             if remote_cert:
-                # Force l'id sur le CN du cert distant.
+                # Force the id to the remote cert CN.
                 remote_lines.append(f"            id = {remote_cert.subject_cn}")
             else:
                 remote_lines.append(f"            id = {remote_id}")
@@ -424,18 +424,18 @@ def apply_config(connections: list, ca=None, certs: list | None = None,
                  revoked_certs: list | None = None, *,
                  defer_start: bool = False,
                  globally_enabled: bool = True) -> dict:
-    """Ecrit les fichiers swanctl et fait un reload a chaud via swanctl --load-all.
+    """Write the swanctl files and hot-reload via swanctl --load-all.
 
-    Si ca et certs sont fournis, deploie aussi la PKI (CA + certs + CRL)
-    dans /etc/swanctl/x509ca/, x509/, private/, x509crl/.
+    If ca and certs are provided, also deploy the PKI (CA + certs + CRL)
+    into /etc/swanctl/x509ca/, x509/, private/, x509crl/.
 
-    En dry-run : retourne le contenu sans ecrire.
+    In dry-run: return the content without writing.
 
-    defer_start: en contexte boot (muros-boot.service avec
-    Before=network-online.target), on ne peut pas faire
-    `systemctl enable --now strongswan` car le service a
-    After=network-online.target -> deadlock 15s. On separe alors
-    enable (persistance) et start (--no-block, non bloquant).
+    defer_start: in boot context (muros-boot.service with
+    Before=network-online.target), we cannot run
+    `systemctl enable --now strongswan` because the service has
+    After=network-online.target -> 15s deadlock. We then split
+    enable (persistence) and start (--no-block, non-blocking).
     """
     from app import ipsec_pki
     certs = certs or []

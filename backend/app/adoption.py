@@ -39,7 +39,7 @@ ADOPTED_MARKER = Path(os.environ.get(
     "MUROS_ADOPTED_MARKER", "/var/lib/muros/.adopted",
 ))
 
-# Interfaces qu'on ignore systematiquement (ni adoptees ni gerees).
+# Interfaces we always ignore (neither adopted nor managed).
 _IGNORED_PREFIXES = (
     "lo",
     "docker", "br-", "veth", "virbr", "tun", "tap",
@@ -51,19 +51,19 @@ _IGNORED_PREFIXES = (
 
 
 def _ip_link_show() -> list[dict]:
-    """Renvoie `ip -j -d link show` parse, ou liste vide en erreur."""
+    """Return parsed `ip -j -d link show`, or an empty list on error."""
     try:
         out = subprocess.check_output(
             ["ip", "-j", "-d", "link", "show"], text=True, timeout=5,
         )
         return json.loads(out)
     except (subprocess.SubprocessError, FileNotFoundError, json.JSONDecodeError) as exc:
-        log.warning("ip link show a echoue : %s", exc)
+        log.warning("ip link show failed: %s", exc)
         return []
 
 
 def _ip_addr_show() -> dict[str, list[str]]:
-    """Renvoie {iface: [cidr1, cidr2...]} pour les adresses IPv4 globales."""
+    """Return {iface: [cidr1, cidr2...]} for global IPv4 addresses."""
     out: dict[str, list[str]] = {}
     try:
         raw = subprocess.check_output(
@@ -93,25 +93,25 @@ def _ip_addr_show() -> dict[str, list[str]]:
 
 
 def _ip_route_show() -> list[dict]:
-    """Renvoie `ip -j -4 route show` parse."""
+    """Return parsed `ip -j -4 route show`."""
     try:
         raw = subprocess.check_output(
             ["ip", "-j", "-4", "route", "show"], text=True, timeout=5,
         )
         return json.loads(raw)
     except (subprocess.SubprocessError, FileNotFoundError, json.JSONDecodeError) as exc:
-        log.warning("ip route show a echoue : %s", exc)
+        log.warning("ip route show failed: %s", exc)
         return []
 
 
 def _is_relevant_iface(name: str, link_info: dict) -> bool:
-    """Filtre : ignore loopback, docker, bridges virtuels, etc."""
+    """Filter: ignore loopback, docker, virtual bridges, etc."""
     if not name or name == "lo":
         return False
     if any(name.startswith(p) for p in _IGNORED_PREFIXES):
         return False
-    # On garde les VLAN (kind=vlan), bonds, ethernet phys, wireless
-    # (mais wifi devrait pas etre sur un firewall en general).
+    # Keep VLANs (kind=vlan), bonds, physical ethernet, wireless
+    # (though wifi should generally not be on a firewall).
     kind = link_info.get("linkinfo", {}).get("info_kind")
     if kind in ("docker", "bridge", "veth", "tun"):
         return False
@@ -119,9 +119,9 @@ def _is_relevant_iface(name: str, link_info: dict) -> bool:
 
 
 def _adopt_interfaces(db: Session) -> int:
-    """Cree ou met a jour les rows Interface a partir du kernel.
+    """Create or update Interface rows from the kernel.
 
-    Retourne le nombre d'interfaces touchees.
+    Returns the number of interfaces touched.
     """
     links = _ip_link_show()
     addrs = _ip_addr_show()
@@ -134,7 +134,7 @@ def _adopt_interfaces(db: Session) -> int:
         state = link.get("operstate", "UNKNOWN")
         enabled = state.upper() in ("UP", "UNKNOWN")
         live_addrs = addrs.get(name, [])
-        # On prend la premiere IPv4 globale comme primaire.
+        # Take the first global IPv4 as the primary.
         primary_cidr = live_addrs[0] if live_addrs else None
 
         # VLAN ?
@@ -152,23 +152,23 @@ def _adopt_interfaces(db: Session) -> int:
                 vlan_id=vlan_id,
                 ip_mode="static" if primary_cidr else "none",
                 ip_address=primary_cidr,
-                gateway=None,  # rempli par _adopt_routes
+                gateway=None,  # filled by _adopt_routes
                 mtu=mtu,
                 enabled=enabled,
                 dirty=False,
             )
             db.add(iface)
-            log.info("Adopte interface %s (mode=%s, ip=%s)", name, iface.ip_mode, primary_cidr or "-")
+            log.info("Adopted interface %s (mode=%s, ip=%s)", name, iface.ip_mode, primary_cidr or "-")
         elif primary_cidr and existing.ip_mode == "none":
-            # Cas du upgrade : l'iface existe en DB avec ip_mode=none mais
-            # le kernel a une IP. On fige l'IP plutot que de la perdre.
+            # Upgrade case: the iface exists in DB with ip_mode=none but
+            # the kernel has an IP. Freeze the IP rather than losing it.
             existing.ip_mode = "static"
             existing.ip_address = primary_cidr
             if not existing.mtu:
                 existing.mtu = mtu
             existing.enabled = enabled
             existing.dirty = False
-            log.info("Mise a niveau interface %s : ip_mode none -> static (%s)", name, primary_cidr)
+            log.info("Upgraded interface %s: ip_mode none -> static (%s)", name, primary_cidr)
         else:
             continue
         touched += 1
@@ -177,16 +177,16 @@ def _adopt_interfaces(db: Session) -> int:
 
 
 def _adopt_routes(db: Session) -> int:
-    """Cree des rows StaticRoute pour les routes non-connectees du kernel.
+    """Create StaticRoute rows for the kernel's non-connected routes.
 
-    On capture :
-    - La/les routes default (`destination=default`) avec leur gateway
-    - Les routes statiques non-default (manuel ou DHCP option 121) si
-      elles n'ont pas le scope link (les routes 'link' sont auto-derivees
-      des IPs sur les interfaces, pas la peine de les persister).
+    We capture:
+    - The default route(s) (`destination=default`) with their gateway
+    - Non-default static routes (manual or DHCP option 121) if they do
+      not have the link scope (the 'link' routes are auto-derived from
+      the interface IPs, no need to persist them).
 
-    On met a jour aussi Interface.gateway sur l'interface qui porte la
-    default route (utile pour le mode static ulterieur).
+    We also update Interface.gateway on the interface carrying the
+    default route (useful for the later static mode).
     """
     routes = _ip_route_show()
     touched = 0
@@ -197,8 +197,8 @@ def _adopt_routes(db: Session) -> int:
         dev = r.get("dev")
         scope = r.get("scope")
         protocol = r.get("protocol")
-        # Routes connectees auto (scope=link, protocol=kernel) : ignorees,
-        # elles sont implicites une fois l'IP posee sur l'interface.
+        # Auto connected routes (scope=link, protocol=kernel): ignored,
+        # they are implicit once the IP is set on the interface.
         if scope == "link" and protocol == "kernel":
             continue
         # Semantic fallback: a route without a gateway (next-hop) is
@@ -234,7 +234,7 @@ def _adopt_routes(db: Session) -> int:
                     touched += 1
                     log.info("Adopted gateway %s on interface %s", gw, dev)
             continue
-        # Cree la StaticRoute si absente.
+        # Create the StaticRoute if missing.
         exists = (
             db.query(models.StaticRoute)
             .filter_by(destination=dst, gateway=gw)
@@ -253,18 +253,18 @@ def _adopt_routes(db: Session) -> int:
         )
         db.add(route)
         touched += 1
-        log.info("Adopte route %s via %s dev %s", dst, gw or "-", dev or "-")
+        log.info("Adopted route %s via %s dev %s", dst, gw or "-", dev or "-")
     db.commit()
     return touched
 
 
 def should_adopt(db: Session) -> bool:
-    """True si l'adoption n'a pas encore eu lieu.
+    """True if adoption has not happened yet.
 
-    Critere : marker absent ET DB sans aucune interface enregistree. Si
-    une interface existe deja (cas upgrade depuis un installage MurOS
-    anterieur), on ne lance pas l'adoption complete - juste le filet
-    interface ip_mode=none + IP active geree dans _adopt_interfaces.
+    Criterion: marker absent AND DB with no registered interface. If an
+    interface already exists (upgrade case from an earlier MurOS install),
+    we do not run the full adoption - only the ip_mode=none + active IP
+    safety net handled in _adopt_interfaces.
     """
     if ADOPTED_MARKER.exists():
         return False
@@ -278,15 +278,15 @@ def adopt_kernel_state(db: Session, force: bool = False) -> dict:
     Returns {interfaces_touched, routes_touched, skipped}.
     """
     if not force and not should_adopt(db):
-        log.info("Adoption deja effectuee (marker %s present), skip", ADOPTED_MARKER)
+        log.info("Adoption already done (marker %s present), skip", ADOPTED_MARKER)
         return {"interfaces_touched": 0, "routes_touched": 0, "skipped": True}
-    log.info("=== Adoption de la conf reseau kernel ===")
+    log.info("=== Adopting kernel network config ===")
     n_iface = _adopt_interfaces(db)
     n_route = _adopt_routes(db)
     try:
         ADOPTED_MARKER.parent.mkdir(parents=True, exist_ok=True)
         ADOPTED_MARKER.touch()
     except OSError as exc:
-        log.warning("Impossible de creer le marker %s : %s", ADOPTED_MARKER, exc)
-    log.info("Adoption terminee : %d interfaces, %d routes", n_iface, n_route)
+        log.warning("Could not create marker %s: %s", ADOPTED_MARKER, exc)
+    log.info("Adoption done: %d interfaces, %d routes", n_iface, n_route)
     return {"interfaces_touched": n_iface, "routes_touched": n_route, "skipped": False}
