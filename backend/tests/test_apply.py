@@ -1,6 +1,4 @@
-"""Tests pour le mecanisme apply nftables avec rollback automatique."""
-import time
-from datetime import datetime, timedelta, timezone
+"""Tests for the nftables apply mechanism with automatic rollback."""
 
 
 def test_apply_state_idle_at_start(tmp_db):

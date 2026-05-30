@@ -35,7 +35,8 @@ jobs:
         working-directory: backend
         # Static guardrail: catches unused imports/variables, ambiguous
         # names, stray semicolons, undefined names, etc. before they ship.
-        run: ruff check app
+        # Tests are linted too so dead imports and typos do not rot there.
+        run: ruff check app tests
       - name: Run pytest
         working-directory: backend
         run: pytest -q

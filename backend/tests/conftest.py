@@ -1,14 +1,14 @@
-"""Fixtures pytest partagees.
+"""Shared pytest fixtures.
 
-Les env MUROS_DB et MUROS_SECRET_FILE sont fixees AVANT tout import app pour
-que lengine SQLAlchemy pointe sur une DB temporaire.
+The MUROS_DB and MUROS_SECRET_FILE env vars are set BEFORE any app import
+so the SQLAlchemy engine points at a temporary database.
 """
 import os
 import tempfile
 
 import pytest
 
-# Repertoire dedie pour les artefacts de test, vide au depart.
+# Dedicated directory for test artifacts, empty at startup.
 _TEST_DIR = tempfile.mkdtemp(prefix="muros-test-")
 os.environ["MUROS_DB"] = os.path.join(_TEST_DIR, "muros-test.db")
 os.environ["MUROS_SECRET_FILE"] = os.path.join(_TEST_DIR, "muros-test.key")
@@ -28,6 +28,6 @@ def _init_db():
 
 @pytest.fixture(scope="function")
 def tmp_db():
-    """Donne acces a la SessionLocal pour les tests."""
+    """Expose SessionLocal to the tests."""
     from app import db
     return db.SessionLocal
