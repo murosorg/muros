@@ -344,6 +344,26 @@ def _restore_watcher(db) -> None:
                         rc, msg)
 
 
+def _restore_ntp(db) -> None:
+    """Reconcile the chrony drop-in (server list + LAN server mode).
+
+    chrony server mode emits `allow <subnet>` for the LAN networks, which
+    can only be computed once the interfaces are restored. Re-applying it
+    here ensures NTP server mode survives a reboot. Runs after the network
+    restore so the LAN subnets are known.
+    """
+    from app import ntp
+    try:
+        ntp.apply_config(db)
+        subs = ntp.served_subnets(db)
+        if subs:
+            log.info("NTP server mode restored, serving: %s", ", ".join(subs))
+        else:
+            log.info("NTP restored (client mode, not serving the LAN)")
+    except Exception as exc:  # noqa: BLE001
+        log.warning("NTP reconcile failed: %r", exc)
+
+
 def main() -> int:
     from app.db import SessionLocal, init_db
     from app import adoption
@@ -381,6 +401,7 @@ def main() -> int:
             _restore_ipsec(db)
             _restore_ha(db)
             _restore_watcher(db)
+            _restore_ntp(db)
         except Exception:
             log.exception("Echec lors de la restauration")
             return 1

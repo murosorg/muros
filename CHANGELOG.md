@@ -2,6 +2,24 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [v0.9.0-rc14] - 2026-05-30
+
+### Added
+- NTP server mode (chrony) for the LAN, enabled by default. chrony now
+  emits an `allow <subnet>` directive for every LAN-side network (every
+  static interface whose zone is not a WAN zone), so the firewall serves
+  time to LAN clients out of the box, like an OPNsense appliance. The WAN
+  is never served (no `allow all`) to avoid NTP reflection/amplification.
+  A "Serve time to LAN clients" toggle on the Services > NTP server page
+  controls it (NtpConfig.serve_lan, default on); the served subnets are
+  shown there. Server mode is reconciled at boot by muros-boot once the
+  LAN interfaces are up.
+
+### Note
+- Reaching the NTP server from the LAN still requires the firewall to
+  accept udp/123 from the LAN zone (add an allow rule if your ruleset is
+  restrictive).
+
 ## [v0.9.0-rc13] - 2026-05-30
 
 ### Fixed

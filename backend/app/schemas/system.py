@@ -69,11 +69,18 @@ class NtpStatusOut(BaseModel):
 
 class NtpServersIn(BaseModel):
     servers: list[str]
+    # Serve NTP to LAN clients (chrony server mode). Default on.
+    serve_lan: bool = True
 
 
 class NtpServersOut(BaseModel):
     servers: list[str]
     config_path: str
+    # When True, chrony also answers NTP requests from the LAN subnets.
+    serve_lan: bool = True
+    # LAN network CIDRs currently served (empty when serve_lan is off
+    # or no LAN interface is configured yet).
+    served_subnets: list[str] = []
 
 
 # --- DNS ---

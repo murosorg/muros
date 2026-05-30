@@ -22,13 +22,15 @@ export default function Ntp() {
   const [status, setStatus] = useState<NtpStatus | null>(null)
   const [config, setConfig] = useState<NtpServers | null>(null)
   const [serversText, setServersText] = useState<string>('')
+  const [serveLan, setServeLan] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [working, setWorking] = useState(false)
 
   const reload = useCallback(() => {
     Promise.all([api.ntp.status(), api.ntp.servers()])
       .then(([s, c]) => {
-        setStatus(s); setConfig(c); setServersText(c.servers.join(' ')); setError(null)
+        setStatus(s); setConfig(c); setServersText(c.servers.join(' '))
+        setServeLan(c.serve_lan); setError(null)
       })
       .catch((e) => setError(e.message))
   }, [])
@@ -43,10 +45,15 @@ export default function Ntp() {
     setWorking(true)
     try {
       const list = serversText.split(/\s+/).map((s) => s.trim()).filter(Boolean)
-      const c = await api.ntp.setServers(list)
-      setConfig(c); setServersText(c.servers.join(' ')); setError(null)
+      const c = await api.ntp.setServers(list, serveLan)
+      setConfig(c); setServersText(c.servers.join(' ')); setServeLan(c.serve_lan); setError(null)
     } catch (e) { setError((e as Error).message) } finally { setWorking(false) }
   }
+
+  const dirty = !!config && (
+    serversText.trim() !== config.servers.join(' ').trim()
+    || serveLan !== config.serve_lan
+  )
 
   return (
     <div>
@@ -90,12 +97,12 @@ export default function Ntp() {
             <FormActions
               onApply={save}
               busy={working}
-              dirty={!!config && serversText.trim() !== config.servers.join(' ').trim()}
+              dirty={dirty}
               title="Save the server list and restart chrony."
             />
           </div>
           <p className="text-xs text-gray-700 mb-2">
-            Space-separated server list. Written to{' '}
+            Space-separated upstream server list. Written to{' '}
             <code className="font-mono">{config?.config_path || '/etc/chrony/conf.d/muros.conf'}</code>.
             The service is restarted after each save.
           </p>
@@ -105,6 +112,36 @@ export default function Ntp() {
             onChange={(e) => setServersText(e.target.value)}
             placeholder="0.debian.pool.ntp.org 1.debian.pool.ntp.org 2.debian.pool.ntp.org"
           />
+        </section>
+
+        <section>
+          <h2 className="text-sm font-semibold text-gray-900 mb-3">NTP server</h2>
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={serveLan}
+              onChange={(e) => setServeLan(e.target.checked)}
+            />
+            <span className="text-sm text-gray-800">
+              Serve time to LAN clients
+              <span className="block text-xs text-gray-600">
+                chrony answers NTP requests from the LAN networks (one{' '}
+                <code className="font-mono">allow</code> directive per LAN subnet).
+                The WAN is never served. Save to apply.
+              </span>
+            </span>
+          </label>
+          <div className="mt-3 text-xs text-gray-700">
+            Currently serving:{' '}
+            {config && config.served_subnets.length > 0 ? (
+              <span className="font-mono text-gray-900">{config.served_subnets.join(', ')}</span>
+            ) : (
+              <span className="text-gray-600">
+                no LAN subnet (client only{config && !config.serve_lan ? ', server mode off' : ', configure a LAN interface'})
+              </span>
+            )}
+          </div>
         </section>
       </div>
     </div>

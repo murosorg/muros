@@ -278,23 +278,37 @@ def ntp_status():
 
 
 @ntp_router.get("/servers", response_model=schemas.NtpServersOut)
-def ntp_servers():
+def ntp_servers(db: Session = Depends(get_db)):
     from app import ntp
-    return schemas.NtpServersOut(servers=ntp.get_servers(), config_path=ntp.get_config_path())
+    cfg = ntp.get_config(db)
+    return schemas.NtpServersOut(
+        servers=ntp.get_servers(),
+        config_path=ntp.get_config_path(),
+        serve_lan=cfg.serve_lan,
+        served_subnets=ntp.served_subnets(db),
+    )
 
 
 @ntp_router.put("/servers", response_model=schemas.NtpServersOut)
-def ntp_set_servers(data: schemas.NtpServersIn):
+def ntp_set_servers(data: schemas.NtpServersIn, db: Session = Depends(get_db)):
     from app import ntp
+    cfg = ntp.get_config(db)
+    cfg.serve_lan = data.serve_lan
+    db.commit()
     try:
-        ntp.set_servers(data.servers)
+        ntp.apply_config(db, servers=data.servers)
     except ValueError as exc:
         raise HTTPException(400, str(exc))
     except RuntimeError as exc:
         raise HTTPException(400, str(exc))
     except OSError as exc:
         raise HTTPException(500, f"unable to write the config : {exc}")
-    return schemas.NtpServersOut(servers=ntp.get_servers(), config_path=ntp.get_config_path())
+    return schemas.NtpServersOut(
+        servers=ntp.get_servers(),
+        config_path=ntp.get_config_path(),
+        serve_lan=cfg.serve_lan,
+        served_subnets=ntp.served_subnets(db),
+    )
 
 
 # --- DNS ---

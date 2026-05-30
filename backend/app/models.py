@@ -406,6 +406,23 @@ class DnsLocalRecord(Base):
     comment: Mapped[str | None] = mapped_column(String(255))
 
 
+class NtpConfig(Base):
+    """Singleton holding the NTP (chrony) server-mode settings.
+
+    chrony always runs as a time client (it keeps the box clock in sync
+    from the configured upstream servers). When `serve_lan` is True (the
+    default, OPNsense-like), MurOS additionally turns chrony into an NTP
+    server for the LAN: it emits an `allow <subnet>` directive for every
+    LAN-side network (every static interface whose zone is not a WAN
+    zone). The WAN is never served, to avoid NTP reflection/amplification
+    abuse. The upstream server list itself lives in the chrony drop-in
+    `/etc/chrony/conf.d/muros.conf`.
+    """
+    __tablename__ = "ntp_config"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    serve_lan: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+
 class NatRule(Base):
     __tablename__ = "nat_rules"
 
