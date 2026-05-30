@@ -11,14 +11,6 @@ on:
 permissions:
   contents: write
 
-# Run JavaScript actions on Node 24. Node 20 is deprecated on GitHub
-# runners (removed Sept 2026). We keep the actions at their current
-# versions (the action-gh-release SHA pin is deliberate) and force the
-# Node 24 runtime here instead, the sanctioned opt-in until those actions
-# ship Node 24 native majors.
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-
 jobs:
   build:
     runs-on: ubuntu-24.04
@@ -33,7 +25,7 @@ jobs:
             libdistro-info-perl distro-info-data \
             python3 python3-venv python3-pip \
             nodejs npm ca-certificates git
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         # fetch-depth=0 : on a besoin de l'historique pour lire la
         # description du tag (utilisee comme entree changelog).
         with:
@@ -70,7 +62,7 @@ jobs:
             sha256sum "$f" > "$f.sha256"
           done
           ls -la
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: muros-deb
           path: |
@@ -78,13 +70,13 @@ jobs:
             artifacts/*.sha256
       - name: Publish GitHub release
         if: startsWith(github.ref, 'refs/tags/v')
-        # Pin sur le SHA exact de v2.6.2 plutot que @v2 mobile : evite
+        # Pin sur le SHA exact de v3.0.0 plutot que @v3 mobile : evite
         # qu'un downgrade GitHub Actions (cas vu en rc40-42) ou une
         # nouvelle release de l'action puisse casser nos builds.
         # Pour bumper : verifier la nouvelle SHA via
         #   gh api repos/softprops/action-gh-release/git/refs/tags
         # et mettre a jour la ligne + le commentaire de version ci-dessous.
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
+        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
         with:
           # We do NOT flag rc tags as pre-release: GitHub refuses to set
           # make_latest=true on a pre-release. We keep make_latest=true so
@@ -119,7 +111,7 @@ jobs:
     needs: build
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: muros-deb
           path: artifacts

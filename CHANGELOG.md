@@ -4,6 +4,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [v0.9.0-rc94] - 2026-05-30
+
+### Changed
+- CI/release workflows moved to Node 24 native action majors and dropped
+  the `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24` opt-in. Bumped
+  `actions/checkout` v4 -> v5, `actions/setup-python` v5 -> v6,
+  `actions/setup-node` v4 -> v5, `actions/upload-artifact` v4 -> v7,
+  `actions/download-artifact` v4 -> v8, and `softprops/action-gh-release`
+  to v3.0.0 (SHA-pinned). All now run on Node 24, ahead of GitHub removing
+  the Node 20 runtime. No input changes for the options we use.
+
 ## [v0.9.0-rc93] - 2026-05-30
 
 ### Added
