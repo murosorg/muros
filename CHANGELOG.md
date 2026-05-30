@@ -4,6 +4,34 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [v0.9.0-rc84] - 2026-05-30
+
+### Changed
+- New filter rules are now inserted at the top of their chain (lowest
+  position, evaluated first) instead of being appended at the bottom.
+  Filter rules are first-match wins, so appending a freshly created rule
+  below a broader rule already in place silently shadowed it (e.g. a
+  "block SSH" landing under "allow LAN" never matched). Inserting first
+  matches the intuition that a rule you just created takes effect; order
+  can still be refined with drag-and-drop.
+
+## [v0.9.0-rc83] - 2026-05-30
+
+### Added
+- QoS / traffic shaping. A new "QoS / Shaping" page (Network section)
+  caps and prioritises egress bandwidth per interface using the kernel's
+  HTB qdisc with an fq_codel leaf on each class, the same combination
+  OpenWrt SQM and VyOS rely on. Closes a real gap versus OPNsense for
+  SMBs running VoIP or a saturated uplink. Model: a shaper per interface
+  (total egress bandwidth), priority classes (guaranteed rate, ceil,
+  priority 0-7), and classifier rules matching protocol / destination
+  port / source / destination / DSCP into a class. Unmatched traffic
+  falls into a catch-all default class. Configuration is compiled to
+  `tc` commands and applied from the page header Apply button; tc state
+  is volatile so muros-boot replays the qdisc tree from the DB at every
+  boot. New `qos` managed service (dirty tracking + sidebar indicator),
+  REST API under `/api/qos`, and a pure compiler test suite.
+
 ## [v0.9.0-rc82] - 2026-05-30
 
 ### Fixed
