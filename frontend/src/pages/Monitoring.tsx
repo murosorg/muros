@@ -151,81 +151,114 @@ export default function Monitoring() {
       />
 
       <div className="px-6 py-4">
-        {/* Services in two columns, listed from the oldest / most native
-            Unix daemon to the most recent (order of release, as set in
-            the backend catalog). No core/optional split anymore: every
-            service ships with MurOS, the table reflects current state
-            and links to the management page. */}
-        <section className="mb-6">
-          {services.length === 0 ? (
-            <LoadingState variant="inline" text="Loading services state..." />
-          ) : (
-            <div>
-              <div className="flex items-baseline justify-between mb-2">
-                <h2 className="text-sm font-semibold text-gray-900">Services</h2>
-                <span className="text-[11px] text-gray-600">
-                  {services.length} service{services.length > 1 ? 's' : ''}
-                </span>
-              </div>
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                {/* Left column: services enabled out of the box at install
-                    (default_on). Right column: on-demand services (SSH off
-                    by default, HA, VPN, MurOS feature daemons). The second
-                    table hides the duplicate "Service / State" header: at
-                    xl+ they sit side by side and a single header reads
-                    across both. */}
-                <ServiceTable services={services.filter((s) => s.default_on)} />
-                <ServiceTable services={services.filter((s) => !s.default_on)} hideHeaderOnDesktop />
-              </div>
-            </div>
-          )}
-        </section>
-
         {error && (
           <ErrorBlock message={error} />
         )}
 
-        {!data && !error && <LoadingState text="Loading metrics..." />}
+        {/* Dense two-column layout: the service inventory on the left,
+            the live system gauges and storage on the right. Services are
+            listed in backend catalog order (oldest / most native Unix
+            daemon first). Every service ships with MurOS; the list
+            reflects current state and links to its management page. */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+          <section className="lg:col-span-1">
+            <div className="flex items-baseline justify-between mb-2">
+              <h2 className="text-sm font-semibold text-gray-900">Services</h2>
+              <span className="text-[11px] text-gray-600">
+                {services.length} service{services.length > 1 ? 's' : ''}
+              </span>
+            </div>
+            {services.length === 0 ? (
+              <LoadingState variant="inline" text="Loading services state..." />
+            ) : (
+              <ServiceList services={services} />
+            )}
+          </section>
+
+          <div className="lg:col-span-2">
+            {!data && !error && <LoadingState text="Loading metrics..." />}
+            {data && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+                  <MetricCard
+                    label="CPU"
+                    value={`${data.cpu_usage_percent.toFixed(1)}%`}
+                    hint={`${data.cpu_cores} cores`}
+                    colorClass={usageColor(data.cpu_usage_percent)}
+                    history={clipY(h.cpu)}
+                    max={100}
+                    sparkFormat={(n) => `${n.toFixed(1)}%`}
+                  />
+                  <MetricCard
+                    label="Memory"
+                    value={`${data.memory.used_percent.toFixed(1)}%`}
+                    hint={`${formatBytes(data.memory.used_bytes)} / ${formatBytes(data.memory.total_bytes)}`}
+                    colorClass={usageColor(data.memory.used_percent)}
+                    history={clipY(h.mem)}
+                    max={100}
+                    sparkFormat={(n) => `${n.toFixed(1)}%`}
+                  />
+                  <MetricCard
+                    label="Conntrack"
+                    value={`${data.conntrack.used_percent.toFixed(1)}%`}
+                    hint={`${data.conntrack.current.toLocaleString('fr')} / ${data.conntrack.max.toLocaleString('fr')} sessions`}
+                    colorClass={usageColor(data.conntrack.used_percent)}
+                    history={clipY(h.conntrackPct)}
+                    max={100}
+                    sparkFormat={(n) => `${n.toFixed(1)}%`}
+                  />
+                  <div className="border border-gray-200 bg-white rounded p-3">
+                    <div className="text-[10px] uppercase tracking-wider text-gray-700 mb-1">Load / Uptime</div>
+                    <div className="text-lg font-mono font-semibold text-gray-900 tabular-nums">
+                      {data.load.map((l) => l.toFixed(2)).join(' / ')}
+                    </div>
+                    <div className="text-xs text-gray-700 mt-1 font-mono">uptime {formatUptime(data.uptime_seconds)}</div>
+                  </div>
+                </div>
+
+                <section>
+                  <h2 className="text-sm font-semibold mb-2 text-gray-900">Storage</h2>
+                  <div className="border border-gray-200 rounded-md overflow-hidden">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50 text-gray-700 text-xs uppercase tracking-wider">
+                        <tr>
+                          <th className="text-left px-3 py-2">Mount point</th>
+                          <th className="text-right px-3 py-2 w-28">Used</th>
+                          <th className="text-right px-3 py-2 w-28">Total</th>
+                          <th className="text-right px-3 py-2 w-20">%</th>
+                          <th className="text-left px-3 py-2">Usage</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {data.disks.map((d) => (
+                          <tr key={d.mount} className="border-t border-gray-200">
+                            <td className="px-3 py-2 font-mono">{d.mount}</td>
+                            <td className="px-3 py-2 text-right font-mono text-xs text-gray-800">{formatBytes(d.used_bytes)}</td>
+                            <td className="px-3 py-2 text-right font-mono text-xs text-gray-800">{formatBytes(d.total_bytes)}</td>
+                            <td className={`px-3 py-2 text-right font-mono text-xs font-semibold ${usageColor(d.used_percent)}`}>
+                              {d.used_percent.toFixed(1)}%
+                            </td>
+                            <td className="px-3 py-2">
+                              <div className="h-2 bg-gray-100 rounded overflow-hidden">
+                                <div
+                                  className="h-full bg-gray-800"
+                                  style={{ width: `${d.used_percent}%` }}
+                                />
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              </div>
+            )}
+          </div>
+        </div>
 
         {data && (
           <>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-              <MetricCard
-                label="CPU"
-                value={`${data.cpu_usage_percent.toFixed(1)}%`}
-                hint={`${data.cpu_cores} cores`}
-                colorClass={usageColor(data.cpu_usage_percent)}
-                history={clipY(h.cpu)}
-                max={100}
-                sparkFormat={(n) => `${n.toFixed(1)}%`}
-              />
-              <MetricCard
-                label="Memory"
-                value={`${data.memory.used_percent.toFixed(1)}%`}
-                hint={`${formatBytes(data.memory.used_bytes)} / ${formatBytes(data.memory.total_bytes)}`}
-                colorClass={usageColor(data.memory.used_percent)}
-                history={clipY(h.mem)}
-                max={100}
-                sparkFormat={(n) => `${n.toFixed(1)}%`}
-              />
-              <MetricCard
-                label="Conntrack"
-                value={`${data.conntrack.used_percent.toFixed(1)}%`}
-                hint={`${data.conntrack.current.toLocaleString('fr')} / ${data.conntrack.max.toLocaleString('fr')} sessions`}
-                colorClass={usageColor(data.conntrack.used_percent)}
-                history={clipY(h.conntrackPct)}
-                max={100}
-                sparkFormat={(n) => `${n.toFixed(1)}%`}
-              />
-              <div className="border border-gray-200 bg-white rounded p-3">
-                <div className="text-[10px] uppercase tracking-wider text-gray-700 mb-1">Load / Uptime</div>
-                <div className="text-lg font-mono font-semibold text-gray-900 tabular-nums">
-                  {data.load.map((l) => l.toFixed(2)).join(' / ')}
-                </div>
-                <div className="text-xs text-gray-700 mt-1 font-mono">uptime {formatUptime(data.uptime_seconds)}</div>
-              </div>
-            </div>
-
             <section className="mb-6">
               <div className="flex items-center justify-between mb-2">
                 <h2 className="text-sm font-semibold text-gray-900">History</h2>
@@ -306,43 +339,6 @@ export default function Monitoring() {
               </div>
             </section>
 
-            <section className="mb-6">
-              <h2 className="text-sm font-semibold mb-2 text-gray-900">Storage</h2>
-              <div className="border border-gray-200 rounded-md overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50 text-gray-700 text-xs uppercase tracking-wider">
-                    <tr>
-                      <th className="text-left px-3 py-2">Mount point</th>
-                      <th className="text-right px-3 py-2 w-28">Used</th>
-                      <th className="text-right px-3 py-2 w-28">Total</th>
-                      <th className="text-right px-3 py-2 w-20">%</th>
-                      <th className="text-left px-3 py-2">Usage</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.disks.map((d) => (
-                      <tr key={d.mount} className="border-t border-gray-200">
-                        <td className="px-3 py-2 font-mono">{d.mount}</td>
-                        <td className="px-3 py-2 text-right font-mono text-xs text-gray-800">{formatBytes(d.used_bytes)}</td>
-                        <td className="px-3 py-2 text-right font-mono text-xs text-gray-800">{formatBytes(d.total_bytes)}</td>
-                        <td className={`px-3 py-2 text-right font-mono text-xs font-semibold ${usageColor(d.used_percent)}`}>
-                          {d.used_percent.toFixed(1)}%
-                        </td>
-                        <td className="px-3 py-2">
-                          <div className="h-2 bg-gray-100 rounded overflow-hidden">
-                            <div
-                              className="h-full bg-gray-800"
-                              style={{ width: `${d.used_percent}%` }}
-                            />
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-
           </>
         )}
       </div>
@@ -408,54 +404,34 @@ function serviceLabel(status: string): { dot: string; badge: string; label: stri
   }
 }
 
-// Renders one half of the service list as a self-contained table. The
-// section header (title + total count) is rendered once above the
-// two-column grid, not per column.
-function ServiceTable({ services, hideHeaderOnDesktop }: { services: SystemService[]; hideHeaderOnDesktop?: boolean }) {
+// Compact single-column service inventory. Each row is a clickable line
+// (status dot + name on the left, state badge pinned right) linking to
+// the service management page. Tight rows keep the list dense so it fits
+// the dashboard's left column without the dead whitespace a wide table
+// produced.
+function ServiceList({ services }: { services: SystemService[] }) {
   const navigate = useNavigate()
   if (services.length === 0) return null
   return (
-    <div className="border border-gray-200 rounded-md overflow-hidden">
-      <table className="w-full text-sm">
-        <thead className={`bg-gray-50 text-gray-600 text-xs ${hideHeaderOnDesktop ? 'xl:hidden' : ''}`}>
-          <tr>
-            <th className="text-left font-medium px-3 py-2 w-6"></th>
-            <th className="text-left font-medium px-3 py-2">Service</th>
-            <th className="text-left font-medium px-3 py-2 w-24">State</th>
-          </tr>
-        </thead>
-        <tbody>
-          {services.map((s) => {
-            const st = serviceLabel(s.status)
-            return (
-              <tr
-                key={s.unit}
-                className="border-t border-gray-200 hover:bg-gray-50 cursor-pointer"
-                onClick={() => navigate(s.page)}
-                title={`Go to management page: ${s.page}`}
-              >
-                <td className="px-3 py-1.5">
-                  <span
-                    className={`inline-block w-2 h-2 rounded-full ${st.dot}`}
-                    aria-hidden
-                  />
-                </td>
-                <td
-                  className="px-3 py-1.5 text-gray-900"
-                  title={`systemd unit: ${s.unit}`}
-                >
-                  {s.display_name}
-                </td>
-                <td className="px-3 py-1.5">
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium text-center min-w-[96px] inline-block whitespace-nowrap ${st.badge}`}>
-                    {st.label}
-                  </span>
-                </td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
+    <div className="border border-gray-200 rounded-md overflow-hidden bg-white">
+      {services.map((s, i) => {
+        const st = serviceLabel(s.status)
+        return (
+          <button
+            key={s.unit}
+            type="button"
+            onClick={() => navigate(s.page)}
+            title={`systemd unit: ${s.unit} - go to ${s.page}`}
+            className={`w-full flex items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-gray-50 ${i > 0 ? 'border-t border-gray-200' : ''}`}
+          >
+            <span className={`inline-block w-2 h-2 rounded-full shrink-0 ${st.dot}`} aria-hidden />
+            <span className="flex-1 min-w-0 truncate text-gray-900">{s.display_name}</span>
+            <span className={`shrink-0 text-[10px] px-1.5 py-0.5 rounded font-medium whitespace-nowrap ${st.badge}`}>
+              {st.label}
+            </span>
+          </button>
+        )
+      })}
     </div>
   )
 }
