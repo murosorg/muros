@@ -4,7 +4,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-## [v0.9.0-rc104] - 2026-05-30
+## [v0.9.0-rc105] - 2026-05-30
 
 ### Added
 - End-to-end integration test `packaging/tests/integration-services.sh`.
