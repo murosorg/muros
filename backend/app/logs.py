@@ -128,7 +128,6 @@ ALLOWED_UNITS = {
     # MurOS daemons.
     "muros-backend.service",
     "muros-boot.service",
-    "muros-nft.service",
     "muros-self-upgrade.service",
     "muros-wan-monitor.service",
     "muros-watcher.service",
@@ -249,7 +248,6 @@ def list_known_units() -> list[str]:
 
         # Other MurOS internal units (boot-time and self-upgrade).
         "muros-boot.service",
-        "muros-nft.service",
         "muros-self-upgrade.service",
     ]
 
