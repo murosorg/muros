@@ -256,6 +256,30 @@ class ApplyRequest(BaseModel):
     # scripted apply that needs more time), it can still pass an
     # explicit value within the allowed range.
     timeout_seconds: int | None = Field(default=None, ge=10, le=600)
+    # Set to True by the UI once the operator has explicitly acknowledged
+    # a management-lockout warning (see lockout_guard). When the guard
+    # detects the ruleset would block NEW management connections and this
+    # flag is False, the apply is refused with 409 so the operator cannot
+    # lock themselves out without confirming.
+    acknowledge_lockout: bool = False
+
+
+class LockoutPortOut(BaseModel):
+    port: int
+    service: str
+    reachable: bool
+
+
+class LockoutCheckOut(BaseModel):
+    # evaluated=False means the guard could not reason reliably (unknown
+    # or loopback source, or a source not on a directly connected subnet)
+    # and intentionally raised no alarm.
+    evaluated: bool
+    blocked: bool
+    source_ip: str | None = None
+    source_zone: str | None = None
+    ports: list[LockoutPortOut] = []
+    message: str | None = None
 
 
 class ApplyStatusOut(BaseModel):

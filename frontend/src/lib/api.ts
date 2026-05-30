@@ -285,6 +285,21 @@ export type ApplyStatus = {
   message: string | null
 }
 
+export type LockoutPort = {
+  port: number
+  service: string
+  reachable: boolean
+}
+
+export type LockoutCheck = {
+  evaluated: boolean
+  blocked: boolean
+  source_ip: string | null
+  source_zone: string | null
+  ports: LockoutPort[]
+  message: string | null
+}
+
 const TOKEN_KEY = 'muros-token'
 
 export const auth = {
@@ -543,10 +558,15 @@ export const api = {
     status: () => request<ApplyStatus>('GET', '/api/firewall/apply/status'),
     // Defaut 60s aligne avec safe_apply / pending_apply / apply.py backend.
     // Convention MurOS unique pour tous les rollbacks (cf RollbackModal).
-    run: (timeout = 60) => request<ApplyStatus>('POST', '/api/firewall/apply', { timeout_seconds: timeout }),
+    run: (timeout = 60, acknowledgeLockout = false) =>
+      request<ApplyStatus>('POST', '/api/firewall/apply', {
+        timeout_seconds: timeout,
+        acknowledge_lockout: acknowledgeLockout,
+      }),
     confirm: () => request<ApplyStatus>('POST', '/api/firewall/apply/confirm'),
     rollback: () => request<ApplyStatus>('POST', '/api/firewall/apply/rollback'),
     pending: () => request<FirewallPending>('GET', '/api/firewall/pending'),
+    lockoutCheck: () => request<LockoutCheck>('GET', '/api/firewall/apply/lockout-check'),
   },
 
   nat: {

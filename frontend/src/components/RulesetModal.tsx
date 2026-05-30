@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api } from '../lib/api'
+import { api, type LockoutCheck } from '../lib/api'
 
 export default function RulesetModal({ onClose }: { onClose: () => void }) {
   const [ruleset, setRuleset] = useState<string>('')
@@ -9,6 +9,11 @@ export default function RulesetModal({ onClose }: { onClose: () => void }) {
   const [checking, setChecking] = useState(false)
   const [applying, setApplying] = useState(false)
   const [copied, setCopied] = useState(false)
+  // Management-lockout guard: filled from /apply/lockout-check. When
+  // blocked, the operator must tick the acknowledgement before Apply is
+  // re-enabled (and the apply call carries acknowledge_lockout=true).
+  const [lockout, setLockout] = useState<LockoutCheck | null>(null)
+  const [ackLockout, setAckLockout] = useState(false)
 
   const copyRuleset = async () => {
     if (!ruleset) return
@@ -41,6 +46,11 @@ export default function RulesetModal({ onClose }: { onClose: () => void }) {
       .then((r) => setRuleset(r.ruleset))
       .catch((e) => setError((e as Error).message))
       .finally(() => setLoading(false))
+    // Best-effort lockout pre-check. A failure here must never block the
+    // apply flow, so we swallow errors and simply skip the warning.
+    api.apply.lockoutCheck()
+      .then((r) => setLockout(r))
+      .catch(() => setLockout(null))
   }, [])
 
   const runCheck = async () => {

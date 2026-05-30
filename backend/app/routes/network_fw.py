@@ -2,11 +2,12 @@
 # Copyright (c) 2026 MurOS contributors.
 """Routes HTTP de l'API MurOS (sous-module)."""
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
-from app import models, schemas
+from app import lockout_guard, models, schemas
 from app.apply import manager as apply_manager
+from app.audit import _client_ip
 from app.auth import current_user
 from app.compiler import compile_ruleset
 from app.db import SessionLocal, get_db
@@ -775,8 +776,42 @@ def firewall_pending(db: Session = Depends(get_db)):
     )
 
 
+@firewall_router.get("/apply/lockout-check", response_model=schemas.LockoutCheckOut)
+def apply_lockout_check(request: Request, db: Session = Depends(get_db)):
+    """Static pre-apply check: would the pending input chain still accept
+    NEW management connections (web UI, SSH) from the caller's source?
+
+    The commit-confirm modal cannot catch this: the operator stays
+    connected through conntrack's established/related accept even when the
+    rule allowing new management connections was removed. This endpoint
+    lets the UI surface a blocking warning before applying.
+    """
+    report = lockout_guard.analyze(db, _client_ip(request))
+    return schemas.LockoutCheckOut(**report)
+
+
 @firewall_router.post("/apply", response_model=schemas.ApplyStatusOut)
-def apply_ruleset(req: schemas.ApplyRequest, db: Session = Depends(get_db)):
+def apply_ruleset(
+    req: schemas.ApplyRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    # Management-lockout guard: refuse to apply a ruleset that would block
+    # NEW management connections from the operator's source, unless they
+    # explicitly acknowledged the risk. This is a safety net for scripted
+    # callers too; the UI runs the same check up front (lockout-check).
+    if not req.acknowledge_lockout:
+        report = lockout_guard.analyze(db, _client_ip(request))
+        if report["blocked"]:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "management_lockout",
+                    "message": report["message"],
+                    "report": report,
+                },
+            )
+
     ruleset = compile_ruleset(db)
     try:
         status_obj = apply_manager.apply(ruleset, timeout=req.timeout_seconds)

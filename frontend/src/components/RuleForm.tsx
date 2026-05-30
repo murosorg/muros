@@ -66,9 +66,21 @@ export default function RuleForm({ rule, zones, defaultChain, onSubmit, onCancel
   }, [])
 
   const useServiceGroup = data.service_group_id != null
+  const chain = data.chain || 'forward'
 
   const set = <K extends keyof FirewallRule>(k: K, v: FirewallRule[K] | null) =>
     setData((d) => ({ ...d, [k]: v }))
+
+  // Changing the chain rewrites which endpoint is the firewall itself, so
+  // drop the zone that no longer applies (input has no dst zone, output no
+  // src zone) to avoid carrying a stale selection into the payload.
+  const setChain = (c: FirewallRule['chain']) =>
+    setData((d) => ({
+      ...d,
+      chain: c,
+      src_zone_id: c === 'output' ? null : d.src_zone_id,
+      dst_zone_id: c === 'input' ? null : d.dst_zone_id,
+    }))
 
   // Picking a quick service overrides any group binding and writes the
   // protocol + destination port directly. `Ping` clears the port (icmp).
@@ -91,6 +103,10 @@ export default function RuleForm({ rule, zones, defaultChain, onSubmit, onCancel
         if (payload[k] === '') payload[k] = null
       }
       if (payload.protocol === 'any' || !payload.protocol) payload.protocol = null
+      // The firewall itself is a fixed endpoint on input/output: never send
+      // a zone for the side that is the firewall.
+      if (payload.chain === 'input') payload.dst_zone_id = null
+      if (payload.chain === 'output') payload.src_zone_id = null
       await onSubmit(payload)
     } catch (e) {
       setError(String(e))
@@ -160,32 +176,48 @@ export default function RuleForm({ rule, zones, defaultChain, onSubmit, onCancel
         </div>
       </div>
 
-      {/* 3. Where: source zone -> destination zone (visual flow). */}
+      {/* 3. Where: endpoints depend on the chain.
+          - input: <zone> -> the firewall itself (no destination zone)
+          - output: the firewall itself -> <zone> (no source zone)
+          - forward: <zone> -> <zone> (both ends are zones) */}
       <div>
         <label className="label">Traffic flow</label>
         <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
-          <select
-            className="select"
-            value={data.src_zone_id ?? ''}
-            onChange={(e) => set('src_zone_id', e.target.value ? Number(e.target.value) : null)}
-          >
-            <option value="">From any zone</option>
-            {zones.map((z) => (
-              <option key={z.id} value={z.id}>From {z.name}</option>
-            ))}
-          </select>
+          {chain === 'output' ? (
+            <FirewallEndpoint />
+          ) : (
+            <select
+              className="select"
+              value={data.src_zone_id ?? ''}
+              onChange={(e) => set('src_zone_id', e.target.value ? Number(e.target.value) : null)}
+            >
+              <option value="">From any zone</option>
+              {zones.map((z) => (
+                <option key={z.id} value={z.id}>From {z.name}</option>
+              ))}
+            </select>
+          )}
           <ArrowRight size={16} className="text-gray-400" />
-          <select
-            className="select"
-            value={data.dst_zone_id ?? ''}
-            onChange={(e) => set('dst_zone_id', e.target.value ? Number(e.target.value) : null)}
-          >
-            <option value="">To any zone</option>
-            {zones.map((z) => (
-              <option key={z.id} value={z.id}>To {z.name}</option>
-            ))}
-          </select>
+          {chain === 'input' ? (
+            <FirewallEndpoint />
+          ) : (
+            <select
+              className="select"
+              value={data.dst_zone_id ?? ''}
+              onChange={(e) => set('dst_zone_id', e.target.value ? Number(e.target.value) : null)}
+            >
+              <option value="">To any zone</option>
+              {zones.map((z) => (
+                <option key={z.id} value={z.id}>To {z.name}</option>
+              ))}
+            </select>
+          )}
         </div>
+        <p className="text-[11px] text-gray-500 mt-1">
+          {chain === 'input' && 'Traffic from a zone to the firewall itself (management, services it hosts).'}
+          {chain === 'output' && 'Traffic originated by the firewall itself towards a zone.'}
+          {chain === 'forward' && 'Traffic routed through the firewall, from one zone to another.'}
+        </p>
       </div>
 
       {/* 4. Service: quick chips + custom port/protocol or saved group. */}
@@ -325,7 +357,7 @@ export default function RuleForm({ rule, zones, defaultChain, onSubmit, onCancel
                 <select
                   className="select"
                   value={data.chain || 'forward'}
-                  onChange={(e) => set('chain', e.target.value as FirewallRule['chain'])}
+                  onChange={(e) => setChain(e.target.value as FirewallRule['chain'])}
                 >
                   <option value="input">{CHAIN_LABEL.input}</option>
                   <option value="forward">{CHAIN_LABEL.forward}</option>
@@ -362,6 +394,16 @@ export default function RuleForm({ rule, zones, defaultChain, onSubmit, onCancel
           {submitting ? 'Saving...' : 'Save'}
         </button>
       </div>
+    </div>
+  )
+}
+
+// Fixed, non-editable endpoint shown when one side of the flow is the
+// firewall itself (input destination / output source).
+function FirewallEndpoint() {
+  return (
+    <div className="select flex items-center bg-gray-50 text-gray-600 cursor-default select-none">
+      This firewall
     </div>
   )
 }
