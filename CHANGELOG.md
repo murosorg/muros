@@ -2,7 +2,7 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [v0.9.0-rc23] - 2026-05-30
+## [v0.9.0-rc25] - 2026-05-30
 
 ### Added
 - First-boot setup wizard. Until the operator assigns the network
