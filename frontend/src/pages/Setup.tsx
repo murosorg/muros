@@ -4,17 +4,18 @@ import { api, type SetupInterface } from '../lib/api'
 import { ErrorBlock } from '../components/Alerts'
 
 // First-boot onboarding. The single mandatory step: tell MurOS which NIC
-// faces the trusted LAN. Picking the Internet (WAN) interface is optional:
-// a single-NIC box (WAN reached over a VLAN later) is a valid posture, just
-// like OPNsense. Applying it assigns the zones, drops the permissive
-// bootstrap rules and pushes the network + firewall configuration. After
-// that the box reaches its final posture: LAN can reach everything, the WAN
-// (when assigned) is default-deny.
+// faces the trusted LAN, and its address. That is all the security posture
+// needs: the LAN zone is trusted and can reach the firewall and its
+// services, while every other interface is firewall-filtered (default-deny)
+// whether or not it carries a name. The Internet uplink (WAN) is a
+// connectivity concern, not a security one, and is configured afterwards
+// from the Network page where the addressing mode (DHCP, static, PPPoE),
+// MTU and the rest live. Applying assigns the LAN zone, drops the permissive
+// bootstrap rules and pushes the network + firewall configuration.
 export default function Setup() {
   const nav = useNavigate()
   const [interfaces, setInterfaces] = useState<SetupInterface[]>([])
   const [lan, setLan] = useState('')
-  const [wan, setWan] = useState('')
   const [lanCidr, setLanCidr] = useState('192.168.1.1/24')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -25,11 +26,8 @@ export default function Setup() {
       if (s.completed) { nav('/', { replace: true }); return }
       setInterfaces(s.interfaces)
       const names = s.interfaces.map((i) => i.name)
-      // The first NIC is the trusted LAN by default. A second NIC, when
-      // present, is pre-selected as the WAN; with a single NIC the WAN
-      // stays unset.
+      // The first NIC is the trusted LAN by default.
       if (names[0]) setLan(names[0])
-      if (names[1]) setWan(names[1])
     }).catch((e) => setError(String(e)))
   }, [nav])
 
@@ -38,7 +36,7 @@ export default function Setup() {
     setBusy(true); setError(null)
     try {
       setStep('Assigning zones...')
-      await api.setup.apply({ lan_interface: lan, lan_cidr: lanCidr, wan_interface: wan || null })
+      await api.setup.apply({ lan_interface: lan, lan_cidr: lanCidr })
       // Push the staged network + firewall configuration using the normal
       // apply paths (best-effort: a fresh box may not have a live link yet).
       setStep('Applying network...')
@@ -60,8 +58,9 @@ export default function Setup() {
         <h1 className="text-lg font-semibold text-gray-900 mb-1">Initial setup</h1>
         <p className="text-sm text-gray-600 mb-5">
           Tell MurOS which interface faces your trusted LAN. The LAN can
-          reach the firewall and its services. Selecting the WAN (Internet)
-          interface is optional and can be done later from the Network page.
+          reach the firewall and its services; every other interface is
+          filtered by default. Configure your Internet uplink afterwards
+          from the Network page.
         </p>
 
         {error && <div className="mb-4"><ErrorBlock message={error} /></div>}
@@ -82,24 +81,14 @@ export default function Setup() {
           </p>
         </div>
 
-        <div className="mb-4">
-          <label className="label">WAN interface (Internet, DHCP client) - optional</label>
-          <select className="input" value={wan} onChange={(e) => setWan(e.target.value)}>
-            <option value="">None (assign later)</option>
-            {interfaces.map((i) => <option key={i.name} value={i.name}>{i.name}</option>)}
-          </select>
-          <p className="text-xs text-gray-500 mt-1">
-            Leave unset on a single-NIC box; you can reach the Internet over
-            a VLAN and assign it from the Network page.
-          </p>
-        </div>
-
-        {wan && lan && wan === lan && (
-          <p className="text-xs text-amber-700 mb-3">WAN and LAN must be different interfaces.</p>
-        )}
+        <p className="text-xs text-gray-500 mb-5">
+          Every interface other than the LAN is left in no zone and stays
+          default-deny at the firewall. Wire your Internet uplink from the
+          Network page once setup is done.
+        </p>
 
         <button type="submit" className="btn-primary w-full justify-center"
-          disabled={busy || !lan || (!!wan && wan === lan) || !lanCidr}>
+          disabled={busy || !lan || !lanCidr}>
           {busy ? (step || 'Applying...') : 'Finish setup'}
         </button>
       </form>

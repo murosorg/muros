@@ -5,12 +5,20 @@
 A fresh MurOS box ships with deliberately permissive "any -> firewall"
 bootstrap rules (SSH, UI, ICMP) so the operator is never locked out
 before the zones are wired. This wizard performs the one mandatory step:
-pick which NIC faces the Internet (WAN) and which faces the trusted LAN.
-Once assigned, MurOS drops the permissive bootstrap rules: management and
-box services become reachable from the LAN only (the seeded
-"allow LAN to firewall" rule covers them), while the WAN stays
-default-deny. Services keep listening on every interface; who can reach
-them is enforced by the firewall zones, not by per-service binds.
+pick which NIC faces the trusted LAN and give it an address. That is all
+the security posture needs. The trusted LAN gets a zone and can reach the
+firewall and its services; every other interface is left in no zone and
+stays default-deny at the firewall, so it is filtered whether or not it is
+ever named. Services keep listening on every interface; who can reach them
+is enforced by the firewall zones, not by per-service binds.
+
+The Internet uplink (WAN) is a connectivity concern, not a security one,
+and is configured afterwards from the Network page where the addressing
+mode (DHCP, static, PPPoE), MTU and the rest live. The wizard does not ask
+for it: nothing is exposed by leaving the uplink unassigned, and forcing a
+DHCP client onto a guessed NIC at first boot is more surprising than
+helpful. Once the LAN zone exists, MurOS drops the permissive bootstrap
+rules, leaving management reachable from the LAN only.
 """
 import ipaddress
 
@@ -39,10 +47,6 @@ class SetupState(BaseModel):
 class SetupApplyIn(BaseModel):
     lan_interface: str
     lan_cidr: str  # e.g. 192.168.1.1/24
-    # The WAN is optional: a single-NIC box (LAN only, WAN reached over a
-    # VLAN later) is a valid posture, exactly like OPNsense. When omitted
-    # no interface is assigned to the WAN zone.
-    wan_interface: str | None = None
 
 
 def _is_completed(db: Session) -> bool:
@@ -84,9 +88,6 @@ def _zone(db: Session, name: str) -> models.Zone:
 
 @setup_router.post("/apply", response_model=SetupState)
 def setup_apply(data: SetupApplyIn, db: Session = Depends(get_db)):
-    wan_name = data.wan_interface or None
-    if wan_name and wan_name == data.lan_interface:
-        raise HTTPException(400, "WAN and LAN must be different interfaces")
     try:
         net = ipaddress.ip_interface(data.lan_cidr)
     except ValueError:
@@ -98,22 +99,7 @@ def setup_apply(data: SetupApplyIn, db: Session = Depends(get_db)):
     if lan_if is None:
         raise HTTPException(404, "Unknown interface")
 
-    wan_if = None
-    if wan_name:
-        wan_if = db.query(models.Interface).filter(models.Interface.name == wan_name).first()
-        if wan_if is None:
-            raise HTTPException(404, "Unknown interface")
-
     lan = _zone(db, "lan")
-
-    # WAN: DHCP client towards the ISP. Only assigned when an interface
-    # was picked; a LAN-only box leaves the WAN zone empty.
-    if wan_if is not None:
-        wan = _zone(db, "wan")
-        wan_if.zone_id = wan.id
-        wan_if.ip_mode = "dhcp"
-        wan_if.enabled = True
-        wan_if.dirty = True
 
     # LAN: static, the gateway address the operator typed (host part of
     # lan_cidr).
@@ -126,7 +112,7 @@ def setup_apply(data: SetupApplyIn, db: Session = Depends(get_db)):
     # Drop the permissive bootstrap rules now that the LAN zone exists.
     # The seeded "allow LAN to firewall" rule already lets the LAN reach
     # SSH/UI/services, so the any-source accepts are no longer needed and
-    # would otherwise expose management to the WAN.
+    # would otherwise expose management to every other (untrusted) interface.
     (
         db.query(models.FirewallRule)
         .filter(

@@ -84,9 +84,9 @@ def set_apply_confirm_timeout(value: int) -> int:
 # --- First-boot setup wizard --------------------------------------------
 
 # True once the operator has completed the onboarding wizard (assigned the
-# WAN and LAN interfaces to their zones). Until then the UI redirects to
-# the wizard and the firewall keeps its permissive "any -> box" bootstrap
-# rules so the admin is never locked out before zones are wired.
+# trusted LAN interface to its zone). Until then the UI redirects to the
+# wizard and the firewall keeps its permissive "any -> box" bootstrap rules
+# so the admin is never locked out before the LAN zone is wired.
 SETUP_COMPLETED_KEY: Final[str] = "setup_completed"
 
 
