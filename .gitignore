@@ -7,6 +7,12 @@ venv/
 .pytest_cache/
 *.egg-info/
 
+# Test coverage artifacts
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
 # Node
 node_modules/
 dist/
