@@ -1,15 +1,15 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (c) 2026 MurOS contributors.
-"""Gestion du certificat TLS de l'interface web (nginx).
+"""TLS certificate management for the web UI (nginx).
 
-Le drop-in nginx (`/etc/nginx/sites-available/muros`) pointe vers
-`/etc/nginx/ssl/muros.crt` et `/etc/nginx/ssl/muros.key`. A l'install
-ces fichiers sont des symlinks vers le snakeoil ssl-cert. L'admin peut :
-  - uploader un cert + cle PEM (signe par sa propre CA ou Let's Encrypt)
-  - regenerer un nouveau snakeoil (utile si l'ancien est expire)
+The nginx drop-in (`/etc/nginx/sites-available/muros`) points at
+`/etc/nginx/ssl/muros.crt` and `/etc/nginx/ssl/muros.key`. At install
+these files are symlinks to the ssl-cert snakeoil. The admin can:
+  - upload a PEM cert + key (signed by their own CA or Let's Encrypt)
+  - regenerate a fresh snakeoil (useful when the old one has expired)
 
-Apres ecriture, on fait `systemctl reload nginx` (pas restart, pas
-d'interruption visible).
+After writing, we run `systemctl reload nginx` (not restart, no visible
+interruption).
 """
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ KEY_PATH = NGINX_SSL_DIR / "muros.key"
 
 
 def get_status() -> dict:
-    """Renvoie les infos du cert actuel (CN, SAN, expiration, fingerprint)."""
+    """Return the current cert info (CN, SAN, expiry, fingerprint)."""
     if not CERT_PATH.exists():
         return {
             "present": False,
@@ -109,17 +109,17 @@ def get_status() -> dict:
 
 
 def _validate_cert_and_key(cert_pem: str, key_pem: str) -> None:
-    """Valide que le PEM est lisible et que la cle correspond au cert."""
+    """Validate that the PEM is readable and the key matches the cert."""
     try:
         cert = x509.load_pem_x509_certificate(cert_pem.encode("ascii"))
     except Exception as exc:  # noqa: BLE001
-        raise ValueError(f"Invalid PEM certificate : {exc}") from exc
+        raise ValueError(f"Invalid PEM certificate: {exc}") from exc
     try:
         key = serialization.load_pem_private_key(key_pem.encode("ascii"), password=None)
     except Exception as exc:  # noqa: BLE001
-        raise ValueError(f"Invalid PEM private key : {exc}") from exc
+        raise ValueError(f"Invalid PEM private key: {exc}") from exc
 
-    # Verif que la cle correspond au cert (cles publiques egales).
+    # Check the key matches the cert (equal public keys).
     cert_pub = cert.public_key().public_bytes(
         encoding=serialization.Encoding.DER,
         format=serialization.PublicFormat.SubjectPublicKeyInfo,
@@ -129,25 +129,25 @@ def _validate_cert_and_key(cert_pem: str, key_pem: str) -> None:
         format=serialization.PublicFormat.SubjectPublicKeyInfo,
     )
     if cert_pub != key_pub:
-        raise ValueError("La cle privee ne correspond pas au certificat fourni.")
+        raise ValueError("The private key does not match the provided certificate.")
 
 
 def upload_cert(cert_pem: str, key_pem: str) -> dict:
-    """Ecrit le cert + cle dans /etc/nginx/ssl/ et reload nginx."""
+    """Write the cert + key to /etc/nginx/ssl/ and reload nginx."""
     _validate_cert_and_key(cert_pem, key_pem)
 
     if not APPLY_ENABLED:
         return {
             "applied": False,
-            "message": "dry-run : cert valide mais pas ecrit (MUROS_APPLY off).",
+            "message": "dry-run: cert is valid but not written (MUROS_APPLY off).",
         }
     if os.geteuid() != 0:
-        raise RuntimeError("Ecriture cert impossible : MurOS doit tourner en root.")
+        raise RuntimeError("Cannot write cert: MurOS must run as root.")
 
     NGINX_SSL_DIR.mkdir(parents=True, exist_ok=True)
     os.chmod(NGINX_SSL_DIR, 0o755)
 
-    # Si c'etait un symlink (snakeoil), on le supprime avant d'ecrire.
+    # If it was a symlink (snakeoil), remove it before writing.
     if CERT_PATH.is_symlink() or CERT_PATH.exists():
         try:
             CERT_PATH.unlink()
@@ -165,17 +165,17 @@ def upload_cert(cert_pem: str, key_pem: str) -> dict:
     os.chmod(KEY_PATH, 0o600)
 
     _reload_nginx()
-    return {"applied": True, "message": "Certificat installe et nginx recharge."}
+    return {"applied": True, "message": "Certificate installed and nginx reloaded."}
 
 
 def regenerate_snakeoil(**_kwargs) -> dict:
-    """Regenere le couple snakeoil de Debian via make-ssl-cert.
+    """Regenerate Debian's snakeoil cert/key pair via make-ssl-cert.
 
-    On delegue a l'outil systeme `make-ssl-cert generate-default-snakeoil`
-    plutot que de batir un cert avec cryptography : c'est ce que fait le
-    paquet ssl-cert lui-meme, le CN est le hostname courant, la cle reste
-    sous /etc/ssl/private avec les bons droits. MurOS se contente d'avoir
-    des symlinks /etc/nginx/ssl/muros.{crt,key} qui pointent vers eux.
+    We delegate to the system tool `make-ssl-cert generate-default-snakeoil`
+    rather than building a cert with cryptography: this is what the ssl-cert
+    package itself does, the CN is the current hostname, and the key stays
+    under /etc/ssl/private with the right permissions. MurOS only keeps the
+    /etc/nginx/ssl/muros.{crt,key} symlinks pointing at them.
     """
     import subprocess
     try:
@@ -184,23 +184,23 @@ def regenerate_snakeoil(**_kwargs) -> dict:
             check=True, capture_output=True, timeout=30,
         )
     except FileNotFoundError as exc:
-        raise RuntimeError("make-ssl-cert manquant (paquet ssl-cert)") from exc
+        raise RuntimeError("make-ssl-cert missing (ssl-cert package)") from exc
     except subprocess.CalledProcessError as exc:
-        raise RuntimeError(f"make-ssl-cert echec : {exc.stderr.decode()}") from exc
+        raise RuntimeError(f"make-ssl-cert failed: {exc.stderr.decode()}") from exc
 
-    # nginx reload pour reprendre le nouveau cert (les symlinks pointent
-    # deja vers les bons chemins, c'est le sujet du Common Name qui change)
+    # Reload nginx to pick up the new cert (the symlinks already point at
+    # the right paths; only the Common Name subject changes).
     try:
         subprocess.run(["nginx", "-t"], check=True, capture_output=True, timeout=5)
         subprocess.run(["systemctl", "reload", "nginx"], check=True, capture_output=True, timeout=5)
     except subprocess.CalledProcessError as exc:
-        raise RuntimeError(f"reload nginx echec : {exc.stderr.decode()}") from exc
+        raise RuntimeError(f"nginx reload failed: {exc.stderr.decode()}") from exc
 
-    return {"applied": True, "message": "Cert snakeoil regenere et nginx reloade."}
+    return {"applied": True, "message": "Snakeoil cert regenerated and nginx reloaded."}
 
 
 def _reload_nginx() -> None:
-    """Reload nginx pour prendre en compte le nouveau cert."""
+    """Reload nginx so it picks up the new cert."""
     r = subprocess.run(
         ["systemctl", "reload", "nginx.service"],
         capture_output=True, text=True, timeout=15,
