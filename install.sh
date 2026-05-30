@@ -18,12 +18,12 @@ APT_KEYRING=/usr/share/keyrings/muros-archive-keyring.gpg
 APT_LIST=/etc/apt/sources.list.d/muros.list
 
 if [ "$(id -u)" -ne 0 ]; then
-  echo "Ce script doit etre lance en root (sudo bash install.sh)" >&2
+  echo "This script must run as root (sudo bash install.sh)" >&2
   exit 1
 fi
 
-# Redirige stdout+stderr vers le fichier de log tout en gardant
-# l'affichage temps reel a l'ecran.
+# Redirect stdout+stderr to the log file while keeping the live output
+# on screen.
 exec > >(tee -a "$LOG") 2>&1
 echo
 echo "=============================================================="
@@ -48,21 +48,33 @@ if [ -f /etc/resolv.conf ]; then
   fi
 fi
 
-# Detection d'un etat dpkg cassé herite d'une MAJ ratée : si muros est
-# marqué "ReinstReq" / "half-configured" / "half-installed", apt-get
-# refuse de bouger tant qu'on n'a pas reinstalle, mais l'archive d'origine
-# n'est plus dispo (cas typique : backend tue en plein postinst). On
-# nettoie d'abord pour que la suite passe.
+# Detect a broken dpkg state inherited from a failed upgrade: if muros is
+# marked "ReinstReq" / "half-configured" / "half-installed", apt-get
+# refuses to proceed until it is reinstalled, but the original archive is
+# no longer available (typical case: backend killed mid-postinst). Clean
+# up first so the rest can proceed.
 MUROS_STATUS=$(dpkg-query -W -f='${Status}' muros 2>/dev/null || true)
 case "${MUROS_STATUS}" in
   *reinstreq*|*half-configured*|*half-installed*|*unpacked*|*triggers-pending*|*failed-config*)
-    echo "    -> paquet muros en etat incoherent (${MUROS_STATUS}), force-remove avant install..."
+    echo "    -> muros package in inconsistent state (${MUROS_STATUS}), force-remove before install..."
     dpkg --remove --force-remove-reinstreq muros 2>/dev/null || true
     dpkg --purge --force-all muros 2>/dev/null || true
     rm -f /var/lib/dpkg/info/muros.* 2>/dev/null || true
     dpkg --configure -a 2>/dev/null || true
     ;;
 esac
+
+# Neutralize any "deb cdrom:" apt source. A Debian install can leave a
+# CD-ROM entry in the sources; on a running system (or inside the d-i
+# in-target chroot) the disc is not mounted, so apt-get update fails with
+# exit code 100. Comment those lines out before touching apt.
+for src in /etc/apt/sources.list /etc/apt/sources.list.d/*.list; do
+  [ -f "$src" ] || continue
+  if grep -qE '^[[:space:]]*deb[[:space:]]+cdrom:' "$src"; then
+    echo "    -> disabling CD-ROM apt source in $src"
+    sed -i -E 's/^([[:space:]]*deb[[:space:]]+cdrom:)/# \1/' "$src"
+  fi
+done
 
 apt-get update -qq
 apt-get install -y -qq curl ca-certificates gnupg
