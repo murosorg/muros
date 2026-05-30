@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { api, MetricsSummary, SystemService } from '../lib/api'
+import { api, MetricsSummary, SystemService, MurosUpdateStatus } from '../lib/api'
 import PageHeader from '../components/PageHeader'
 import LoadingState from '../components/LoadingState'
 import { fmt } from '../lib/format'
 import Sparkline from '../components/Sparkline'
 import TimeChart from '../components/TimeChart'
 import { ErrorBlock } from '../components/Alerts'
-import { Gauge } from 'lucide-react'
+import { Gauge, Package, CheckCircle2, ArrowUpCircle } from 'lucide-react'
 
 // Live dashboard: we sample the summary endpoint twice per second so the
 // charts feel alive, and keep an in-memory ring buffer covering the
@@ -155,11 +155,67 @@ export default function Monitoring() {
           <ErrorBlock message={error} />
         )}
 
-        {/* Primary KPIs across the top, then the service inventory next
-            to storage. The KPIs answer "is the box healthy?" first; the
-            service list and storage answer "what is running and where is
-            the space going?". */}
+        {/* Service inventory top-left, storage and the MurOS version /
+            changelog widget filling the space next to it. This block
+            answers "what is running, where is the space going, and am I
+            on the latest version?" first. The raw resource KPIs (CPU,
+            memory, conntrack, load) sit below it. */}
         {!data && !error && <LoadingState text="Loading metrics..." />}
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+          <section className="lg:col-span-1">
+            <h2 className="text-sm font-semibold text-gray-900 mb-2">Services</h2>
+            {services.length === 0 ? (
+              <LoadingState variant="inline" text="Loading services state..." />
+            ) : (
+              <ServiceList services={services} />
+            )}
+          </section>
+
+          <div className="lg:col-span-2 space-y-4">
+            {data && (
+              <section>
+                <h2 className="text-sm font-semibold mb-2 text-gray-900">Storage</h2>
+                <div className="border border-gray-200 rounded-md overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 text-gray-700 text-xs uppercase tracking-wider">
+                      <tr>
+                        <th className="text-left px-3 py-2">Mount point</th>
+                        <th className="text-right px-3 py-2 w-28">Used</th>
+                        <th className="text-right px-3 py-2 w-28">Total</th>
+                        <th className="text-right px-3 py-2 w-20">%</th>
+                        <th className="text-left px-3 py-2">Usage</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.disks.map((d) => (
+                        <tr key={d.mount} className="border-t border-gray-200">
+                          <td className="px-3 py-2 font-mono">{d.mount}</td>
+                          <td className="px-3 py-2 text-right font-mono text-xs text-gray-800">{formatBytes(d.used_bytes)}</td>
+                          <td className="px-3 py-2 text-right font-mono text-xs text-gray-800">{formatBytes(d.total_bytes)}</td>
+                          <td className={`px-3 py-2 text-right font-mono text-xs font-semibold ${usageColor(d.used_percent)}`}>
+                            {d.used_percent.toFixed(1)}%
+                          </td>
+                          <td className="px-3 py-2">
+                            <div className="h-2 bg-gray-100 rounded overflow-hidden">
+                              <div
+                                className="h-full bg-gray-800"
+                                style={{ width: `${d.used_percent}%` }}
+                              />
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            )}
+
+            <VersionCard />
+          </div>
+        </div>
+
         {data && (
           <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 mb-6">
             <MetricCard
@@ -198,56 +254,6 @@ export default function Monitoring() {
             </div>
           </div>
         )}
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
-          <section className="lg:col-span-1">
-            <h2 className="text-sm font-semibold text-gray-900 mb-2">Services</h2>
-            {services.length === 0 ? (
-              <LoadingState variant="inline" text="Loading services state..." />
-            ) : (
-              <ServiceList services={services} />
-            )}
-          </section>
-
-          {data && (
-            <section className="lg:col-span-2">
-              <h2 className="text-sm font-semibold mb-2 text-gray-900">Storage</h2>
-              <div className="border border-gray-200 rounded-md overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50 text-gray-700 text-xs uppercase tracking-wider">
-                    <tr>
-                      <th className="text-left px-3 py-2">Mount point</th>
-                      <th className="text-right px-3 py-2 w-28">Used</th>
-                      <th className="text-right px-3 py-2 w-28">Total</th>
-                      <th className="text-right px-3 py-2 w-20">%</th>
-                      <th className="text-left px-3 py-2">Usage</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.disks.map((d) => (
-                      <tr key={d.mount} className="border-t border-gray-200">
-                        <td className="px-3 py-2 font-mono">{d.mount}</td>
-                        <td className="px-3 py-2 text-right font-mono text-xs text-gray-800">{formatBytes(d.used_bytes)}</td>
-                        <td className="px-3 py-2 text-right font-mono text-xs text-gray-800">{formatBytes(d.total_bytes)}</td>
-                        <td className={`px-3 py-2 text-right font-mono text-xs font-semibold ${usageColor(d.used_percent)}`}>
-                          {d.used_percent.toFixed(1)}%
-                        </td>
-                        <td className="px-3 py-2">
-                          <div className="h-2 bg-gray-100 rounded overflow-hidden">
-                            <div
-                              className="h-full bg-gray-800"
-                              style={{ width: `${d.used_percent}%` }}
-                            />
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-          )}
-        </div>
 
         {data && (
           <>
@@ -335,6 +341,110 @@ export default function Monitoring() {
         )}
       </div>
     </div>
+  )
+}
+
+// MurOS version widget. Fills the space next to storage on the dashboard
+// and answers "am I on the latest build?" without leaving the home page:
+// it shows the installed version, whether an upgrade is available on the
+// apt channel, and the changelog of the latest version when the backend
+// exposes release notes. Management (install/repair) still lives on the
+// System page; here we only surface the state and link there.
+function VersionCard() {
+  const navigate = useNavigate()
+  const [muros, setMuros] = useState<MurosUpdateStatus | null>(null)
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    let alive = true
+    api.updates
+      .murosStatus()
+      .then((s) => { if (alive) setMuros(s) })
+      .catch(() => { if (alive) setFailed(true) })
+    return () => { alive = false }
+  }, [])
+
+  const upgrade = !!muros?.upgrade_available
+  const latest = muros?.candidate || muros?.installed || null
+
+  return (
+    <section>
+      <h2 className="text-sm font-semibold mb-2 text-gray-900">Version</h2>
+      <div className="border border-gray-200 bg-white rounded-md p-3">
+        {!muros && !failed && (
+          <LoadingState variant="inline" text="Checking version..." />
+        )}
+        {failed && (
+          <p className="text-sm text-gray-700">Version information is unavailable.</p>
+        )}
+        {muros && (
+          <>
+            <div className="flex items-start justify-between gap-3 flex-wrap">
+              <div className="flex items-center gap-2 min-w-0">
+                <Package size={16} className="text-gray-500 shrink-0" />
+                <div className="min-w-0">
+                  <div className="text-sm text-gray-900">
+                    MurOS{' '}
+                    <span className="font-mono font-semibold">
+                      {muros.installed || 'not installed'}
+                    </span>
+                  </div>
+                  {muros.last_check_at && (
+                    <div className="text-[11px] text-gray-600">
+                      Last checked {fmt.relative(muros.last_check_at)}
+                    </div>
+                  )}
+                </div>
+              </div>
+              {upgrade ? (
+                <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded bg-amber-100 text-amber-800 whitespace-nowrap">
+                  <ArrowUpCircle size={13} />
+                  Update available
+                </span>
+              ) : muros.installed ? (
+                <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded bg-emerald-100 text-emerald-800 whitespace-nowrap">
+                  <CheckCircle2 size={13} />
+                  Up to date
+                </span>
+              ) : null}
+            </div>
+
+            {upgrade && muros.candidate && (
+              <div className="text-xs text-gray-700 mt-2">
+                Latest version on the apt channel:{' '}
+                <span className="font-mono font-semibold text-gray-900">{muros.candidate}</span>
+              </div>
+            )}
+
+            {latest && muros.release_notes ? (
+              <details className="mt-3 text-sm" open={upgrade}>
+                <summary className="cursor-pointer text-gray-800 hover:text-gray-900">
+                  Changelog {latest}
+                  {muros.release_published_at && (
+                    <span className="text-gray-600"> ({fmt.date(muros.release_published_at)})</span>
+                  )}
+                </summary>
+                <pre className="mt-2 text-xs whitespace-pre-wrap font-mono text-gray-800 bg-gray-50 border border-gray-200 rounded p-3 max-h-56 overflow-auto">
+                  {muros.release_notes}
+                </pre>
+              </details>
+            ) : (
+              <p className="text-[11px] text-gray-600 mt-3">
+                No changelog available for the latest version.
+              </p>
+            )}
+
+            <button
+              type="button"
+              onClick={() => navigate('/system')}
+              className="mt-3 text-xs text-gray-700 underline hover:text-gray-900"
+            >
+              Manage updates
+            </button>
+          </>
+        )}
+      </div>
+    </section>
   )
 }
 

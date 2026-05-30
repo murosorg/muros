@@ -20,8 +20,8 @@ from app.apply import APPLY_ENABLED
 log = logging.getLogger("muros.ipsec")
 
 IPSEC_PACKAGES = ["strongswan", "strongswan-swanctl"]
-# Sur Debian 12+, le service principal s'appelle strongswan-starter.
-# Sur Debian 11 c'etait strongswan, on essaie les deux.
+# On Debian 12+, the main service is called strongswan-starter.
+# On Debian 11 it was strongswan, we try both.
 IPSEC_SERVICES = ["strongswan", "strongswan-starter"]
 
 SWANCTL_CONF = Path("/etc/swanctl/conf.d/muros.conf")
@@ -56,12 +56,12 @@ def _ipsec_service_active() -> tuple[bool, str | None]:
 
 
 def _ipsec_service_installed() -> str | None:
-    """Retourne le nom d'unit systemd reellement presente, sinon None.
+    """Return the name of the systemd unit that is actually present, else None.
 
-    Permet de distinguer "service inconnu" (rien d'installe) de "service
-    inactif" (unit presente mais arretee). On regarde dans l'ordre
-    strongswan-starter puis strongswan : sur Debian 12+ c'est le premier
-    qui existe vraiment, sur Debian 11 c'etait le second.
+    Lets us distinguish "unknown service" (nothing installed) from "inactive
+    service" (unit present but stopped). We look in order strongswan-starter
+    then strongswan: on Debian 12+ the first one really exists, on Debian 11
+    it was the second.
     """
     if not _which("systemctl"):
         return None
@@ -131,9 +131,9 @@ def get_status() -> dict:
     from app.service_state import service_state as _state
     installed = _which("swanctl")
     active, service_name = _ipsec_service_active()
-    # Si aucune unit n'est active, on cherche quand meme l'unit installee
-    # (strongswan-starter sur Debian 12+, strongswan sur Debian 11) pour
-    # remonter un etat "inactive" propre au lieu d'un "unknown" qui donne
+    # If no unit is active, we still look for the installed unit
+    # (strongswan-starter on Debian 12+, strongswan on Debian 11) to report
+    # a clean "inactive" state instead of an "unknown" that yields
     # "Service strongswan inconnu" cote UI.
     if service_name is None:
         service_name = _ipsec_service_installed()
@@ -206,8 +206,8 @@ def install_packages() -> dict:
             f"apt-get update a echoue : {(proc_update.stderr or '').strip()[:400]}"
         )
 
-    # Pour strongswan on garde --no-install-recommends, les recommends incluent
-    # plein de modules qu'on n'utilise pas (charon-cmd, libcharon-extauth-plugins).
+    # For strongswan we keep --no-install-recommends, the recommends include
+    # many modules we do not use (charon-cmd, libcharon-extauth-plugins).
     proc = subprocess.run(
         ["apt-get", "install", "-y", "--no-install-recommends", *IPSEC_PACKAGES],
         env=env, capture_output=True, text=True, timeout=600,
@@ -234,11 +234,11 @@ def install_packages() -> dict:
 # --- Rendu de la conf swanctl ---
 
 def render_swanctl_conf(connections: list, certs_by_id: dict | None = None) -> str:
-    """Rend le bloc connections { ... } du fichier swanctl.conf.
+    """Render the connections { ... } block of the swanctl.conf file.
 
-    connections : liste de IpsecConnection (seuls les enabled sont inclus).
-    certs_by_id : dict {id: IpsecCert} pour resoudre local_cert_id et
-                  remote_cert_id en mode auth=cert. Optionnel (None = PSK uniquement).
+    connections: list of IpsecConnection (only the enabled ones are included).
+    certs_by_id: dict {id: IpsecCert} to resolve local_cert_id and
+                 remote_cert_id in auth=cert mode. Optional (None = PSK only).
     """
     from app import ipsec_pki
     if certs_by_id is None:
@@ -259,7 +259,7 @@ def render_swanctl_conf(connections: list, certs_by_id: dict | None = None) -> s
         remote_id = c.remote_id or c.remote_addrs
         auth_mode = (c.auth_mode or "psk").lower()
 
-        # Section local (auth selon mode).
+        # Local section (auth depends on mode).
         local_lines = ["        local {"]
         if auth_mode == "cert":
             local_cert = certs_by_id.get(c.local_cert_id) if c.local_cert_id else None
@@ -317,7 +317,7 @@ def render_swanctl_conf(connections: list, certs_by_id: dict | None = None) -> s
 
 
 def render_swanctl_secrets(connections: list, certs_by_id: dict | None = None) -> str:
-    """Rend le fichier des secrets.
+    """Render the secrets file.
 
     - Mode PSK : ike-<name> { secret = "..." id-1 = ... id-2 = ... }
     - Mode cert : private-<name> { file = muros-<cert>-key.pem }
@@ -337,7 +337,7 @@ def render_swanctl_secrets(connections: list, certs_by_id: dict | None = None) -
         if auth_mode == "cert":
             local_cert = certs_by_id.get(c.local_cert_id) if c.local_cert_id else None
             if local_cert and local_cert.is_local and local_cert.key_pem:
-                # Le nom du fichier est <prefix>muros-<name>-key.pem
+                # The file name is <prefix>muros-<name>-key.pem
                 safe_name = local_cert.name.replace("/", "_")
                 lines.extend([
                     f"    private-{c.name} {{",

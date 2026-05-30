@@ -63,7 +63,7 @@ def _to_int(s: str) -> int | None:
 
 
 def _wg_version() -> str | None:
-    """Version WireGuard via dpkg (paquet wireguard-tools)."""
+    """WireGuard version via dpkg (wireguard-tools package)."""
     from app.service_state import pkg_version
     return pkg_version("wireguard-tools", "WireGuard")
 
@@ -183,7 +183,7 @@ def _curve25519_keys() -> tuple[str, str]:
 
 
 def _pubkey_from_priv(priv_b64: str) -> str:
-    """Recalcule la cle publique a partir d'une cle privee X25519."""
+    """Recompute the public key from an X25519 private key."""
     from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
     from cryptography.hazmat.primitives import serialization
     import base64
@@ -211,7 +211,7 @@ def generate_psk() -> str:
     return base64.standard_b64encode(secrets.token_bytes(32)).decode("ascii")
 
 
-# --- Rendu du fichier de conf ---
+# --- Config file rendering ---
 
 def render_config(cfg, peers: list) -> str:
     """Rend le contenu de /etc/wireguard/<iface>.conf.
@@ -354,50 +354,50 @@ def apply_config(cfg, peers: list, *, defer_start: bool = False) -> dict:
     conf_path.write_text(text, encoding="utf-8")
     os.chmod(conf_path, 0o600)
 
-    # Activation : si l'interface existe deja, on fait un reload a chaud,
-    # sinon on monte avec wg-quick up.
+    # Activation: if the interface already exists, do a hot reload,
+    # otherwise bring it up with wg-quick up.
     iface_exists = subprocess.run(
         ["ip", "link", "show", iface], capture_output=True, timeout=5,
     ).returncode == 0
 
     if iface_exists:
-        # Reload a chaud sans couper les sessions actives. `wg syncconf`
-        # ne lit qu'un sous-ensemble de la conf (pas Address/MTU) mais
-        # c'est ce qu'il faut pour ne pas tuer les tunnels existants.
+        # Hot reload without dropping active sessions. `wg syncconf`
+        # only reads a subset of the config (not Address/MTU) but that is
+        # what we need to avoid killing existing tunnels.
         strip = subprocess.run(
             ["wg-quick", "strip", iface], capture_output=True, text=True, timeout=5,
         )
         if strip.returncode != 0:
-            raise RuntimeError(f"wg-quick strip a echoue : {strip.stderr.strip()}")
+            raise RuntimeError(f"wg-quick strip failed: {strip.stderr.strip()}")
         sync = subprocess.run(
             ["wg", "syncconf", iface, "/dev/stdin"],
             input=strip.stdout, capture_output=True, text=True, timeout=10,
         )
         if sync.returncode != 0:
-            raise RuntimeError(f"wg syncconf a echoue : {sync.stderr.strip()}")
-        # Persistance au reboot meme en branche reload : l'iface est peut
-        # etre montee manuellement (wg-quick up) sans avoir ete enable.
+            raise RuntimeError(f"wg syncconf failed: {sync.stderr.strip()}")
+        # Persist across reboot even in the reload branch: the iface may have
+        # been brought up manually (wg-quick up) without being enabled.
         subprocess.run(
             ["systemctl", "enable", f"wg-quick@{iface}.service"],
             capture_output=True, text=True, timeout=5,
         )
-        msg = f"WireGuard {iface} : conf rechargee (reload a chaud)."
+        msg = f"WireGuard {iface}: configuration reloaded (hot reload)."
     else:
-        # Persistance au reboot : enable (sans --now) ne touche pas le
-        # service en cours et ne depend d'aucune target, donc safe en
-        # contexte boot.
+        # Persist across reboot: enable (without --now) does not touch the
+        # running service and depends on no target, so it is safe in boot
+        # context.
         subprocess.run(
             ["systemctl", "enable", f"wg-quick@{iface}.service"],
             capture_output=True, text=True, timeout=5,
         )
         if defer_start:
-            # Contexte boot : on enqueue le start avec --no-block (donc
-            # systemctl rend la main tout de suite, pas de deadlock avec
-            # network-online.target qui attend la fin de muros-boot) et
-            # on laisse systemd executer wg-quick up apres muros-boot.
-            # On NE lance PAS `wg-quick up` ici manuellement : ca
-            # creerait l'iface tout de suite, puis systemd retenterait
-            # la meme commande en demarrant l'unit et echouerait avec
+            # Boot context: enqueue the start with --no-block (so systemctl
+            # returns immediately, no deadlock with network-online.target
+            # waiting for muros-boot to finish) and let systemd run
+            # wg-quick up after muros-boot.
+            # We do NOT run `wg-quick up` manually here: it would create the
+            # iface right away, then systemd would retry the same command
+            # when starting the unit and fail with
             # "wg-quick: '<iface>' already exists".
             up = subprocess.run(
                 ["systemctl", "--no-block", "start",
@@ -406,8 +406,8 @@ def apply_config(cfg, peers: list, *, defer_start: bool = False) -> dict:
             )
             if up.returncode != 0:
                 raise RuntimeError(
-                    f"systemctl --no-block start wg-quick@{iface} a "
-                    f"echoue : {(up.stderr or up.stdout).strip()[:400]}"
+                    f"systemctl --no-block start wg-quick@{iface} "
+                    f"failed: {(up.stderr or up.stdout).strip()[:400]}"
                 )
         else:
             up = subprocess.run(
@@ -416,26 +416,26 @@ def apply_config(cfg, peers: list, *, defer_start: bool = False) -> dict:
             )
             if up.returncode != 0:
                 raise RuntimeError(
-                    f"systemctl start wg-quick@{iface} a echoue : "
+                    f"systemctl start wg-quick@{iface} failed: "
                     f"{(up.stderr or up.stdout).strip()[:400]}"
                 )
         msg = (
-            f"WireGuard {iface} : demarrage delegue a systemd (boot)."
+            f"WireGuard {iface}: startup delegated to systemd (boot)."
             if defer_start
-            else f"WireGuard {iface} : interface montee."
+            else f"WireGuard {iface}: interface brought up."
         )
 
     return {"message": msg, "interface": iface}
 
 
-# --- Export config pour un peer (cote client) ---
+# --- Export config for a peer (client side) ---
 
 def render_peer_client_config(cfg, peer, peer_private_key: str | None = None) -> str:
-    """Rend le fichier de conf cote CLIENT pour ce peer.
+    """Render the CLIENT-side config file for this peer.
 
-    A donner au client road-warrior. Si peer_private_key est fournie
-    (cas d'une cle generee a la volee depuis l'UI), on l'inclut dans la
-    section [Interface]. Sinon on met un placeholder a remplir.
+    To hand to the road-warrior client. If peer_private_key is provided
+    (case of a key generated on the fly from the UI), it is included in the
+    [Interface] section. Otherwise a placeholder to fill in is used.
     """
     pk = peer_private_key or "<PASTE THE PEER PRIVATE KEY HERE>"
     lines = [
@@ -444,9 +444,10 @@ def render_peer_client_config(cfg, peer, peer_private_key: str | None = None) ->
         "",
         "[Interface]",
         f"PrivateKey = {pk}",
-        # AllowedIPs cote serveur indique les reseaux atteignables PAR le peer,
-        # mais cote client c'est Address (l'IP attribuee au peer dans le tunnel).
-        # On reprend la premiere AllowedIP en /32 ou /128 comme adresse client.
+        # On the server side AllowedIPs lists the networks reachable BY the
+        # peer, but on the client side it is Address (the IP assigned to the
+        # peer in the tunnel). We take the first /32 or /128 AllowedIP as the
+        # client address.
         f"Address = {_extract_client_address(peer.allowed_ips)}",
         # MTU 1280 is the IPv6 minimum, safe over cellular networks and
         # any underlying path. Without it browsers stall on large
@@ -459,15 +460,15 @@ def render_peer_client_config(cfg, peer, peer_private_key: str | None = None) ->
     ]
     if peer.preshared_key:
         lines.append(f"PresharedKey = {peer.preshared_key}")
-    # AllowedIPs cote client : reseaux que le client routera dans le tunnel.
-    # Champ peer.client_allowed_ips vide -> defaut full tunnel 0.0.0.0/0,::/0.
-    # L'admin peut le custom pour un split tunnel (ex: 10.10.0.0/24,
-    # 192.168.1.0/24) depuis l'UI peer.
+    # Client-side AllowedIPs: networks the client will route into the tunnel.
+    # Empty peer.client_allowed_ips field -> default full tunnel 0.0.0.0/0,::/0.
+    # The admin can customize it for a split tunnel (e.g. 10.10.0.0/24,
+    # 192.168.1.0/24) from the peer UI.
     client_routes = (getattr(peer, "client_allowed_ips", "") or "").strip() \
         or "0.0.0.0/0, ::/0"
     lines.append(f"AllowedIPs = {client_routes}")
-    # L'endpoint cote client doit pointer sur le serveur.
-    # On ne connait pas l'IP publique du serveur ici, on met un placeholder.
+    # The client-side endpoint must point at the server.
+    # We do not know the server's public IP here, so we use a placeholder.
     endpoint_host = (getattr(cfg, "public_endpoint", "") or "").strip() or "<FIREWALL-PUBLIC-IP>"
     lines.append(f"Endpoint = {endpoint_host}:{cfg.listen_port}")
     if peer.persistent_keepalive and peer.persistent_keepalive > 0:
@@ -476,7 +477,7 @@ def render_peer_client_config(cfg, peer, peer_private_key: str | None = None) ->
 
 
 def _extract_client_address(allowed_ips: str) -> str:
-    """Extrait la premiere IP/32 (ou /128) de allowed_ips comme address client."""
+    """Extract the first /32 (or /128) IP from allowed_ips as the client address."""
     for part in allowed_ips.split(","):
         part = part.strip()
         if part.endswith("/32") or part.endswith("/128"):
@@ -487,7 +488,7 @@ def _extract_client_address(allowed_ips: str) -> str:
 
 
 def render_peer_qr_svg(config_text: str) -> str:
-    """Genere un QR code SVG (sans dependance PIL) du fichier de conf."""
+    """Generate an SVG QR code (no PIL dependency) of the config file."""
     try:
         import qrcode
         import qrcode.image.svg
