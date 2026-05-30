@@ -1,11 +1,23 @@
 # apt.muros.org root page
 
-`index.html` is the human-facing landing page served at the root of
-`apt.muros.org`. It is self-contained (inline CSS, no external assets except
-the favicon and OG image pulled from muros.org) so it can sit on the apt host
-without depending on the marketing site build.
+Version-controlled copy of the human-facing files served at the root of
+`apt.muros.org`:
 
-Deploy: have `muros-apt-publish` copy this file to the repository web root
-(next to `install.sh`, `muros.asc`, `dists/`, `pool/`). It replaces the bare
-directory autoindex with a proper titled page while apt itself keeps using
-`dists/` and `pool/` as usual.
+- `index.html` - titled landing page (full SEO: title, meta description,
+  canonical, OpenGraph/Twitter, JSON-LD, favicon), dark-mode aware, styled to
+  match muros.org. Self-contained: the only external assets are the logo,
+  favicon and OG image pulled from muros.org.
+- `robots.txt` - keeps crawlers out of `dists/` and `pool/`.
+
+## Deployment
+
+The live files sit in `/opt/muros/apt/` on the apt host, served by nginx
+(`/etc/nginx/sites-available/apt.muros.conf`, `root /opt/muros/apt`,
+`index index.html`). The reprepro repository (`dists/`, `pool/`, `conf/`,
+`db/`) lives in the same directory and is untouched by these files.
+
+To update the landing page:
+
+    scp packaging/apt/index.html packaging/apt/robots.txt root@apt.muros.org:/opt/muros/apt/
+
+This repo is the source of truth; edit here and push to the host.
