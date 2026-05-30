@@ -4,7 +4,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-## [v0.9.0-rc91] - 2026-05-30
+## [v0.9.0-rc93] - 2026-05-30
 
 ### Added
 - Remote syslog forwarding. A new "Remote syslog" page (Observability
