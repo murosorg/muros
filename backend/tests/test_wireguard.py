@@ -69,7 +69,7 @@ def _cfg(client_dns=""):
 def _peer():
     return SimpleNamespace(
         name="laptop", allowed_ips="10.10.0.2/32", preshared_key=None,
-        client_allowed_ips="", endpoint=None,
+        client_allowed_ips="", endpoint=None, persistent_keepalive=0,
     )
 
 
