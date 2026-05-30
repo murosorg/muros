@@ -37,9 +37,12 @@ class SetupState(BaseModel):
 
 
 class SetupApplyIn(BaseModel):
-    wan_interface: str
     lan_interface: str
     lan_cidr: str  # e.g. 192.168.1.1/24
+    # The WAN is optional: a single-NIC box (LAN only, WAN reached over a
+    # VLAN later) is a valid posture, exactly like OPNsense. When omitted
+    # no interface is assigned to the WAN zone.
+    wan_interface: str | None = None
 
 
 def _is_completed(db: Session) -> bool:
@@ -81,7 +84,8 @@ def _zone(db: Session, name: str) -> models.Zone:
 
 @setup_router.post("/apply", response_model=SetupState)
 def setup_apply(data: SetupApplyIn, db: Session = Depends(get_db)):
-    if data.wan_interface == data.lan_interface:
+    wan_name = data.wan_interface or None
+    if wan_name and wan_name == data.lan_interface:
         raise HTTPException(400, "WAN and LAN must be different interfaces")
     try:
         net = ipaddress.ip_interface(data.lan_cidr)
@@ -90,21 +94,29 @@ def setup_apply(data: SetupApplyIn, db: Session = Depends(get_db)):
     if net.network.prefixlen >= 31:
         raise HTTPException(400, "LAN prefix is too small to host clients")
 
-    wan_if = db.query(models.Interface).filter(models.Interface.name == data.wan_interface).first()
     lan_if = db.query(models.Interface).filter(models.Interface.name == data.lan_interface).first()
-    if wan_if is None or lan_if is None:
+    if lan_if is None:
         raise HTTPException(404, "Unknown interface")
 
-    wan = _zone(db, "wan")
+    wan_if = None
+    if wan_name:
+        wan_if = db.query(models.Interface).filter(models.Interface.name == wan_name).first()
+        if wan_if is None:
+            raise HTTPException(404, "Unknown interface")
+
     lan = _zone(db, "lan")
 
-    # WAN: DHCP client towards the ISP. LAN: static, the gateway address
-    # the operator typed (host part of lan_cidr).
-    wan_if.zone_id = wan.id
-    wan_if.ip_mode = "dhcp"
-    wan_if.enabled = True
-    wan_if.dirty = True
+    # WAN: DHCP client towards the ISP. Only assigned when an interface
+    # was picked; a LAN-only box leaves the WAN zone empty.
+    if wan_if is not None:
+        wan = _zone(db, "wan")
+        wan_if.zone_id = wan.id
+        wan_if.ip_mode = "dhcp"
+        wan_if.enabled = True
+        wan_if.dirty = True
 
+    # LAN: static, the gateway address the operator typed (host part of
+    # lan_cidr).
     lan_if.zone_id = lan.id
     lan_if.ip_mode = "static"
     lan_if.ip_address = str(net)

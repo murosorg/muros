@@ -584,7 +584,7 @@ export const api = {
 
   setup: {
     state: () => request<SetupState>('GET', '/api/setup/state'),
-    apply: (data: { wan_interface: string; lan_interface: string; lan_cidr: string }) =>
+    apply: (data: { lan_interface: string; lan_cidr: string; wan_interface?: string | null }) =>
       request<SetupState>('POST', '/api/setup/apply', data),
   },
 
