@@ -4,6 +4,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [v0.9.0-rc77] - 2026-05-30
+
+### Changed
+- Dashboard "Manage updates" now deep-links to the System Updates tab
+  (`/system/updates`) instead of the default General tab.
+- The dashboard version card refreshes its status every 60s so the
+  up-to-date / update-available badge stays current while the dashboard is
+  left open (reads cached apt metadata, no `apt-get update`).
+
 ## [v0.9.0-rc76] - 2026-05-30
 
 ### Fixed

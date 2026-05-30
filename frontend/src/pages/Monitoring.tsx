@@ -358,11 +358,19 @@ function VersionCard() {
 
   useEffect(() => {
     let alive = true
-    api.updates
-      .murosStatus()
-      .then((s) => { if (alive) setMuros(s) })
-      .catch(() => { if (alive) setFailed(true) })
-    return () => { alive = false }
+    const load = () => {
+      api.updates
+        .murosStatus()
+        .then((s) => { if (alive) { setMuros(s); setFailed(false) } })
+        .catch(() => { if (alive && !muros) setFailed(true) })
+    }
+    load()
+    // Refresh periodically so the up-to-date / update-available badge stays
+    // current while the dashboard is left open. murosStatus reads cached
+    // apt metadata (no apt-get update), so this stays cheap.
+    const id = window.setInterval(load, 60_000)
+    return () => { alive = false; window.clearInterval(id) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const upgrade = !!muros?.upgrade_available
@@ -437,7 +445,7 @@ function VersionCard() {
 
             <button
               type="button"
-              onClick={() => navigate('/system')}
+              onClick={() => navigate('/system/updates')}
               className="mt-3 text-xs text-gray-700 underline hover:text-gray-900"
             >
               Manage updates
