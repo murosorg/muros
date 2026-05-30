@@ -31,10 +31,10 @@ from app.db import DB_PATH
 
 
 def _sqlite_safe_copy(src: Path, dest: Path) -> None:
-    """Copie consistante d'une DB SQLite, meme si elle est en cours
-    d'ecriture (mode WAL). On utilise l'API backup native qui gere le
-    snapshot transactionnel cote moteur, plutot qu'un cp brut qui peut
-    capturer un .db et un .db-wal desynchronises.
+    """Consistent copy of a SQLite DB, even while it is being written
+    (WAL mode). We use the native backup API that handles the engine-side
+    transactional snapshot, rather than a raw cp that may capture a .db and
+    a .db-wal out of sync.
     """
     src_conn = sqlite3.connect(f"file:{src}?mode=ro", uri=True)
     try:
@@ -62,7 +62,7 @@ def _safe_read(path: str) -> str:
 
 
 def _nft_dump() -> str:
-    # Lecture pure d'etat noyau, sub-seconde meme avec une grosse ruleset.
+    # Pure kernel-state read, sub-second even with a large ruleset.
     try:
         out = subprocess.check_output(["nft", "list", "ruleset"], text=True, timeout=5)
         return out
@@ -116,8 +116,8 @@ def create_backup(label: str | None = None) -> dict:
                 tmp_db_path.unlink(missing_ok=True)
         # nftables
         _add_text(tar, "nftables.snapshot", _nft_dump())
-        # Fichiers reseau (snapshots a titre informatif, l'application
-        # gere DNS et NTP via les drop-ins systemd)
+        # Network files (informational snapshots; the application manages
+        # DNS and NTP via the systemd drop-ins)
         _add_text(tar, "network/interfaces", _safe_read("/etc/network/interfaces"))
         _add_text(tar, "chrony/conf.d/muros.conf",
                   _safe_read("/etc/chrony/conf.d/muros.conf"))
@@ -187,18 +187,18 @@ def delete_backup(name: str) -> None:
 
 
 def restore_backup(name: str) -> dict:
-    """Restaure la DB depuis un backup. Les autres fichiers sont extraits dans
-    un dossier de restauration `MUROS_BACKUP_DIR/_restore/`, l'admin doit les
-    re-deployer manuellement (eviter d'ecraser silencieusement la conf systeme).
+    """Restore the DB from a backup. The other files are extracted into a
+    restore folder `MUROS_BACKUP_DIR/_restore/`; the admin must re-deploy
+    them manually (avoid silently overwriting the system configuration).
     """
     path = _resolve(name)
     with tarfile.open(path, "r:gz") as tar, tempfile.TemporaryDirectory() as tmp:
         tar.extractall(tmp)
         tmp_db = Path(tmp) / "muros.db"
         if tmp_db.is_file():
-            # On ferme le pool SQLAlchemy avant d'ecraser le fichier
-            # pour eviter de garder des handles ouverts vers l'ancienne
-            # DB et nettoyer les WAL/SHM lies a l'ancienne instance.
+            # Close the SQLAlchemy pool before overwriting the file to
+            # avoid keeping open handles to the old DB and to clean up the
+            # WAL/SHM tied to the old instance.
             from app.db import engine
             engine.dispose()
             for suffix in ("-wal", "-shm"):

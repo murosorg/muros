@@ -142,7 +142,7 @@ DESCRIPTIONS: dict[str, str] = {
 
 
 def _read_kernel_value(key: str) -> str | None:
-    """Valeur en cours dans le noyau. None si la cle n'existe pas."""
+    """Current value in the kernel. None if the key does not exist."""
     try:
         out = subprocess.check_output(
             ["sysctl", "-n", key], text=True, timeout=2, stderr=subprocess.DEVNULL,
@@ -172,7 +172,7 @@ def _read_dropin() -> dict[str, str]:
 
 
 def get_status() -> dict:
-    """Retourne le statut courant pour chaque cle whitelistee."""
+    """Return the current status for each whitelisted key."""
     dropin = _read_dropin()
     items: list[dict] = []
     hardened = True
@@ -205,4 +205,3 @@ def get_status() -> dict:
 # apply/reset endpoint from the UI: it is a structural guarantee of the
 # appliance, not a configurable setting. The module only keeps `get_status`
 # for diagnostic checks.
-stic checks.

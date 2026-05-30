@@ -31,7 +31,7 @@ from sqlalchemy.orm import Session
 from app import models
 log = logging.getLogger("muros.notifications")
 
-# Definition canonique des regles. Le watcher cree les manquantes au boot.
+# Canonical rule definitions. The watcher creates the missing ones at boot.
 DEFAULT_RULES: list[tuple[str, str, int]] = [
     ("fail2ban_ban", "Fail2ban banned an IP address", 5),
     ("ha_state_change", "VRRP state change (MASTER/BACKUP/FAULT)", 1),
@@ -94,7 +94,7 @@ def _get_config(db: Session) -> models.NotificationConfig:
 
 
 def _should_throttle(db: Session, event_type: str, throttle_minutes: int) -> bool:
-    """True si une alerte du meme type a ete envoyee avec succes recemment."""
+    """True if an alert of the same type was sent successfully recently."""
     if throttle_minutes <= 0:
         return False
     cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=throttle_minutes)
@@ -229,7 +229,7 @@ def _rotate_log(db: Session, keep: int = 50) -> None:
 
 
 def send_test(db: Session) -> dict:
-    """Envoi de test depuis l'UI : force=True (pas de throttle)."""
+    """Test send from the UI: force=True (no throttle)."""
     return notify(
         db, "test",
         subject="Mail de test",

@@ -160,9 +160,9 @@ def port_test(target: str, port: int, protocol: str = "tcp", timeout: int = 5) -
     if protocol == "udp":
         cmd.append("-u")
     cmd.extend([target, str(port)])
-    # nc -v ecrit sur stderr, on merge en stdout cote presentation
+    # nc -v writes to stderr, we merge it into stdout for presentation
     res = _run(cmd, timeout=timeout + 5)
-    # Concat stderr -> stdout si stdout vide (nc ecrit son resultat en
+    # Concat stderr -> stdout if stdout is empty (nc writes its result to
     # stderr "Connection to ... succeeded!").
     if not res["stdout"] and res["stderr"]:
         res["stdout"] = res["stderr"]

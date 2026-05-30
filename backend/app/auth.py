@@ -25,7 +25,7 @@ _SECRET_PATH = Path(os.environ.get("MUROS_SECRET_FILE", "./muros-secret.key"))
 
 
 def _load_or_create_secret() -> str:
-    # En prod, mettre MUROS_JWT_SECRET en env var. Sinon on persiste un secret local.
+    # In prod, set MUROS_JWT_SECRET as an env var. Otherwise we persist a local secret.
     env = os.environ.get("MUROS_JWT_SECRET")
     if env:
         return env

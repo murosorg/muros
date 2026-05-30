@@ -255,7 +255,7 @@ def write_conf(cfg) -> dict:
     SNMP_CONF.parent.mkdir(parents=True, exist_ok=True)
     SNMP_CONF.write_text(text, encoding="utf-8")
     os.chmod(SNMP_CONF, 0o644)
-    # snmpd ne lit pas .d. par defaut, on ajoute includeDir au fichier principal
+    # snmpd does not read .d by default, we add includeDir to the main file
     _ensure_includedir_in_main_conf()
     return {
         "message": f"snmpd configuration saved on port {cfg.port}.",

@@ -25,7 +25,7 @@ def reboot(delay_seconds: int = 5) -> dict:
         return {"scheduled": False, "message": "dry-run: no action."}
     if os.geteuid() != 0:
         raise RuntimeError("Reboot impossible: MurOS must run as root.")
-    # systemd-run nous permet de declencher en background avec un delai.
+    # systemd-run lets us trigger in the background with a delay.
     subprocess.Popen([
         "systemd-run", "--on-active=" + str(delay_seconds), "--unit=muros-reboot",
         "systemctl", "reboot",
@@ -126,27 +126,27 @@ def list_services() -> list[dict]:
         if entry.get("binary") and _which(entry["binary"]):
             installed = True
         else:
-            # Essaye unit principal puis alternatifs
+            # Try the main unit then the alternatives
             units_to_check = [entry["unit"]] + entry.get("alt_units", [])
             for u in units_to_check:
                 if _unit_exists(u):
                     installed = True
                     break
             if not installed and not entry.get("binary"):
-                # Unites MurOS-natives (muros-backend, muros-watcher) :
-                # toujours considerees installees, leur unit est livree
-                # par le .deb meme si inactive. Detection : unit name
-                # commence par "muros-".
+                # MurOS-native units (muros-backend, muros-watcher):
+                # always considered installed, their unit is shipped by the
+                # .deb even when inactive. Detection: unit name starts with
+                # "muros-".
                 installed = entry["unit"].startswith("muros-")
 
         if not installed:
             continue
 
-        # Choisir l'unit a interroger : on essaie le principal puis les
-        # alternatifs. Si un alternatif est "active" alors que le principal
-        # ne l'est pas, on prend l'alternatif. Cas typique sur Debian 12+ :
-        # `strongswan.service` est un alias absent qui rapporte "inactive",
-        # alors que `strongswan-starter.service` est l'unit reelle.
+        # Pick the unit to query: try the main one then the alternatives.
+        # If an alternative is "active" while the main one is not, take the
+        # alternative. Typical case on Debian 12+: `strongswan.service` is a
+        # missing alias that reports "inactive", while
+        # `strongswan-starter.service` is the real unit.
         units_to_try = [entry["unit"]] + entry.get("alt_units", [])
         active_unit = entry["unit"]
         status = _systemctl_status(active_unit)
@@ -154,8 +154,8 @@ def list_services() -> list[dict]:
             if status == "active":
                 break
             alt_status = _systemctl_status(u)
-            # On prend l'alt si lui est active, OU si le principal est unknown
-            # et l'alt connu (peu importe son etat).
+            # Take the alt if it is active, OR if the main one is unknown
+            # and the alt is known (whatever its state).
             if alt_status == "active" or (status == "unknown" and alt_status != "unknown"):
                 active_unit = u
                 status = alt_status

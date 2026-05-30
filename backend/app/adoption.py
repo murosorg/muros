@@ -201,24 +201,24 @@ def _adopt_routes(db: Session) -> int:
         # elles sont implicites une fois l'IP posee sur l'interface.
         if scope == "link" and protocol == "kernel":
             continue
-        # Fallback semantique : une route sans gateway (next-hop) est forcement
-        # une route connectee (link-scoped) meme si scope/protocol ne sont pas
-        # renseignes par ip-route (cas DHCP/manuel sur certaines distros).
-        # MurOS ne stocke que les routes a next-hop ; les connectees sont
-        # auto-derivees de l'IP d'interface.
+        # Semantic fallback: a route without a gateway (next-hop) is
+        # necessarily a connected route (link-scoped) even when scope/protocol
+        # are not filled by ip-route (DHCP/manual case on some distros).
+        # MurOS only stores next-hop routes; connected ones are auto-derived
+        # from the interface IP.
         if not gw and dst != "default":
             continue
-        # On normalise 'default' (laisse tel quel par ip route).
+        # Normalize 'default' (left as-is by ip route).
         if not dst:
             continue
-        # Si default avec gateway : note la gateway sur l'interface
-        # correspondante (utile en mode static). On NE cree PAS de
-        # StaticRoute pour la default : elle est deja materialisee par
-        # Interface.gateway au _restore_interfaces. Creer une
-        # StaticRoute en plus produirait un doublon de la default route
-        # au kernel (une avec metric 0 via l'iface, une avec le metric
-        # capture du kernel, typiquement 1002 quand dhclient l'avait
-        # posee a l'install).
+        # If default with a gateway: record the gateway on the matching
+        # interface (useful in static mode). We do NOT create a StaticRoute
+        # for the default: it is already materialized by Interface.gateway
+        # in _restore_interfaces. Creating an extra StaticRoute would produce
+        # a duplicate default route in the kernel (one with metric 0 via the
+        # iface, one with the metric captured from the kernel, typically 1002
+        # when dhclient had set it
+        # set at install).
         if dst == "default":
             if gw and dev and dev in iface_by_name:
                 iface = iface_by_name[dev]
@@ -273,9 +273,9 @@ def should_adopt(db: Session) -> bool:
 
 
 def adopt_kernel_state(db: Session, force: bool = False) -> dict:
-    """Capture l'etat reseau du kernel dans la DB. Idempotent via marker.
+    """Capture the kernel network state into the DB. Idempotent via marker.
 
-    Retourne {interfaces_touched, routes_touched, skipped}.
+    Returns {interfaces_touched, routes_touched, skipped}.
     """
     if not force and not should_adopt(db):
         log.info("Adoption deja effectuee (marker %s present), skip", ADOPTED_MARKER)
