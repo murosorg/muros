@@ -55,6 +55,30 @@ def _format_addr_set(values: list[str]) -> str:
     return "{ " + ", ".join(values) + " }"
 
 
+# nft comments live on a single line and the kernel caps them around 127
+# characters; a longer or multi-line value makes `nft -f` reject the whole
+# ruleset, which would silently block every future apply after an operator
+# pastes a long or multi-line comment on a single rule. We always emit our
+# own [muros ...] marker (used by firewall_stats to map nft entries back to
+# DB ids), so the user text is sanitised and budgeted against the marker.
+_NFT_COMMENT_MAX = 120
+
+
+def _nft_comment(marker: str, user_comment: str | None) -> str:
+    """Build a safe one-line nft comment: marker + sanitised user text.
+
+    Double quotes are swapped for single quotes (the comment is itself
+    double-quoted) and any newline/tab is collapsed to a single space so a
+    pasted multi-line note can never break the ruleset. The result is
+    truncated to keep nft's per-comment length limit.
+    """
+    clean = " ".join((user_comment or "").replace('"', "'").split())
+    budget = _NFT_COMMENT_MAX - len(marker) - 1
+    if budget > 0 and len(clean) > budget:
+        clean = clean[:budget]
+    return f"{marker} {clean}".strip()
+
+
 def _compile_addresses_zones(rule: models.FirewallRule) -> str:
     """nft match clause for zones and addresses. Empty if no selector."""
     parts: list[str] = []
@@ -242,10 +266,9 @@ def _compile_rule(rule: models.FirewallRule) -> list[str]:
         line = " ".join(p for p in pieces if p)
         # Comment is always emitted with the [muros r=<id>] marker so
         # firewall_stats can map nft entries back to DB rule ids. The
-        # user-provided comment is kept verbatim after the marker.
-        user_comment = (rule.comment or "").replace('"', "'")
-        marker = f"[muros r={rule.id}]"
-        comment = f"{marker} {user_comment}".strip()
+        # user-provided comment is sanitised and length-budgeted so it can
+        # never break the ruleset (see _nft_comment).
+        comment = _nft_comment(f"[muros r={rule.id}]", rule.comment)
         line += f' comment "{comment}"'
         lines.append(f"        {line}")
     return lines
@@ -296,10 +319,10 @@ def _compile_nat(rule: models.NatRule, local_v4: list[str] | None = None) -> tup
     """Return (chain, line) or None if the rule is invalid."""
     iface = rule.interface.name if rule.interface else None
 
-    # NAT counter + comment marker, same idea as filter rules.
-    user_comment = (rule.comment or "").replace('"', "'")
-    marker = f"[muros nat={rule.id}]"
-    nat_comment = f"{marker} {user_comment}".strip()
+    # NAT counter + comment marker, same idea as filter rules. The user
+    # text is sanitised and length-budgeted so it can never break the
+    # ruleset (see _nft_comment).
+    nat_comment = _nft_comment(f"[muros nat={rule.id}]", rule.comment)
 
     if rule.type == "masquerade":
         if not iface:
