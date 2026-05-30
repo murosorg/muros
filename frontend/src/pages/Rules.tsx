@@ -391,7 +391,7 @@ export default function Rules() {
       <div className="px-6 py-4">
         {error && <ErrorBlock message={error} />}
 
-        {/* Onglets de chaine style FortiGate. Forward par defaut (cas LAN -> WAN, le plus frequent). */}
+        {/* Chain tabs. Forward is the default (LAN -> WAN, the most common case). */}
         <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
           <div className="inline-flex rounded border border-gray-300 overflow-hidden">
             {CHAINS.map((c, i) => (

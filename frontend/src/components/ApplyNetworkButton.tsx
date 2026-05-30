@@ -8,13 +8,12 @@ type Pending = {
 }
 
 /**
- * Bouton jaune "Apply" pour les pages Network et Routes.
+ * Yellow "Apply" button for the Network and Routes pages.
  *
- * Convention visuelle alignee sur pfSense / OPNsense : pas de compteur
- * dans le label (les autres firewalls ne le font pas, ca devient bruyant
- * des qu'on edite plusieurs choses), juste un petit point orange a cote
- * du label quand il y a des changements en attente. Le detail des
- * changements reste accessible via le tooltip (survol).
+ * No counter in the label (it gets noisy as soon as several things are
+ * edited), just a small orange dot next to the label when there are
+ * pending changes. The detail of the changes stays available through the
+ * tooltip (on hover).
  */
 export default function ApplyNetworkButton() {
   const [pending, setPending] = useState<Pending>({ count: 0, interfaces: [], routes: [] })

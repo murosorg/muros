@@ -12,8 +12,8 @@ log = logging.getLogger("muros.seed")
 
 # Default management address used as an anti-lock-out safety net when the
 # box comes up with no usable IP at all (no DHCP at install, nothing
-# configured statically). Mirrors the appliance convention (pfSense /
-# OPNsense ship 192.168.1.1 on the LAN). Overridable at boot through
+# configured statically). Follows the common appliance convention of
+# shipping 192.168.1.1 on the LAN. Overridable at boot through
 # MUROS_FALLBACK_MGMT_CIDR.
 DEFAULT_FALLBACK_MGMT_CIDR = "192.168.1.1/24"
 
@@ -204,23 +204,22 @@ def seed_if_empty(db: Session) -> None:
             src_zone_id=None, protocol="icmp",
             comment="ICMP (ping)",
         ),
-        # Default "allow LAN to firewall", same spirit as OPNsense's
-        # built-in "allow LAN to any" rule: the LAN is the trusted zone,
-        # so LAN clients can reach the box services (DNS, NTP, GUI, ...)
-        # out of the box. Without this the input policy drop would block
-        # NTP (123) and DNS (53) from the LAN even though the services
-        # run. Restrict once zones are wired.
+        # Default "allow LAN to firewall": the LAN is the trusted zone, so
+        # LAN clients can reach the box services (DNS, NTP, GUI, ...) out
+        # of the box. Without this the input policy drop would block NTP
+        # (123) and DNS (53) from the LAN even though the services run.
+        # Restrict once zones are wired.
         models.FirewallRule(
             position=40, chain="input", action="accept",
             src_zone_id=lan.id,
-            comment="LAN to firewall (OPNsense-style default, restrict once configured)",
+            comment="LAN to firewall (default, restrict once configured)",
         ),
-        # Default "allow LAN to any" (egress to Internet and other zones),
-        # mirroring OPNsense's default LAN rule. Restrict once configured.
+        # Default "allow LAN to any" (egress to Internet and other zones):
+        # the trusted LAN can go out by default. Restrict once configured.
         models.FirewallRule(
             position=10, chain="forward", action="accept",
             src_zone_id=lan.id, dst_zone_id=None,
-            comment="LAN to any (OPNsense-style default allow)",
+            comment="LAN to any (default allow, restrict once configured)",
         ),
         # No explicit catch-all drop: the forward chain has policy drop,
         # which already denies anything not matched by a previous rule.

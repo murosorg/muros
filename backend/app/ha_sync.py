@@ -1,7 +1,8 @@
 """Configuration synchronization between the 2 HA nodes.
 
-Pattern inspired by OPNsense: the MASTER pushes its sqlite DB to the
-BACKUP after each apply (auto mode) or on a manual action (manual mode).
+Active/standby database replication: the MASTER pushes its sqlite DB to
+the BACKUP after each apply (auto mode) or on a manual action (manual
+mode).
 
 The BACKUP receives the DB via POST /api/ha/sync/receive, validates the
 token, makes a copy of its local DB into

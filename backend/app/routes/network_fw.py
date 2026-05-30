@@ -675,8 +675,8 @@ def move_rule(
 ):
     """Move a rule one notch up or down in its chain.
 
-    Firewall convention (FortiGate, Cisco, pfSense): rules are evaluated IN
-    ORDER, so the admin must be able to reorder with two simple "Up" / "Down"
+    Standard stateful firewall convention: rules are evaluated IN ORDER,
+    so the admin must be able to reorder with two simple "Up" / "Down"
     buttons on each row. We just swap the position with the adjacent rule IN
     THE SAME CHAIN.
 

@@ -83,8 +83,8 @@ function ListenSection({ register }: { register: (api: ListenApplyApi) => void }
       if (!form) {
         setForm({
           // MurOS always binds the UI on every interface (0.0.0.0).
-          // Restricting who can reach it is done with firewall rules,
-          // the OPNsense way, so there is no per-interface selector here.
+          // Restricting who can reach it is done with firewall rules, so
+          // there is no per-interface selector here.
           listen_address: '0.0.0.0',
           port_https: c.port_https,
           port_http: c.port_http,

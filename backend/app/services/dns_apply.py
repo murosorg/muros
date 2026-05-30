@@ -80,9 +80,9 @@ def render(db: Session) -> str:
         "  harden-dnssec-stripped: yes",
         "  use-caps-for-id: yes",
         f"  prefetch: {'yes' if cfg.prefetch else 'no'}",
-        # OPNsense model: Unbound listens on every interface and accepts
-        # queries at the daemon level; who can actually reach the resolver
-        # is decided at the firewall (input chain udp/tcp 53). The
+        # Unbound listens on every interface and accepts queries at the
+        # daemon level; who can actually reach the resolver is decided at
+        # the firewall (input chain udp/tcp 53). The
         # default-drop input policy plus the seeded "allow LAN to firewall"
         # rule keep the WAN closed, so the box is not an open resolver.
         "  access-control: 0.0.0.0/0 allow",

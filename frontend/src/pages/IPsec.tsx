@@ -722,7 +722,7 @@ function ConnectionModal({ conn, certs, hasCa, connections, onClose, onSave }: {
 
   // Basic vs advanced split: the basic form (name + remote address +
   // auth + networks) is enough for a typical site-to-site tunnel
-  // between two MurOS / pfSense / Fortigate boxes. IKE/ESP proposals,
+  // between two standards-compliant IPsec endpoints. IKE/ESP proposals,
   // local IDs, startup action and listen address only show up when
   // the operator explicitly opens Advanced. Defaults are
   // strongSwan-recommended: AES-256 + SHA-256 + DH-2048 / IKEv2 with

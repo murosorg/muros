@@ -398,7 +398,7 @@ class NtpConfig(Base):
 
     chrony always runs as a time client (it keeps the box clock in sync
     from the configured upstream servers). When `serve_lan` is True (the
-    default, OPNsense-like), MurOS additionally turns chrony into an NTP
+    default), MurOS additionally turns chrony into an NTP
     server for the LAN: it emits an `allow <subnet>` directive for every
     LAN-side network (every static interface whose zone is not a WAN
     zone). The WAN is never served, to avoid NTP reflection/amplification
@@ -1150,3 +1150,46 @@ class DynDnsEntry(Base):
     last_error: Mapped[str | None] = mapped_column(String(255))
     last_update_at: Mapped[datetime | None] = mapped_column(DateTime)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class Dhcp6Config(Base):
+    """Singleton holding the global DHCPv6 server settings (Kea DHCPv6).
+
+    The IPv6 counterpart of DhcpConfig. MurOS runs kea-dhcp6-server as a
+    stateful DHCPv6 server that hands out addresses from a pool, for LANs
+    where SLAAC alone is not enough (central address management, fixed
+    inventory). Clients only switch to DHCPv6 when the Router
+    Advertisement M (managed) flag is set, so the RA page must advertise
+    'managed' on the same interface. Like Kea DHCPv4, the daemon stays
+    running and serves nothing while disabled or pool-less.
+    """
+    __tablename__ = "dhcp6_config"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # valid-lifetime handed to clients, in seconds (default 12h).
+    default_lease_seconds: Mapped[int] = mapped_column(Integer, default=43200, nullable=False)
+
+
+class Dhcp6Pool(Base):
+    """One DHCPv6 address range bound to a single interface.
+
+    The /64 subnet Kea needs is derived from `range_start` (the prefix
+    containing the first address), so the pool does not depend on the
+    interface carrying a usable IPv6 address in the DB. One pool per
+    interface (unique), like the IPv4 side.
+    """
+    __tablename__ = "dhcp6_pools"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    interface_id: Mapped[int] = mapped_column(
+        ForeignKey("interfaces.id", ondelete="CASCADE"), nullable=False, unique=True
+    )
+    range_start: Mapped[str] = mapped_column(String(64), nullable=False)
+    range_end: Mapped[str] = mapped_column(String(64), nullable=False)
+    # CSV of IPv6 DNS servers handed to clients (DHCPv6 option dns-servers).
+    # Empty -> MurOS pushes the interface IPv6 address when available.
+    dns_servers: Mapped[str | None] = mapped_column(String(512))
+    lease_seconds: Mapped[int | None] = mapped_column(Integer)  # NULL = inherit global
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    comment: Mapped[str | None] = mapped_column(String(255))
+
+    interface: Mapped[Interface] = relationship()

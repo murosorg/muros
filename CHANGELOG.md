@@ -4,6 +4,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [v0.9.0-rc100] - 2026-05-30
+
+### Changed
+- Removed direct competitor product references (OPNsense, pfSense,
+  FortiGate, Cisco) from the shipped software. The user-facing default
+  firewall rule comments no longer name a competitor ("LAN to any
+  (default allow, restrict once configured)" instead of "OPNsense-style
+  default allow"), and the rationale comments across the backend
+  (seed, compiler, ntp, dns, ha_sync, network, models, rule reordering)
+  and frontend (SSH, HttpAccess, IPsec, Rules, CidrInput,
+  ApplyNetworkButton) now describe the behavior in neutral terms. Two
+  French comments were translated to English in passing. The weak-password
+  denylist keeps the product names on purpose (forbidding them as
+  passwords), and README positioning is unchanged.
+
 ## [v0.9.0-rc96] - 2026-05-30
 
 ### Added

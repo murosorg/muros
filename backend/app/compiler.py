@@ -234,9 +234,9 @@ def _compile_rule(rule: models.FirewallRule) -> list[str]:
     _compile_addresses_zones) and the rule would wrongly match every
     interface. Concretely, the default "allow LAN to firewall" seed rule
     would behave as "allow from anywhere", including the WAN, as long as
-    the LAN zone is not wired yet. This mirrors OPNsense, where an
-    unassigned interface simply carries no rule. A src_zone/dst_zone of
-    None means "any" and is intentionally not affected.
+    the LAN zone is not wired yet. An unassigned interface simply carries
+    no rule. A src_zone/dst_zone of None means "any" and is intentionally
+    not affected.
     """
     if rule.src_zone is not None and not _zone_interfaces(rule.src_zone):
         return []

@@ -1,19 +1,19 @@
 import { ChangeEvent } from 'react'
 
 /**
- * Input IP + select CIDR, comme pfSense / OPNsense / Fortinet.
+ * IP input + CIDR select.
  *
- * L'admin tape l'IP "192.168.1.70" dans la zone gauche et choisit /24
- * dans la liste deroulante a droite. La valeur exposee est toujours au
- * format "ip/prefix" (CIDR canonique cote API), ce qui evite que l'admin
- * oublie le masque (cas reel de lockout).
+ * The admin types the IP "192.168.1.70" in the left field and picks /24
+ * from the dropdown on the right. The exposed value is always in the
+ * "ip/prefix" form (canonical CIDR on the API side), which prevents the
+ * admin from forgetting the mask (a real lockout cause).
  *
- * Pour les prefixes proposes :
- *   - IPv4 :  /8 a /30
- *   - IPv6 :  /32 a /128 par paliers (le composant detecte la version)
+ * Offered prefixes:
+ *   - IPv4:  /8 to /30
+ *   - IPv6:  /32 to /128 in steps (the component detects the version)
  *
- * /31 et /32 (resp. /127 et /128) ne sont pas proposes par defaut : ils
- * isoleraient l'interface de son LAN. L'API les refuse de toute facon.
+ * /31 and /32 (resp. /127 and /128) are not offered by default: they
+ * would isolate the interface from its LAN. The API rejects them anyway.
  */
 type Props = {
   value: string

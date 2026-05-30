@@ -102,7 +102,7 @@ def flush_addresses(name: str) -> tuple[int, str]:
 # table `main` is then rewritten to point to the elected WAN (`ip
 # route replace default ...`). Stateful sessions in flight break on
 # failover (their src IP changes through masquerade) which is the
-# expected behavior and matches pfSense / OPNsense.
+# expected behavior for policy-routed multi-WAN.
 
 _WAN_RT_TABLE_OFFSET = 100  # rt_tables id = offset + gateway.id
 

@@ -24,8 +24,8 @@ function formFromCfg(c: SshConfig): SshConfigInput {
   return {
     port: c.port,
     // MurOS always binds sshd on every interface (0.0.0.0). Restricting
-    // who can reach it is done with firewall rules, the OPNsense way, so
-    // there is no per-interface selector on this page.
+    // who can reach it is done with firewall rules, so there is no
+    // per-interface selector on this page.
     listen_address: '0.0.0.0',
     permit_root_login: c.permit_root_login,
     password_authentication: c.password_authentication,

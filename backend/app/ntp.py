@@ -17,8 +17,8 @@ Writing:
 - MurOS drops /etc/chrony/conf.d/muros.conf with the ``server`` lines
   (always) plus a single ``allow all`` directive when server mode is on
   (NtpConfig.serve_lan, default True). The same daemon is therefore both
-  client and time server. Following the OPNsense model, chrony listens
-  on every interface and who can actually reach udp/123 is decided at the
+  client and time server. chrony listens on every interface and who can
+  actually reach udp/123 is decided at the
   firewall (input chain), not here: the default-drop input policy plus
   the seeded "allow LAN to firewall" rule keep the WAN closed. Debian's
   stock /etc/chrony/chrony.conf includes conf.d, so the rest of the
@@ -157,9 +157,9 @@ def _write_conf(servers: list[str], serve_lan: bool = True) -> None:
     lines += [f"server {host} iburst" for host in servers]
     if serve_lan:
         # 'allow all' turns chrony into an NTP server on every interface.
-        # Exposure is gated at the firewall (input chain udp/123), the
-        # OPNsense way: chrony listens broadly and nftables decides who
-        # reaches it. The default-drop input policy keeps the WAN closed.
+        # Exposure is gated at the firewall (input chain udp/123): chrony
+        # listens broadly and nftables decides who reaches it. The
+        # default-drop input policy keeps the WAN closed.
         lines.append("allow all")
     MUROS_CHRONY_CONF.write_text("\n".join(lines) + "\n")
 
