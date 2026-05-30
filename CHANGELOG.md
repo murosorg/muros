@@ -4,6 +4,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [v0.9.0-rc81] - 2026-05-30
+
+### Fixed
+- Rollback confirmation countdown stuck at 0s for any client not on UTC.
+  The backend stores naive UTC datetimes and serialized `expires_at`
+  without a timezone offset, so the browser parsed it as local time and
+  the timer expired in the past on the first render (e.g. a GMT+2 client
+  saw "Automatic rollback in 0s" immediately, with no real auto-rollback
+  window). All three rollback sources (nftables apply, safe_apply pending
+  changes, DB-backed pending applies for http/ssh/tls) now emit
+  offset-aware UTC timestamps via a shared `iso_utc` helper, so the
+  countdown shows the full configured timeout regardless of client
+  timezone.
+
 ## [v0.9.0-rc80] - 2026-05-30
 
 ### Removed

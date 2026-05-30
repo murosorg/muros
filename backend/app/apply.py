@@ -27,6 +27,7 @@ from typing import Literal
 from app.rollback import (
     DEFAULT_TIMEOUT_SECONDS as DEFAULT_TIMEOUT,
     RollbackTicket,
+    iso_utc,
     manager as rollback_manager,
 )
 
@@ -65,8 +66,8 @@ class ApplyStatus:
     def to_dict(self) -> dict:
         return {
             "state": self.state,
-            "started_at": self.started_at.isoformat() if self.started_at else None,
-            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+            "started_at": iso_utc(self.started_at),
+            "expires_at": iso_utc(self.expires_at),
             "timeout_seconds": self.timeout_seconds,
             "dry_run": self.dry_run,
             "message": self.message,

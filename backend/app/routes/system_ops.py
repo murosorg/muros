@@ -729,13 +729,14 @@ pending_apply_router = APIRouter(
 
 
 def _pending_apply_to_public(entry) -> dict:
+    from app.rollback import iso_utc
     return {
         "id": entry.id,
         "apply_type": entry.apply_type,
         "status": entry.status,
         "summary": entry.new_config_summary,
-        "created_at": entry.created_at.isoformat() if entry.created_at else None,
-        "expires_at": entry.expires_at.isoformat() if entry.expires_at else None,
+        "created_at": iso_utc(entry.created_at),
+        "expires_at": iso_utc(entry.expires_at),
         "timeout_seconds": entry.timeout_seconds,
         "rollback_error": entry.rollback_error,
     }

@@ -62,6 +62,24 @@ def _utcnow_naive() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
+def iso_utc(dt: datetime | None) -> str | None:
+    """Serialize a naive-UTC datetime as an unambiguous UTC ISO string.
+
+    The whole MurOS DB stores naive UTC. Calling ``isoformat()`` on such
+    a value omits the timezone offset, so a browser parses it as LOCAL
+    time. For any client not on UTC this shifts ``expires_at`` by the
+    offset and the rollback countdown collapses to 0s immediately (e.g.
+    a GMT+2 client sees the timer expire two hours in the past). Tagging
+    the value as UTC makes the string self-describing and fixes the
+    countdown end to end, regardless of the client timezone.
+    """
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.isoformat()
+
+
 @dataclass
 class RollbackTicket:
     id: str
@@ -83,8 +101,8 @@ class RollbackTicket:
             "id": self.id,
             "kind": self.kind,
             "description": self.description,
-            "started_at": self.started_at.isoformat(),
-            "expires_at": self.expires_at.isoformat(),
+            "started_at": iso_utc(self.started_at),
+            "expires_at": iso_utc(self.expires_at),
             "timeout_seconds": self.timeout_seconds,
             "state": self.state,
             "message": self.message,
