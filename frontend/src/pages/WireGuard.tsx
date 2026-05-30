@@ -7,6 +7,7 @@ import {
   type WireGuardPeer,
   type WireGuardPeerInput,
   type WireGuardPeerExport,
+  type WireGuardPeerStatus,
 } from '../lib/api'
 import PageHeader from '../components/PageHeader'
 import EmptyState from '../components/EmptyState'
@@ -34,6 +35,28 @@ const WG_TABS: { key: WgTab; label: string }[] = [
   { key: 'server', label: 'Server' },
   { key: 'peers', label: 'Peers' },
 ]
+
+// Human-readable transfer size from a byte count (binary units, like `wg`).
+function fmtBytes(n: number): string {
+  if (n < 1024) return `${n} B`
+  const units = ['KiB', 'MiB', 'GiB', 'TiB']
+  let v = n / 1024
+  let i = 0
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024
+    i++
+  }
+  return `${v.toFixed(1)} ${units[i]}`
+}
+
+// Relative age of the last handshake; null means the peer never handshaked.
+function fmtHandshakeAge(sec: number | null): string {
+  if (sec == null) return 'never'
+  if (sec < 60) return `${sec}s ago`
+  if (sec < 3600) return `${Math.floor(sec / 60)}m ago`
+  if (sec < 86400) return `${Math.floor(sec / 3600)}h ago`
+  return `${Math.floor(sec / 86400)}d ago`
+}
 
 function WgTabs({ tab, onChange }: { tab: WgTab; onChange: (t: WgTab) => void }) {
   return (
@@ -78,6 +101,7 @@ export default function WireGuard() {
   const [cfg, setCfg] = useState<WireGuardConfig | null>(null)
   const [cfgForm, setCfgForm] = useState<WireGuardConfigInput | null>(null)
   const [peers, setPeers] = useState<WireGuardPeer[]>([])
+  const [peerStatus, setPeerStatus] = useState<Record<string, WireGuardPeerStatus>>({})
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const { confirm, ConfirmHost } = useConfirm()
@@ -100,7 +124,20 @@ export default function WireGuard() {
     }
   }
 
-  useEffect(() => { reload() }, [])
+  // Live per-peer runtime (handshake / transfer). Best-effort: a failure
+  // (e.g. wg not installed) just leaves the map empty without surfacing an
+  // error on the page.
+  const refreshPeerStatus = () => {
+    api.wireguard.peersStatus()
+      .then((list) => {
+        const map: Record<string, WireGuardPeerStatus> = {}
+        for (const st of list) map[st.public_key] = st
+        setPeerStatus(map)
+      })
+      .catch(() => {})
+  }
+
+  useEffect(() => { reload(); refreshPeerStatus() }, [])
   useEffect(() => {
     if (cfg) {
       setCfgForm({
@@ -118,6 +155,7 @@ export default function WireGuard() {
   useEffect(() => {
     const id = setInterval(() => {
       api.wireguard.status().then(setStatus).catch(() => {})
+      refreshPeerStatus()
     }, 5000)
     return () => clearInterval(id)
   }, [])
@@ -298,6 +336,7 @@ export default function WireGuard() {
                   <th>Tunnel IP</th>
                   <th>Client routes</th>
                   <th>Endpoint</th>
+                  <th>Live</th>
                   <th>State</th>
                   <th></th>
                 </tr>
@@ -312,6 +351,29 @@ export default function WireGuard() {
                     <td className="font-mono text-xs">{p.allowed_ips}</td>
                     <td className="font-mono text-xs">{p.client_allowed_ips || '0.0.0.0/0, ::/0'}</td>
                     <td className="font-mono text-xs">{p.endpoint || '-'}</td>
+                    <td>
+                      {(() => {
+                        const st = peerStatus[p.public_key]
+                        if (!st) return <span className="text-xs text-gray-400">-</span>
+                        const dot = st.connected ? 'bg-emerald-500'
+                          : st.latest_handshake ? 'bg-amber-400' : 'bg-slate-300'
+                        const title = st.connected ? 'Connected'
+                          : st.latest_handshake ? 'Stale handshake' : 'Never connected'
+                        return (
+                          <div className="flex items-center gap-2" title={title}>
+                            <span className={`inline-block w-2 h-2 rounded-full ${dot}`} />
+                            <span className="text-xs text-gray-600">
+                              {fmtHandshakeAge(st.handshake_age_seconds)}
+                              {st.latest_handshake > 0 && (
+                                <span className="text-gray-400">
+                                  {' '}· rx {fmtBytes(st.rx_bytes)} / tx {fmtBytes(st.tx_bytes)}
+                                </span>
+                              )}
+                            </span>
+                          </div>
+                        )
+                      })()}
+                    </td>
                     <td>
                       <span className={`text-xs px-2 py-1 rounded border ${
                         p.enabled ? 'bg-emerald-50 border-emerald-300 text-emerald-800' :

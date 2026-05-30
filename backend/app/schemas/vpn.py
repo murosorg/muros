@@ -157,6 +157,20 @@ class WireGuardPeerExport(BaseModel):
     qr_svg: str | None = None
 
 
+class WireGuardPeerStatus(BaseModel):
+    # Live runtime state for one peer, read from `wg show <if> dump`.
+    peer_id: int | None = None  # matched DB peer (None if not tracked in DB)
+    name: str | None = None
+    public_key: str
+    interface: str
+    endpoint: str | None = None
+    latest_handshake: int = 0  # unix seconds, 0 = never handshaked
+    handshake_age_seconds: int | None = None  # None when never handshaked
+    connected: bool = False  # last handshake within the keepalive window
+    rx_bytes: int = 0
+    tx_bytes: int = 0
+
+
 # --- IPsec : connexions ---
 
 class IpsecConnectionIn(BaseModel):

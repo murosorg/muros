@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (c) 2026 MurOS contributors.
-"""Routes HTTP de l'API MurOS (sous-module)."""
+"""MurOS API HTTP routes (submodule)."""
+import time
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -126,6 +127,44 @@ def wireguard_generate_psk():
 @wireguard_router.get("/peers", response_model=list[schemas.WireGuardPeerOut])
 def wireguard_list_peers(db: Session = Depends(get_db)):
     return db.query(models.WireGuardPeer).order_by(models.WireGuardPeer.id).all()
+
+
+# A handshake older than this many seconds is considered stale/disconnected.
+# WireGuard renews a handshake roughly every 2 min on active tunnels; 180s
+# leaves a small margin before flagging a peer as down.
+_WG_HANDSHAKE_WINDOW_S = 180
+
+
+@wireguard_router.get("/peers/status", response_model=list[schemas.WireGuardPeerStatus])
+def wireguard_peers_status(db: Session = Depends(get_db)):
+    """Live per-peer runtime (handshake, transfer, connectivity) via `wg`.
+
+    Joins the kernel runtime from `wg show dump` with the DB peers so the UI
+    can label each line. Returns an empty list when no WG interface is up.
+    """
+    from app import wireguard
+    runtime = wireguard.peer_runtime_status()
+    peers_by_key = {p.public_key: p for p in db.query(models.WireGuardPeer).all()}
+    now = int(time.time())
+    out: list[schemas.WireGuardPeerStatus] = []
+    for public_key, rt in runtime.items():
+        hs = rt["latest_handshake"]
+        age = (now - hs) if hs else None
+        peer = peers_by_key.get(public_key)
+        out.append(schemas.WireGuardPeerStatus(
+            peer_id=peer.id if peer else None,
+            name=peer.name if peer else None,
+            public_key=public_key,
+            interface=rt["interface"],
+            endpoint=rt["endpoint"],
+            latest_handshake=hs,
+            handshake_age_seconds=age,
+            connected=age is not None and age < _WG_HANDSHAKE_WINDOW_S,
+            rx_bytes=rt["rx_bytes"],
+            tx_bytes=rt["tx_bytes"],
+        ))
+    out.sort(key=lambda s: (s.name or "\uffff", s.public_key))
+    return out
 
 
 @wireguard_router.post("/peers", response_model=schemas.WireGuardPeerOut)

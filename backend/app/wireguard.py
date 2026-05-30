@@ -28,7 +28,7 @@ from app.service_state import is_active as _systemd_active, which as _which  # n
 
 
 def _list_wg_interfaces() -> list[dict]:
-    """Retourne les interfaces WireGuard actives via `wg show interfaces`."""
+    """Return the active WireGuard interfaces via `wg show interfaces`."""
     if not _which("wg"):
         return []
     try:
@@ -43,7 +43,7 @@ def _list_wg_interfaces() -> list[dict]:
                 ["wg", "show", name, "dump"], text=True, timeout=3,
             )
             lines = details.strip().splitlines()
-            # Premiere ligne = interface, suivantes = peers.
+            # First line = interface, following lines = peers.
             if lines:
                 first = lines[0].split("\t")
                 if len(first) >= 3:
@@ -60,6 +60,53 @@ def _to_int(s: str) -> int | None:
         return int(s.strip())
     except (ValueError, TypeError):
         return None
+
+
+def _parse_wg_dump(text: str, iface: str) -> dict[str, dict]:
+    """Parse `wg show <if> dump` output into a per-peer runtime map.
+
+    The first line describes the interface; every following line is a peer:
+        public_key  preshared_key  endpoint  allowed_ips  latest_handshake
+        transfer_rx  transfer_tx  persistent_keepalive
+    latest_handshake is unix seconds (0 = never), transfers are in bytes.
+    Returns {public_key: {interface, endpoint, latest_handshake, rx_bytes,
+    tx_bytes}}.
+    """
+    out: dict[str, dict] = {}
+    for line in text.strip().splitlines()[1:]:
+        f = line.split("\t")
+        if len(f) < 7:
+            continue
+        endpoint = f[2].strip()
+        out[f[0]] = {
+            "interface": iface,
+            "endpoint": None if endpoint in ("", "(none)") else endpoint,
+            "latest_handshake": _to_int(f[4]) or 0,
+            "rx_bytes": _to_int(f[5]) or 0,
+            "tx_bytes": _to_int(f[6]) or 0,
+        }
+    return out
+
+
+def peer_runtime_status() -> dict[str, dict]:
+    """Live per-peer runtime keyed by public key, across all WG interfaces.
+
+    Read-only: shells out to `wg show <if> dump` for each active interface.
+    Returns an empty dict when wg is absent (dev box) so callers can degrade
+    gracefully.
+    """
+    result: dict[str, dict] = {}
+    if not _which("wg"):
+        return result
+    for iface in _list_wg_interfaces():
+        try:
+            dump = subprocess.check_output(
+                ["wg", "show", iface["name"], "dump"], text=True, timeout=3,
+            )
+        except (subprocess.SubprocessError, FileNotFoundError):
+            continue
+        result.update(_parse_wg_dump(dump, iface["name"]))
+    return result
 
 
 def _wg_version() -> str | None:

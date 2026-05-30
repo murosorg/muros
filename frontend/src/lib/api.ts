@@ -875,6 +875,7 @@ export const api = {
     generateKeypair: () => request<WireGuardKeypair>('POST', '/api/wireguard/keypair'),
     generatePsk: () => request<{ preshared_key: string }>('POST', '/api/wireguard/psk'),
     listPeers: () => request<WireGuardPeer[]>('GET', '/api/wireguard/peers'),
+    peersStatus: () => request<WireGuardPeerStatus[]>('GET', '/api/wireguard/peers/status'),
     createPeer: (data: WireGuardPeerInput) =>
       request<WireGuardPeer>('POST', '/api/wireguard/peers', data),
     updatePeer: (id: number, data: WireGuardPeerInput) =>
@@ -1219,6 +1220,19 @@ export type WireGuardApplyResult = {
 export type WireGuardPeerExport = {
   config_text: string
   qr_svg: string | null
+}
+
+export type WireGuardPeerStatus = {
+  peer_id: number | null
+  name: string | null
+  public_key: string
+  interface: string
+  endpoint: string | null
+  latest_handshake: number
+  handshake_age_seconds: number | null
+  connected: boolean
+  rx_bytes: number
+  tx_bytes: number
 }
 
 export type IpsecConnectionInput = {
