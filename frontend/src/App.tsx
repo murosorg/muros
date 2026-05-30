@@ -1,33 +1,38 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 MurOS contributors.
-import { useEffect, useState } from 'react'
+import { lazy, useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import Layout from './components/Layout'
+// Page components are code-split with React.lazy so the initial bundle
+// stays small: each screen is fetched only when the operator navigates
+// to it. This matters on the modest hardware MurOS targets. Login and
+// the Layout shell are kept eager since they are on the critical path
+// of the very first paint.
 // Dashboard fusionne avec Monitoring : un seul ecran de supervision.
-import Rules from './pages/Rules'
-import Services from './pages/Services'
-import Preview from './pages/Preview'
-import Nat from './pages/Nat'
-import Zones from './pages/Zones'
-import Network from './pages/Network'
-import RoutesPage from './pages/Routes'
-import WanPage from './pages/Wan'
-import Logs from './pages/Logs'
-import Monitoring from './pages/Monitoring'
-import System from './pages/System'
-import HA from './pages/HA'
-import WireGuard from './pages/WireGuard'
-import IPsec from './pages/IPsec'
-import Notifications from './pages/Notifications'
-import SNMP from './pages/SNMP'
-import SSH from './pages/SSH'
-import HttpAccess from './pages/HttpAccess'
-import Diagnostic from './pages/Diagnostic'
-import DhcpPage from './pages/Dhcp'
-import DnsPage from './pages/Dns'
-import NtpPage from './pages/Ntp'
-import UsersPage from './pages/Users'
 import Login from './pages/Login'
+const Rules = lazy(() => import('./pages/Rules'))
+const Services = lazy(() => import('./pages/Services'))
+const Preview = lazy(() => import('./pages/Preview'))
+const Nat = lazy(() => import('./pages/Nat'))
+const Zones = lazy(() => import('./pages/Zones'))
+const Network = lazy(() => import('./pages/Network'))
+const RoutesPage = lazy(() => import('./pages/Routes'))
+const WanPage = lazy(() => import('./pages/Wan'))
+const Logs = lazy(() => import('./pages/Logs'))
+const Monitoring = lazy(() => import('./pages/Monitoring'))
+const System = lazy(() => import('./pages/System'))
+const HA = lazy(() => import('./pages/HA'))
+const WireGuard = lazy(() => import('./pages/WireGuard'))
+const IPsec = lazy(() => import('./pages/IPsec'))
+const Notifications = lazy(() => import('./pages/Notifications'))
+const SNMP = lazy(() => import('./pages/SNMP'))
+const SSH = lazy(() => import('./pages/SSH'))
+const HttpAccess = lazy(() => import('./pages/HttpAccess'))
+const Diagnostic = lazy(() => import('./pages/Diagnostic'))
+const DhcpPage = lazy(() => import('./pages/Dhcp'))
+const DnsPage = lazy(() => import('./pages/Dns'))
+const NtpPage = lazy(() => import('./pages/Ntp'))
+const UsersPage = lazy(() => import('./pages/Users'))
 import { auth, setUnauthorizedHandler } from './lib/api'
 import { ToastHost } from './components/Toast'
 import BackendUnreachableOverlay from './components/BackendUnreachableOverlay'

@@ -1,9 +1,10 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { useEffect, useMemo, useState } from 'react'
+import { Suspense, useEffect, useMemo, useState } from 'react'
 import { LogOut } from 'lucide-react'
 import { api, auth, Health, SystemInfo, User } from '../lib/api'
 import RollbackModal from './RollbackModal'
 import PendingChangesBar from './PendingChangesBar'
+import LoadingState from './LoadingState'
 import { useConfirm } from './ConfirmModal'
 
 
@@ -279,7 +280,9 @@ export default function Layout() {
             </span>
           </div>
         )}
-        <Outlet />
+        <Suspense fallback={<LoadingState text="Loading..." />}>
+          <Outlet />
+        </Suspense>
       </main>
       <PendingChangesBar />
       <RollbackModal />

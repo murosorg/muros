@@ -2,6 +2,16 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [v0.9.0-rc20] - 2026-05-30
+
+### Changed
+- Frontend: page components are now code-split with React.lazy and loaded
+  on demand. The initial JavaScript bundle dropped from ~577 kB to
+  ~216 kB (gzip ~149 kB to ~68 kB), so the UI paints faster on the modest
+  hardware MurOS targets. A lightweight "Loading..." placeholder is shown
+  inside the layout shell while a page chunk is fetched, keeping the
+  sidebar visible during navigation. No functional change.
+
 ## [v0.9.0-rc19] - 2026-05-30
 
 ### Changed
