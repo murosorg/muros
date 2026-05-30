@@ -185,7 +185,7 @@ def render_dropin(cfg) -> str:
         f"MaxAuthTries {cfg.max_auth_tries}",
         f"ClientAliveInterval {cfg.client_alive_interval}",
         f"ClientAliveCountMax {cfg.client_alive_count_max}",
-        # Hardening par defaut (toujours pose par MurOS)
+        # Default hardening (always written by MurOS)
         "X11Forwarding no",
         "PermitEmptyPasswords no",
         "UsePAM yes",
@@ -242,7 +242,7 @@ def _chown_admin(path: str) -> None:
     except (KeyError, ImportError, OSError):
         pass
 
-# Algos supportes (ordre = preference)
+# Supported algorithms (order = preference)
 SSH_KEY_TYPES = (
     "ssh-rsa", "ssh-ed25519", "ssh-dss",
     "ecdsa-sha2-nistp256", "ecdsa-sha2-nistp384", "ecdsa-sha2-nistp521",
@@ -251,12 +251,12 @@ SSH_KEY_TYPES = (
 
 
 def _parse_authorized_key_line(line: str) -> dict | None:
-    """Parse une ligne authorized_keys : retourne {type, key_b64, comment} ou None."""
+    """Parse an authorized_keys line: return {type, key_b64, comment} or None."""
     line = line.strip()
     if not line or line.startswith("#"):
         return None
-    # Format : <options>? <type> <base64-key> <comment>
-    # Pour simplifier on ne supporte pas les options (cmd=, restrict, etc.)
+    # Format: <options>? <type> <base64-key> <comment>
+    # For simplicity, options (cmd=, restrict, etc.) are not supported.
     parts = line.split(None, 2)
     if len(parts) < 2:
         return None
@@ -264,7 +264,7 @@ def _parse_authorized_key_line(line: str) -> dict | None:
     comment = parts[2] if len(parts) == 3 else ""
     if key_type not in SSH_KEY_TYPES:
         return None
-    # Validation base64 sommaire
+    # Rough base64 validation
     import base64
     try:
         base64.b64decode(key_b64, validate=True)
@@ -279,7 +279,7 @@ def _parse_authorized_key_line(line: str) -> dict | None:
 
 
 def _compute_fingerprint(key_type: str, key_b64: str) -> str:
-    """Calcule l'empreinte SHA256 base64 de la cle (format ssh-keygen -lf)."""
+    """Compute the base64 SHA256 fingerprint of the key (ssh-keygen -lf format)."""
     import base64
     import hashlib
     try:
