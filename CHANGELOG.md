@@ -4,6 +4,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [v0.9.0-rc91] - 2026-05-30
+
+### Added
+- Remote syslog forwarding. A new "Remote syslog" page (Observability
+  section) ships every journald/syslog message to a central syslog
+  server or SIEM, closing a gap versus OPNsense for SMBs that centralise
+  their logs. Built on the standard Debian rsyslog daemon: MurOS renders
+  an `omfwd` drop-in in `/etc/rsyslog.d/muros-remote.conf` (RFC5424 or
+  legacy RFC3164, over UDP or TCP), with a disk-backed queue and infinite
+  retry so logs survive a brief collector outage. rsyslog is installed
+  on demand from the page (same flow as SNMP); the package is not a hard
+  dependency. New `syslog` managed service (dirty tracking, sidebar
+  indicator, startup/boot reconcile), REST API under `/api/syslog`, and a
+  pure rendering/validation test suite.
+
 ## [v0.9.0-rc90] - 2026-05-30
 
 ### Changed

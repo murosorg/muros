@@ -524,6 +524,38 @@ export type QosApplyResult = {
   cleared: string[]
 }
 
+export type SyslogConfig = {
+  id: number
+  enabled: boolean
+  host: string
+  port: number
+  protocol: 'udp' | 'tcp'
+  format: 'rfc5424' | 'rfc3164'
+  comment: string | null
+}
+
+export type SyslogConfigInput = {
+  enabled: boolean
+  host: string
+  port: number
+  protocol: 'udp' | 'tcp'
+  format: 'rfc5424' | 'rfc3164'
+  comment?: string | null
+}
+
+export type SyslogStatus = {
+  installed: boolean
+  service_active: boolean
+  service_state: string
+  version: string | null
+}
+
+export type SyslogApplyResult = {
+  message: string
+  service?: string | null
+  conf_preview?: string | null
+}
+
 export const api = {
   health: () => request<Health>('GET', '/api/health'),
   systemInfo: () => request<SystemInfo>('GET', '/api/system/info'),
@@ -999,6 +1031,16 @@ export const api = {
       request<SnmpConfig>('PUT', '/api/snmp/config', data),
     apply: () => request<SnmpApplyResult>('POST', '/api/snmp/apply'),
     pending: () => request<ServicePending>('GET', '/api/snmp/pending'),
+  },
+
+  syslog: {
+    status: () => request<SyslogStatus>('GET', '/api/syslog/status'),
+    install: () => request<VpnInstallResult>('POST', '/api/syslog/install'),
+    getConfig: () => request<SyslogConfig>('GET', '/api/syslog/config'),
+    updateConfig: (data: SyslogConfigInput) =>
+      request<SyslogConfig>('PUT', '/api/syslog/config', data),
+    apply: () => request<SyslogApplyResult>('POST', '/api/syslog/apply'),
+    pending: () => request<ServicePending>('GET', '/api/syslog/pending'),
   },
 
   dhcp: {

@@ -412,6 +412,27 @@ def _restore_qos(db) -> None:
         log.warning("QoS reconcile failed: %r", exc)
 
 
+def _restore_syslog(db) -> None:
+    """Rewrite the rsyslog forwarding drop-in from the DB at boot.
+
+    rsyslog reads /etc/rsyslog.d/*.conf at its own start, but we
+    regenerate from the single source of truth (the DB) so the drop-in
+    matches the configured collector even after a restore, and we clear
+    any stale pending flag.
+    """
+    from app import models, syslog_fwd, service_dirty
+    cfg = db.get(models.SyslogConfig, 1)
+    if cfg is None:
+        return
+    try:
+        syslog_fwd.write_conf(cfg)
+        if cfg.enabled:
+            log.info("Syslog forwarding restored to %s:%s", cfg.host, cfg.port)
+        service_dirty.mark_clean(db, "syslog", summary="muros-boot restore")
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Syslog reconcile failed: %r", exc)
+
+
 def main() -> int:
     from app.db import SessionLocal, init_db
     from app import adoption
@@ -457,6 +478,7 @@ def main() -> int:
             _restore_ntp(db)
             _restore_ra(db)
             _restore_qos(db)
+            _restore_syslog(db)
         except Exception:
             log.exception("Echec lors de la restauration")
             return 1

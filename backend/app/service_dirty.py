@@ -46,6 +46,7 @@ KNOWN_SERVICES: tuple[str, ...] = (
     "http",
     "notifications",
     "qos",
+    "syslog",
 )
 
 
@@ -182,6 +183,22 @@ def _reconcile_snmp(db: Session, source: str) -> bool:
         match = (_sha256_text(expected) == on_disk) if expected else (on_disk is None)
         if is_dirty(db, "snmp") and match:
             mark_clean(db, "snmp", summary=f"{source}: on-disk conf already matches DB")
+            return True
+    except Exception:  # noqa: BLE001
+        pass
+    return False
+
+
+def _reconcile_syslog(db: Session, source: str) -> bool:
+    try:
+        from app import syslog_fwd
+        from app.routes.syslog import _get_config
+        cfg = _get_config(db)
+        expected = syslog_fwd.render_conf(cfg) if cfg.enabled else ""
+        on_disk = _sha256_path(syslog_fwd.SYSLOG_CONF)
+        match = (_sha256_text(expected) == on_disk) if expected else (on_disk is None)
+        if is_dirty(db, "syslog") and match:
+            mark_clean(db, "syslog", summary=f"{source}: on-disk conf already matches DB")
             return True
     except Exception:  # noqa: BLE001
         pass
@@ -417,6 +434,7 @@ def reconcile_all(db: Session, source: str = "reconcile") -> dict[str, bool]:
         "ipsec":     _reconcile_ipsec(db, source),
         "ssh":       _reconcile_ssh(db, source),
         "http":      _reconcile_http(db, source),
+        "syslog":    _reconcile_syslog(db, source),
     }
 
 

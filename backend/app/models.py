@@ -1093,3 +1093,27 @@ class QosRule(Base):
     comment: Mapped[str | None] = mapped_column(String(255))
 
     qos_class: Mapped["QosClass"] = relationship(back_populates="rules")
+
+
+class SyslogConfig(Base):
+    """Singleton holding the remote syslog forwarding settings.
+
+    MurOS logs everything to journald; rsyslog (imjournal) is configured
+    with an omfwd action that ships every message to a central syslog
+    server / SIEM. One row (id=1). The rendered drop-in lives in
+    /etc/rsyslog.d/muros-remote.conf; an apply restarts rsyslog. When
+    `enabled=False` the drop-in is removed so forwarding stops.
+    """
+
+    __tablename__ = "syslog_config"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    host: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    port: Mapped[int] = mapped_column(Integer, default=514, nullable=False)
+    # Transport to the collector: udp (fire and forget), tcp (reliable).
+    protocol: Mapped[str] = mapped_column(String(8), default="udp", nullable=False)
+    # Wire format: rfc5424 (modern, structured) or rfc3164 (legacy BSD).
+    format: Mapped[str] = mapped_column(String(8), default="rfc5424", nullable=False)
+    comment: Mapped[str | None] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

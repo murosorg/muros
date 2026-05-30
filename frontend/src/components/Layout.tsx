@@ -28,6 +28,7 @@ const navItems: { to: string; label: string; section: string | null; service?: s
   { to: '/vpn/wireguard', label: 'WireGuard', section: 'VPN', service: 'wireguard' },
   { to: '/vpn/ipsec', label: 'IPsec', section: 'VPN', service: 'ipsec' },
   { to: '/logs', label: 'Logs', section: 'Observability' },
+  { to: '/syslog', label: 'Remote syslog', section: 'Observability', service: 'syslog' },
   { to: '/notifications', label: 'Notifications', section: 'Observability', service: 'notifications' },
   { to: '/snmp', label: 'SNMP', section: 'Observability', service: 'snmp' },
   { to: '/diagnostic', label: 'Diagnostics', section: 'Administration' },
