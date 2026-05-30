@@ -2,6 +2,16 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [v0.9.0-rc19] - 2026-05-30
+
+### Changed
+- Dashboard: removed the redundant "Per-interface traffic" table, which
+  duplicated the per-interface "Traffic <iface>" charts already shown in
+  the History section. The History section (CPU/memory, connection
+  tracking sessions, system load, per-interface traffic) now sits right
+  below the live metric cards for quicker access, with the Storage table
+  moved to the bottom.
+
 ## [v0.9.0-rc18] - 2026-05-30
 
 ### Changed

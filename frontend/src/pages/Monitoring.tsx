@@ -23,7 +23,6 @@ const MAX_SAMPLES = Math.ceil((MAX_WINDOW_MINUTES * 60 * 1000) / REFRESH_INTERVA
 // a single place (fmt.bytes uses binary units 1024, aligned with the
 // rest of the app).
 const formatBytes = (n: number): string => fmt.bytes(n)
-const formatRate = (n: number): string => `${fmt.bytes(n)}/s`
 const formatUptime = (seconds: number): string => fmt.duration(seconds)
 
 function usageColor(pct: number): string {
@@ -70,7 +69,6 @@ export default function Monitoring() {
     ifRx: new Map(), ifTx: new Map(),
   })
   const prevIfRef = useRef<Map<string, { rx: number; tx: number; ts: number }>>(new Map())
-  const [ifRates, setIfRates] = useState<Map<string, { rx: number; tx: number }>>(new Map())
 
   const tick = async () => {
     try {
@@ -95,8 +93,8 @@ export default function Monitoring() {
       h.conntrackPct = trim([...h.conntrackPct, { x: now, y: s.conntrack.used_percent }])
       h.conntrackCur = trim([...h.conntrackCur, { x: now, y: s.conntrack.current }])
 
-      // Per-interface throughput (delta / time)
-      const rates = new Map<string, { rx: number; tx: number }>()
+      // Per-interface throughput (delta / time). Feeds the live
+      // "Traffic <iface>" charts in the History section.
       for (const iface of s.interfaces) {
         const prev = prevIfRef.current.get(iface.name)
         if (prev) {
@@ -104,7 +102,6 @@ export default function Monitoring() {
           if (dt > 0) {
             const rx = Math.max(0, (iface.rx_bytes - prev.rx) / dt)
             const tx = Math.max(0, (iface.tx_bytes - prev.tx) / dt)
-            rates.set(iface.name, { rx, tx })
             h.ifRx.set(iface.name, trim([...(h.ifRx.get(iface.name) || []), { x: now, y: rx }]))
             h.ifTx.set(iface.name, trim([...(h.ifTx.get(iface.name) || []), { x: now, y: tx }]))
           }
@@ -124,7 +121,6 @@ export default function Monitoring() {
       for (const k of Array.from(prevIfRef.current.keys())) {
         if (!liveNames.has(k)) prevIfRef.current.delete(k)
       }
-      setIfRates(rates)
     } catch (e) {
       setError(String(e))
     }
@@ -228,95 +224,6 @@ export default function Monitoring() {
             </div>
 
             <section className="mb-6">
-              <h2 className="text-sm font-semibold mb-2 text-gray-900">Storage</h2>
-              <div className="border border-gray-200 rounded-md overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50 text-gray-700 text-xs uppercase tracking-wider">
-                    <tr>
-                      <th className="text-left px-3 py-2">Mount point</th>
-                      <th className="text-right px-3 py-2 w-28">Used</th>
-                      <th className="text-right px-3 py-2 w-28">Total</th>
-                      <th className="text-right px-3 py-2 w-20">%</th>
-                      <th className="text-left px-3 py-2">Usage</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.disks.map((d) => (
-                      <tr key={d.mount} className="border-t border-gray-200">
-                        <td className="px-3 py-2 font-mono">{d.mount}</td>
-                        <td className="px-3 py-2 text-right font-mono text-xs text-gray-800">{formatBytes(d.used_bytes)}</td>
-                        <td className="px-3 py-2 text-right font-mono text-xs text-gray-800">{formatBytes(d.total_bytes)}</td>
-                        <td className={`px-3 py-2 text-right font-mono text-xs font-semibold ${usageColor(d.used_percent)}`}>
-                          {d.used_percent.toFixed(1)}%
-                        </td>
-                        <td className="px-3 py-2">
-                          <div className="h-2 bg-gray-100 rounded overflow-hidden">
-                            <div
-                              className="h-full bg-gray-800"
-                              style={{ width: `${d.used_percent}%` }}
-                            />
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-
-            <section className="mb-6">
-              <h2 className="text-sm font-semibold mb-2 text-gray-900">Per-interface traffic</h2>
-              <div className="border border-gray-200 rounded-md overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50 text-gray-700 text-xs uppercase tracking-wider">
-                    <tr>
-                      <th className="text-left px-3 py-2 w-32">Interface</th>
-                      <th className="text-right px-3 py-2 w-28">In</th>
-                      <th className="text-right px-3 py-2 w-28">Out</th>
-                      <th className="text-right px-3 py-2 w-24">Pkts in</th>
-                      <th className="text-right px-3 py-2 w-24">Pkts out</th>
-                      <th className="text-right px-3 py-2 w-24">Errors</th>
-                      <th className="text-right px-3 py-2 w-24">Drops</th>
-                      <th className="text-left px-3 py-2 w-44">Rate (in / out)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.interfaces.map((iface) => {
-                      const rate = ifRates.get(iface.name)
-                      const rx = clipY(h.ifRx.get(iface.name) || [])
-                      const tx = clipY(h.ifTx.get(iface.name) || [])
-                      const maxRate = Math.max(...rx, ...tx, 1)
-                      return (
-                        <tr key={iface.name} className="border-t border-gray-200">
-                          <td className="px-3 py-2 font-mono">{iface.name}</td>
-                          <td className="px-3 py-2 text-right font-mono text-xs text-gray-800">{formatBytes(iface.rx_bytes)}</td>
-                          <td className="px-3 py-2 text-right font-mono text-xs text-gray-800">{formatBytes(iface.tx_bytes)}</td>
-                          <td className="px-3 py-2 text-right font-mono text-xs text-gray-800">{iface.rx_packets.toLocaleString('fr')}</td>
-                          <td className="px-3 py-2 text-right font-mono text-xs text-gray-800">{iface.tx_packets.toLocaleString('fr')}</td>
-                          <td className="px-3 py-2 text-right font-mono text-xs text-gray-800">{iface.rx_errors + iface.tx_errors}</td>
-                          <td className="px-3 py-2 text-right font-mono text-xs text-gray-800">{iface.rx_dropped + iface.tx_dropped}</td>
-                          <td className="px-3 py-2">
-                            <div className="flex items-center gap-2">
-                              <Sparkline values={rx} max={maxRate} color="#0891b2" width={70} height={24} />
-                              <Sparkline values={tx} max={maxRate} color="#ea580c" width={70} height={24} />
-                            </div>
-                            {rate && (
-                              <div className="font-mono text-[10px] text-gray-700 mt-0.5">
-                                <span className="text-cyan-800" title="Inbound">&darr; {formatRate(rate.rx)}</span>
-                                {' '}
-                                <span className="text-orange-800" title="Outbound">&uarr; {formatRate(rate.tx)}</span>
-                              </div>
-                            )}
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-
-            <section className="mb-6">
               <div className="flex items-center justify-between mb-2">
                 <h2 className="text-sm font-semibold text-gray-900">History</h2>
                 <div className="flex items-center gap-2">
@@ -393,6 +300,43 @@ export default function Monitoring() {
                     />
                   ))
                 })()}
+              </div>
+            </section>
+
+            <section className="mb-6">
+              <h2 className="text-sm font-semibold mb-2 text-gray-900">Storage</h2>
+              <div className="border border-gray-200 rounded-md overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 text-gray-700 text-xs uppercase tracking-wider">
+                    <tr>
+                      <th className="text-left px-3 py-2">Mount point</th>
+                      <th className="text-right px-3 py-2 w-28">Used</th>
+                      <th className="text-right px-3 py-2 w-28">Total</th>
+                      <th className="text-right px-3 py-2 w-20">%</th>
+                      <th className="text-left px-3 py-2">Usage</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.disks.map((d) => (
+                      <tr key={d.mount} className="border-t border-gray-200">
+                        <td className="px-3 py-2 font-mono">{d.mount}</td>
+                        <td className="px-3 py-2 text-right font-mono text-xs text-gray-800">{formatBytes(d.used_bytes)}</td>
+                        <td className="px-3 py-2 text-right font-mono text-xs text-gray-800">{formatBytes(d.total_bytes)}</td>
+                        <td className={`px-3 py-2 text-right font-mono text-xs font-semibold ${usageColor(d.used_percent)}`}>
+                          {d.used_percent.toFixed(1)}%
+                        </td>
+                        <td className="px-3 py-2">
+                          <div className="h-2 bg-gray-100 rounded overflow-hidden">
+                            <div
+                              className="h-full bg-gray-800"
+                              style={{ width: `${d.used_percent}%` }}
+                            />
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </section>
 
