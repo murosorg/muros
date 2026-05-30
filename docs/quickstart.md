@@ -66,7 +66,7 @@ Log in as `root` with the existing system root password (MurOS does not change i
 
 ## Step 4: configure the network (2 min)
 
-**Network** menu:
+**Network > Interfaces** menu:
 
 ### WAN interface
 
@@ -86,34 +86,37 @@ Log in as `root` with the existing system root password (MurOS does not change i
 
 ### Apply
 
-An orange banner appears at the top: **"2 unapplied network changes"**. Click **Apply**. A 60s countdown modal opens. Check that you still have UI access then **Confirm**.
+An orange banner appears at the top: **"2 unapplied network changes"**. Click **Apply**. A confirmation countdown modal opens (10s by default). Check that you still have UI access then **Confirm**.
 
 ---
 
 ## Step 5: firewall zones and rules (3 min)
 
-**Filtering > Zones** menu:
+**Firewall > Zones** menu:
 
 1. Add zone `wan`: select the WAN interface
 2. Add zone `lan`: select the LAN interface
 3. Save
 
-**Filtering > Rules** menu:
+**Firewall > Filter rules** menu. The default ruleset already drops
+everything in input and forward, so you add the rules that open what you
+need:
 
-Click **Load a preset** > **Basic firewall**:
+* `forward` `lan` -> `wan`, action accept (LAN reaches the Internet)
+* `input` `lan` -> firewall, tcp ports 22 and 443, action accept (SSH + UI from the LAN)
+* `input` `lan`, protocol icmp, action accept (ping the firewall from the LAN)
 
-* Blocks everything in INPUT/FORWARD by default
-* Allows LAN -> WAN (Internet outbound)
-* Allows LAN -> firewall on 22 (SSH) and 443 (UI)
-* Blocks WAN -> firewall except ICMP
+The WAN zone keeps no rule toward the firewall, so the box stays closed
+from the Internet.
 
-Click **Apply**. 60s countdown modal. **Confirm** once you have verified your SSH/UI still works.
+Click **Apply**. A confirmation countdown modal opens (10s by default).
+**Confirm** once you have verified your SSH/UI still works.
 
 ---
 
 ## Step 6: NAT for Internet outbound (1 min)
 
-**Filtering > NAT** menu:
+**Firewall > NAT** menu:
 
 Add a rule:
 * Type: `masquerade`
@@ -145,11 +148,11 @@ If everything responds, **your firewall is running.**
 ## Next steps (optional)
 
 * **WireGuard VPN**: VPN > WireGuard, generate a server key, add a peer
-* **TLS certificate**: HTTP Access menu > certificate, upload one or regenerate self-signed with your CN
-* **Notifications**: Notifications menu, configure your SMTP relay to receive alerts
-* **SNMP**: to monitor from LibreNMS/Zabbix
-* **HA**: if you have a 2nd identical firewall, pair them active/passive
-* **Remote backup**: System menu > back up to an SFTP target
+* **TLS certificate**: Administration > HTTP access, upload one or regenerate the self-signed cert with your CN
+* **Notifications**: Observability > Notifications, configure your SMTP smarthost to receive alerts
+* **SNMP**: Observability > SNMP, to monitor from LibreNMS/Zabbix
+* **HA**: Administration > High availability, if you have a 2nd firewall, pair them active/passive
+* **Remote backup**: System > Backups, push snapshots to an SSH/FTP target
 
 ---
 

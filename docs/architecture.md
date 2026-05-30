@@ -67,9 +67,9 @@ Every write action follows the same shape:
    target configuration file under `/etc/...`.
 3. **Reload.** `systemctl reload` or `restart` for the relevant daemon.
    For nftables we use `nft -f` so the kernel swap is atomic.
-4. **Auto-rollback.** Filter / NAT applies open a 30-second control
-   window. If the management session does not heartbeat back, MurOS
-   restores the previous ruleset from `/var/lib/muros/nftables.last`.
+4. **Auto-rollback.** Filter / NAT applies open a short control window
+   (10 seconds by default). If the operator does not confirm in the modal,
+   MurOS restores the previous ruleset from `/var/lib/muros/nftables.last`.
 
 For read paths, no Apply is needed: the routes hit `/proc`, `nft`,
 `conntrack`, `journalctl`, `ip -j ...` directly and stream results.

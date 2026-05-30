@@ -27,14 +27,14 @@ Go to **Network > Interfaces**, add:
 
 ## Step 2: Zones
 
-Go to **Network > Zones**, add:
+Go to **Firewall > Zones**, add:
 
 * `wan`: interface `eth0`
 * `lan`: interface `eth1`
 
 ## Step 3: NAT for Internet outbound
 
-Go to **Network > NAT**, add a SNAT (or masquerade) rule:
+Go to **Firewall > NAT**, add a SNAT (or masquerade) rule:
 
 * Source: zone `lan`
 * Destination: zone `wan`
@@ -45,7 +45,7 @@ Click **Apply**.
 
 ## Step 4: Forward rule LAN to WAN
 
-Go to **Filtering > Rules**, add:
+Go to **Firewall > Filter rules**, add:
 
 * Chain: `forward`
 * Source zone: `lan`
@@ -62,7 +62,7 @@ from the Internet to the LAN is therefore blocked by default.
 
 ## Step 6: Restricted admin SSH access
 
-In **Filtering > Rules**, add in order:
+In **Firewall > Filter rules**, add in order:
 
 1. Chain `input`, source IP `203.0.113.99/32`, port 22 tcp, action `accept`
 2. Chain `input`, port 22 tcp, action `drop`
@@ -78,7 +78,7 @@ are accepted.
 
 The web UI always listens on every interface; you decide who can reach it
 at the firewall, the same way you expose any other service. In
-**Firewall > Rules**, make sure the `wan` zone has no rule allowing the UI
+**Firewall > Filter rules**, make sure the `wan` zone has no rule allowing the UI
 ports (`80`/`443`) to the firewall, and keep an explicit rule allowing the
 `lan` zone to reach the firewall on those ports. The default ruleset
 already permits `lan -> firewall`, so the UI is reachable from the LAN and
@@ -90,7 +90,7 @@ previous ruleset.
 
 ## Step 9: Backup before going to production
 
-In **Backups**, click **Create a backup**.
+In **System > Backups**, click **Create a backup**.
 
 ## Next steps
 

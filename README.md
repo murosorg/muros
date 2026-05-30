@@ -62,7 +62,7 @@ To remove cleanly: `curl -fsSL https://apt.muros.org/uninstall.sh | sudo bash`.
 | VPN | WireGuard (config + peers) and IPsec (PSK/cert, integrated PKI) |
 | HA | VRRP, conntrackd, VIPs, inter-node DB sync, automatic takeover |
 | Monitoring | CPU/RAM/conntrack/traffic, SNMP, firewall logs, UI audit log |
-| Notifications | SMTP mail, event watcher, configurable postfix relay |
+| Notifications | Direct SMTP mail to an external smarthost, event watcher |
 | Backups | Local DB snapshot/restore, remote (rclone, ftp, ssh) |
 | Diagnostic | ping, traceroute, dig, tcpdump, conntrack from the UI |
 | System | Hostname, timezone/locale, DNS, apt updates, reboot/shutdown |

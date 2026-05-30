@@ -56,10 +56,12 @@ systemctl restart ssh
 
 ## I lost SSH or HTTPS access after a change
 
-MurOS implements **automatic 60s rollback** on changes that may lock you
-out of admin access:
+MurOS implements an **automatic rollback** on changes that may lock you
+out of admin access. After the apply, a confirmation modal opens with a
+short countdown (10s by default); if you do not confirm, the previous
+config is restored:
 
-| Action | Auto-rollback 60s |
+| Action | Auto-rollback |
 |---|---|
 | Apply firewall (nft) | YES |
 | Apply HTTP nginx (listen + ports) | YES |
@@ -74,7 +76,7 @@ config is restored automatically by a backend thread that scans for
 expired pending_apply records every 5 seconds.
 
 If you were blocked in the meantime:
-* Wait 60-90s, the previous config is restored
+* Wait for the countdown to expire (about 10s), the previous config is restored
 * Reconnect with the old parameters
 
 **Special case interfaces/routes**: if you change the admin interface IP
@@ -100,10 +102,10 @@ Check in order:
 
 1. **IP forwarding enabled**: `sysctl net.ipv4.ip_forward` must return `1`.
    Otherwise the MurOS drop-in `99-muros-hardening.conf` is not loaded.
-2. **NAT rule present**: in Network > NAT, masquerade or SNAT rule
+2. **NAT rule present**: in Firewall > NAT, masquerade or SNAT rule
    `lan` -> `wan` egressing on the WAN interface.
-3. **Forward rule**: in Filtering > Rules, `forward` `lan` -> `wan` rule
-   with action accept.
+3. **Forward rule**: in Firewall > Filter rules, `forward` `lan` -> `wan`
+   rule with action accept.
 4. **Apply done**: a pending "Apply" button means changes haven't been
    pushed yet.
 
@@ -138,7 +140,7 @@ curl -fsSL https://apt.muros.org/install.sh | sudo bash
 ```
 
 If you want to keep your config across reinstalls, export a backup first
-(Backups menu) and restore after reinstall.
+(System > Backups) and restore after reinstall.
 
 Starting from the first stable release, in-place upgrades will be supported and the
 schema will evolve via versioned migrations.
@@ -156,7 +158,7 @@ the SSH / console login at once.
 
 ## How to add an SSH key for root?
 
-Via the UI: **SSH Access** > "SSH keys allowed for root" section > paste
+Via the UI: **Administration > SSH access** > "SSH keys allowed for root" section > paste
 the public key (`ssh-ed25519 AAAA... comment`) > Add.
 
 The key is written to `/root/.ssh/authorized_keys` with correct perms.
@@ -169,14 +171,14 @@ From the firewall:
 sudo journalctl -u muros-backend -f
 ```
 
-Or see the UI action audit log in **Logs > UI actions**.
+Or see the UI action audit log in **Logs > Web actions**.
 
 ## How to export / import MurOS config from one firewall to another?
 
 Use **backups**:
 
-1. On source firewall: Backups > Create a backup > Download
-2. On destination firewall: Backups > Restore > Upload the .tar.gz
+1. On source firewall: System > Backups > Create a backup > Download
+2. On destination firewall: System > Backups > Restore > Upload the .tar.gz
 
 The full DB config is transferred. Note: UI TLS certs and WireGuard keys
 are **not** in the DB (they live on disk), you need to regenerate or copy
