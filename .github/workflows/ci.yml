@@ -43,7 +43,7 @@ jobs:
         # below the floor. The floor is deliberately conservative: it is
         # a ratchet against regressions, not a target. Raise it as more
         # of the codebase gets covered.
-        run: pytest -q --cov=app --cov-report=term-missing --cov-fail-under=35
+        run: pytest -q --cov=app --cov-report=term-missing --cov-fail-under=38
 
   frontend:
     name: frontend (tsc + vite)
