@@ -4,7 +4,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-## [v0.9.0-rc79] - 2026-05-30
+## [v0.9.0-rc80] - 2026-05-30
 
 ### Removed
 - Dead `service_id` field on the synthetic "Default policy" row in the
