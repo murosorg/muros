@@ -137,13 +137,20 @@ jobs:
               apt-get update -qq
               apt-get install -y --no-install-recommends systemd systemd-sysv dbus
               exec /sbin/init'
+          # "degraded" is fine: some units (e.g. optional ones) may not
+          # start in a container, but the system is up enough to install
+          # and exercise the package. is-system-running returns non-zero
+          # for "degraded", so we match on the state string, not the code.
+          state=""
           for i in $(seq 1 60); do
             state=$(docker exec muros systemctl is-system-running 2>/dev/null || true)
             case "$state" in running|degraded) echo "systemd: $state"; break;; esac
             sleep 2
           done
-          docker exec muros systemctl is-system-running 2>/dev/null || \
-            { echo "systemd did not come up"; docker logs muros | tail -30; exit 1; }
+          case "$state" in
+            running|degraded) ;;
+            *) echo "systemd did not come up: '$state'"; docker logs muros | tail -40; exit 1 ;;
+          esac
       - name: Install the freshly built .deb
         run: |
           docker exec muros bash -c 'apt-get update -qq'
