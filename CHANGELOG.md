@@ -4,7 +4,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-## [v0.9.0-rc88] - 2026-05-30
+## [v0.9.0-rc89] - 2026-05-30
 
 ### Removed
 - Dead WireGuard helper cluster in `wireguard.py` (`next_free_peer_ip`
