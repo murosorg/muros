@@ -815,13 +815,13 @@ class HaSyncConfig(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
     enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    # URL du peer (autre noeud), ex: https://muros-backup.local
+    # Peer URL (other node), e.g. https://muros-backup.local
     peer_url: Mapped[str] = mapped_column(String(256), default="", nullable=False)
-    # Token partage entre les 2 noeuds (long secret, identique des deux cotes).
+    # Token shared between the 2 nodes (long secret, identical on both sides).
     peer_token: Mapped[str] = mapped_column(String(128), default="", nullable=False)
-    # auto = push apres chaque apply, manual = bouton uniquement
+    # auto = push after each apply, manual = button only
     sync_mode: Mapped[str] = mapped_column(String(16), default="auto", nullable=False)
-    # On verifie le cert TLS du peer ? (false pour les cert snakeoil par defaut)
+    # Do we verify the peer's TLS cert? (false for snakeoil certs by default)
     verify_tls: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
@@ -888,15 +888,15 @@ class HaVip(Base):
     __tablename__ = "ha_vips"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    # VRID : 1-255, doit etre unique sur le segment L2
+    # VRID: 1-255, must be unique on the L2 segment
     vrid: Mapped[int] = mapped_column(Integer, nullable=False)
-    # Interface ou la VIP est exposee (eth0, lan, ...)
+    # Interface where the VIP is exposed (eth0, lan, ...)
     interface: Mapped[str] = mapped_column(String(32), nullable=False)
-    # VIP au format CIDR (ex: 192.0.2.10/24)
+    # VIP in CIDR format (e.g. 192.0.2.10/24)
     vip_cidr: Mapped[str] = mapped_column(String(64), nullable=False)
-    # Mot de passe VRRP (8 chars max, tronque par keepalived)
+    # VRRP password (8 chars max, truncated by keepalived)
     auth_pass: Mapped[str] = mapped_column(String(32), default="muros", nullable=False)
-    # Priorite override (sinon defaut role-dependant)
+    # Priority override (otherwise role-dependent default)
     priority: Mapped[int | None] = mapped_column(Integer)
     description: Mapped[str | None] = mapped_column(String(255))
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

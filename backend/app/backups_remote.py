@@ -56,7 +56,7 @@ def _ensure_dir() -> None:
 
 
 def get_config() -> dict[str, Any]:
-    """Charge la config. Retourne les defauts si pas de fichier."""
+    """Load the config. Return the defaults if there is no file."""
     _ensure_dir()
     if not CONFIG_PATH.is_file():
         return dict(DEFAULT_CONFIG)
@@ -79,7 +79,7 @@ def _save(cfg: dict[str, Any]) -> None:
             f"impossible d'ecrire {CONFIG_PATH} : {exc}. Verifier les droits "
             f"sur {BACKUP_DIR} (en dev, exporter MUROS_BACKUP_DIR=/tmp/muros)."
         ) from exc
-    # 0600 : la conf reference une cle SSH, on protege.
+    # 0600: the config references an SSH key, we protect it.
     try:
         os.chmod(CONFIG_PATH, 0o600)
     except OSError:
@@ -138,7 +138,7 @@ def _resolve_backup(name: str) -> Path:
 
 
 def _build_rsync_cmd(cfg: dict[str, Any], src: Path) -> list[str]:
-    """Construit la commande rsync avec une SSH custom (port + cle)."""
+    """Build the rsync command with a custom SSH (port + key)."""
     ssh_parts = [
         "ssh",
         "-p", str(cfg["port"]),
@@ -220,7 +220,7 @@ def generate_ssh_key(force: bool = False) -> dict:
     pub_path = key_path.with_suffix(key_path.suffix + ".pub") if key_path.suffix else Path(str(key_path) + ".pub")
 
     if key_path.exists() and not force:
-        # On retourne la cle publique existante, l'admin la veut surement
+        # Return the existing public key, the admin most likely wants it
         pub = ""
         try:
             pub = pub_path.read_text(encoding="utf-8").strip()
@@ -235,11 +235,11 @@ def generate_ssh_key(force: bool = False) -> dict:
         }
 
     # Note : on ne gate PAS la generation par MUROS_APPLY.
-    # ssh-keygen ne touche pas au noyau, c'est juste un fichier dans
-    # un dossier dedie. L'admin a besoin de pouvoir generer la cle meme
+    # ssh-keygen does not touch the kernel, it is just a file in a dedicated
+    # directory. The admin needs to be able to generate the key even
     # en mode dry-run pour la preparer avant le passage en prod.
 
-    # Cree le dossier parent en 0700 (la cle privee doit etre protegee)
+    # Create the parent directory with 0700 (the private key must be protected)
     try:
         key_path.parent.mkdir(parents=True, exist_ok=True)
     except PermissionError as exc:
@@ -290,7 +290,7 @@ def generate_ssh_key(force: bool = False) -> dict:
 
 
 def get_public_key() -> dict:
-    """Retourne la cle publique si elle existe deja, sans la regenerer."""
+    """Return the public key if it already exists, without regenerating it."""
     cfg = get_config()
     key_path = Path(cfg.get("ssh_key_path") or DEFAULT_CONFIG["ssh_key_path"])
     pub_path = Path(str(key_path) + ".pub")
