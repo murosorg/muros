@@ -18,17 +18,17 @@ from app.apply import APPLY_ENABLED
 
 DROPIN_PATH = Path(os.environ.get("MUROS_SYSCTL_PATH", "/etc/sysctl.d/99-muros-hardening.conf"))
 
-# Cles geres + valeur recommandee. L'ordre est preserve dans le fichier ecrit.
-# On distingue :
-# - cles "fonctionnelles" (ip_forward...) : indispensables pour qu'un firewall
-#   fasse son boulot de transit. Sans elles, le boitier n'achemine rien.
-# - cles "securite" : durcissement contre spoofing, floods, redirects.
-# Principe : on ne gere QUE les cles ou Debian 13 stock != valeur necessaire
-# pour un firewall. Tout ce qui est deja durci par defaut sur Debian
+# Managed keys + recommended value. The order is preserved in the written file.
+# We distinguish:
+# - "functional" keys (ip_forward...): required for a firewall to do its
+#   transit job. Without them, the box forwards nothing.
+# - "security" keys: hardening against spoofing, floods, redirects.
+# Principle: we manage ONLY the keys where Debian 13 stock != the value a
+# firewall needs. Everything already hardened by default on Debian
 # (syncookies, source_route, icmp_echo_ignore_broadcasts, somaxconn 4096...)
-# est laisse au noyau/systemd, on ne le pin pas dans la drop-in MurOS.
+# is left to the kernel/systemd, we do not pin it in the MurOS drop-in.
 RECOMMENDED: dict[str, str] = {
-    # Forwarding : la base d'un firewall. Debian par defaut = 0.
+    # Forwarding: the basis of a firewall. Debian default = 0.
     "net.ipv4.ip_forward": "1",
     "net.ipv6.conf.all.forwarding": "1",
     "net.ipv6.conf.default.forwarding": "1",
@@ -45,8 +45,8 @@ RECOMMENDED: dict[str, str] = {
     "net.ipv4.conf.all.rp_filter": "1",
     "net.ipv4.conf.default.rp_filter": "1",
 
-    # ICMP redirects : Debian par defaut accept=1 et send=1 (host classique).
-    # Un firewall n'a aucune raison d'en accepter ni d'en emettre.
+    # ICMP redirects: Debian default accept=1 and send=1 (classic host).
+    # A firewall has no reason to accept or emit them.
     "net.ipv4.conf.all.accept_redirects": "0",
     "net.ipv4.conf.default.accept_redirects": "0",
     "net.ipv4.conf.all.send_redirects": "0",
@@ -200,8 +200,9 @@ def get_status() -> dict:
     }
 
 
-# Le drop-in /etc/sysctl.d/99-muros-hardening.conf est livre par le paquet
-# et applique au postinst via `sysctl --system`. MurOS n'expose plus
-# d'endpoint d'apply/reset depuis l'UI : c'est une garantie structurelle de
-# l'appliance, pas un parametre configurable. Le module garde uniquement
-# `get_status` pour les checks de diagnostic.
+# The drop-in /etc/sysctl.d/99-muros-hardening.conf is shipped by the package
+# and applied at postinst via `sysctl --system`. MurOS no longer exposes an
+# apply/reset endpoint from the UI: it is a structural guarantee of the
+# appliance, not a configurable setting. The module only keeps `get_status`
+# for diagnostic checks.
+stic checks.

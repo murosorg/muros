@@ -77,7 +77,7 @@ def apply_route(route: models.StaticRoute, action: str) -> tuple[int, str]:
 
 
 def apply_all_routes(db: Session) -> None:
-    """Applique toutes les routes activees (au demarrage par exemple)."""
+    """Apply all enabled routes (at startup for example)."""
     routes = (
         db.query(models.StaticRoute)
         .options(joinedload(models.StaticRoute.interface))
@@ -87,7 +87,7 @@ def apply_all_routes(db: Session) -> None:
     for r in routes:
         rc, msg = apply_route(r, "replace")
         if rc != 0 and msg:
-            log.warning("Echec route %s: %s", r.destination, msg)
-    # Pas de fichier de persistance : muros-boot relit la DB et rejoue
-    # apply_all_routes au boot, source unique = DB SQLite.
+            log.warning("Route failed %s: %s", r.destination, msg)
+    # No persistence file: muros-boot re-reads the DB and replays
+    # apply_all_routes at boot, single source = SQLite DB.
 

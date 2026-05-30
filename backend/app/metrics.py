@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (c) 2026 MurOS contributors.
-"""Collecte de metriques systeme par lecture directe de /proc.
+"""Collect system metrics by reading /proc directly.
 
-Approche minimaliste : on n'embarque pas node_exporter, on lit ce dont
-on a besoin pour l'UI. Le calcul du CPU se fait sur la difference entre
-deux echantillons stockes en memoire.
+Minimalist approach: we do not bundle node_exporter, we read only what
+the UI needs. CPU usage is computed from the difference between two
+samples kept in memory.
 """
 import os
 import time
@@ -80,7 +80,7 @@ def _read_int(path: str) -> int:
 
 
 def _cpu_totals() -> tuple[int, int]:
-    """Retourne (total, idle) depuis /proc/stat ligne 'cpu '."""
+    """Return (total, idle) from the /proc/stat 'cpu ' line."""
     raw = _read_proc("stat")
     for line in raw.splitlines():
         if not line.startswith("cpu "):
@@ -228,9 +228,9 @@ def interfaces_stats() -> list[NetInterfaceStats]:
             continue
         # rx: bytes packets errs drop fifo frame compressed multicast
         # tx: bytes packets errs drop fifo colls carrier compressed
-        # Lit l'etat de lien depuis sysfs (up/down/unknown). Cas particulier
-        # 'lo' = loopback, marquee 'unknown' par le noyau mais toujours
-        # operationnelle ; on la considere up.
+        # Read the link state from sysfs (up/down/unknown). Special case
+        # 'lo' = loopback, marked 'unknown' by the kernel but always
+        # operational; we consider it up.
         try:
             with open(f"/sys/class/net/{name}/operstate", encoding="ascii") as fh:
                 operstate = fh.read().strip()

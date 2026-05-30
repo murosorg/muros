@@ -1,7 +1,7 @@
-"""Lecture de l'etat du systeme (interfaces reseau, etc).
+"""Read the system state (network interfaces, etc).
 
-Les appels passent par `ip -j` (sortie JSON) plutot que parser du texte.
-Les appels sont readonly, pas de modification du systeme depuis ce module.
+Calls go through `ip -j` (JSON output) rather than parsing text.
+Calls are read-only, no system modification from this module.
 """
 import json
 import subprocess

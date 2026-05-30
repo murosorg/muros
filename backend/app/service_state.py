@@ -24,26 +24,26 @@ def which(cmd: str) -> bool:
 
 
 def is_active(unit: str) -> bool:
-    """True si `systemctl is-active <unit>` renvoie 'active'.
+    """True if `systemctl is-active <unit>` returns 'active'.
 
-    Faux dans tous les autres cas (inactive, failed, unknown, systemctl
-    absent). Pour avoir le detail de l'etat, utiliser `service_state()`.
+    False in all other cases (inactive, failed, unknown, systemctl
+    missing). For the detailed state, use `service_state()`.
     """
     return service_state(unit) == "active"
 
 
 def pkg_version(package: str, label: str | None = None) -> str | None:
-    """Retourne la version installee d'un paquet Debian, ou None.
+    """Return the installed version of a Debian package, or None.
 
-    Source unique de verite pour toutes les versions affichees dans l'UI
-    MurOS. On prefere dpkg-query au `<binaire> --version` parce que :
-      - c'est instantane (pas de fork de binaire),
-      - ca marche meme si le binaire imprime des warnings de plugin sur
-        stderr ou sort en code != 0 (cas reel avec swanctl sur Debian),
-      - c'est la VRAIE version installee, identique a ce que voit apt.
+    Single source of truth for every version displayed in the MurOS UI.
+    We prefer dpkg-query over `<binary> --version` because:
+      - it is instant (no binary fork),
+      - it works even if the binary prints plugin warnings on stderr or
+        exits with a non-zero code (real case with swanctl on Debian),
+      - it is the REAL installed version, identical to what apt sees.
 
-    `label` est le prefixe humain (ex: "strongSwan"). Si non fourni, on
-    utilise le nom du paquet.
+    `label` is the human prefix (e.g. "strongSwan"). If not provided, the
+    package name is used.
     """
     if not which("dpkg-query"):
         return None
@@ -60,8 +60,8 @@ def pkg_version(package: str, label: str | None = None) -> str | None:
     if "\t" not in line:
         return None
     status, version = line.split("\t", 1)
-    # On exige que le paquet soit reellement installe (pas juste connu de
-    # dpkg, type "config-files" apres remove sans purge).
+    # We require the package to be really installed (not just known to
+    # dpkg, e.g. "config-files" after remove without purge).
     if not status.startswith("install ok installed"):
         return None
     version = version.strip()

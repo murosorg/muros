@@ -368,6 +368,20 @@ KEAEOF
       if systemctl list-unit-files unbound.service >/dev/null 2>&1; then
         systemctl unmask unbound.service 2>/dev/null || true
         systemctl reset-failed unbound.service 2>/dev/null || true
+        # Provision the DNSSEC root trust anchor before the first start.
+        # The stock Debian config loads root-auto-trust-anchor-file.conf,
+        # which points at /var/lib/unbound/root.key. On a fresh box that
+        # file does not exist yet and Unbound refuses to start without it,
+        # so the service would silently land in "inactive/failed". Bootstrap
+        # it with unbound-anchor (best-effort: it exits 1 when it updates
+        # the anchor, which is the normal case, hence the `|| true`).
+        install -d -m 0755 -o unbound -g unbound /var/lib/unbound 2>/dev/null \
+          || install -d -m 0755 /var/lib/unbound
+        if [ ! -s /var/lib/unbound/root.key ] \
+           && command -v unbound-anchor >/dev/null 2>&1; then
+          unbound-anchor -a /var/lib/unbound/root.key 2>/dev/null || true
+          chown unbound:unbound /var/lib/unbound/root.key 2>/dev/null || true
+        fi
         systemctl enable --now unbound.service 2>/dev/null || true
       fi
 
