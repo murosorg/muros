@@ -110,7 +110,7 @@ def install_packages() -> dict:
 
     if os.geteuid() != 0:
         raise RuntimeError(
-            "Installation impossible : MurOS doit tourner en root. "
+            "Installation impossible: MurOS must run as root. "
             f"Installer manuellement : apt install -y {' '.join(WG_PACKAGES)}"
         )
 
@@ -128,7 +128,7 @@ def install_packages() -> dict:
     )
     if proc_update.returncode != 0:
         raise RuntimeError(
-            f"apt-get update a echoue : {(proc_update.stderr or '').strip()[:400]}"
+            f"apt-get update failed: {(proc_update.stderr or '').strip()[:400]}"
         )
 
     proc = subprocess.run(
@@ -137,13 +137,13 @@ def install_packages() -> dict:
     )
     if proc.returncode != 0:
         raise RuntimeError(
-            f"apt-get install a echoue (code {proc.returncode}) : "
+            f"apt-get install failed (code {proc.returncode}): "
             f"{(proc.stderr or '').strip()[:400]}"
         )
 
     if not (_which("wg") and _which("wg-quick")):
         raise RuntimeError(
-            f"Binaires absents apres install : wg/wg-quick. Sortie : {proc.stdout[-400:]}"
+            f"Binaries missing after install: wg/wg-quick. Output: {proc.stdout[-400:]}"
         )
 
     return {
@@ -221,7 +221,7 @@ def render_config(cfg, peers: list) -> str:
     """
     if not cfg.private_key or not cfg.address_cidr:
         raise ValueError(
-            "Config incomplete : cle privee et adresse CIDR requises."
+            "Incomplete config: private key and CIDR address required."
         )
 
     lines: list[str] = [

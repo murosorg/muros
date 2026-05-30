@@ -229,7 +229,7 @@ def apply_config(config: dict, vips: list[dict], *,
         CONNTRACKD_CONF.parent.mkdir(parents=True, exist_ok=True)
         CONNTRACKD_CONF.write_text(cd)
 
-    # Tests de validite avant restart
+    # Validity tests before restart
     try:
         subprocess.check_output(
             ["keepalived", "-t", "-f", str(KEEPALIVED_CONF)],
@@ -237,7 +237,7 @@ def apply_config(config: dict, vips: list[dict], *,
         )
     except subprocess.CalledProcessError as exc:
         raise RuntimeError(
-            f"keepalived a refuse la conf : {exc.output.decode('utf-8', 'ignore')}"
+            f"keepalived refused the config: {exc.output.decode('utf-8', 'ignore')}"
         ) from exc
     except FileNotFoundError:
         raise RuntimeError("keepalived non installe sur ce systeme")
@@ -250,15 +250,15 @@ def apply_config(config: dict, vips: list[dict], *,
     return {
         "applied": True,
         "dry_run": False,
-        "message": "HA appliquee, keepalived rechargee et conntrackd redemarree.",
+        "message": "HA applied, keepalived reloaded and conntrackd restarted.",
     }
 
 
 def _detect_local_ip(iface: str) -> str:
-    """Recupere la premiere IPv4 attachee a l'interface."""
-    # Garde-fou : iface vide ou whitespace -> on ne lance pas `ip` sur
-    # un device "" (sinon stderr "Device \"\" does not exist." dans le
-    # journal). On raise direct un message clair.
+    """Get the first IPv4 attached to the interface."""
+    # Guard: empty or whitespace iface -> do not run `ip` on a device ""
+    # (otherwise stderr "Device \"\" does not exist." in the journal).
+    # We raise a clear message directly.
     iface = (iface or "").strip()
     if not iface:
         raise RuntimeError(
@@ -278,17 +278,17 @@ def _detect_local_ip(iface: str) -> str:
     except (subprocess.SubprocessError, FileNotFoundError):
         pass
     raise RuntimeError(
-        f"aucune IPv4 trouvee sur l'interface de sync {iface!r}, "
-        "impossible de generer conntrackd.conf"
+        f"no IPv4 found on the sync interface {iface!r}, "
+        "cannot generate conntrackd.conf"
     )
 
 
 def _reload_or_restart(service: str, *, defer_start: bool = False) -> None:
     if defer_start:
-        # Au boot, on se contente d'enable : systemd demarrera l'unit
-        # apres muros-boot une fois network-online.target atteinte. Un
-        # reload/restart explicite ici n'apporte rien et risquerait un
-        # double demarrage.
+        # At boot, we only enable: systemd will start the unit after
+        # muros-boot once network-online.target is reached. An explicit
+        # reload/restart here brings nothing and could cause a double
+        # startup.
         _restart(service, defer_start=True)
         return
     try:
@@ -299,14 +299,14 @@ def _reload_or_restart(service: str, *, defer_start: bool = False) -> None:
 
 def _restart(service: str, *, defer_start: bool = False) -> None:
     try:
-        # enable (sans --now) : persistance, ne touche pas au runtime,
-        # ne depend d'aucune target -> safe en contexte boot.
+        # enable (without --now): persistence, does not touch the runtime,
+        # depends on no target -> safe in boot context.
         subprocess.check_call(["systemctl", "enable", service], timeout=5)
         if defer_start:
-            # En contexte boot, --no-block enqueue le restart : la
-            # commande rend la main tout de suite, systemd executera le
-            # demarrage apres muros-boot. Sans --no-block, on attend
-            # network-online.target qui attend muros-boot -> deadlock.
+            # In boot context, --no-block enqueues the restart: the command
+            # returns immediately, systemd will run the startup after
+            # muros-boot. Without --no-block, we wait on
+            # network-online.target which waits on muros-boot -> deadlock.
             subprocess.check_call(
                 ["systemctl", "--no-block", "restart", service], timeout=5,
             )
@@ -364,7 +364,7 @@ def install_packages() -> dict:
 
     if os.geteuid() != 0:
         raise RuntimeError(
-            "Installation des paquets impossible : MurOS doit tourner en root "
+            "Package installation impossible: MurOS must run as root "
             "pour utiliser apt-get. Lancez le service en tant que root ou "
             "installez les paquets manuellement : "
             f"apt install -y {' '.join(missing)}"
@@ -382,14 +382,14 @@ def install_packages() -> dict:
 
     env = {**os.environ, "DEBIAN_FRONTEND": "noninteractive", "LC_ALL": "C"}
 
-    # apt-get update d'abord, sinon installation peut echouer sur un cache vieux.
+    # apt-get update first, otherwise installation may fail on a stale cache.
     proc_update = subprocess.run(
         ["apt-get", "update", "-q"],
         env=env, capture_output=True, text=True, timeout=120,
     )
     if proc_update.returncode != 0:
         raise RuntimeError(
-            f"apt-get update a echoue (code {proc_update.returncode}) : "
+            f"apt-get update failed (code {proc_update.returncode}): "
             f"{(proc_update.stderr or '').strip()[:400]}"
         )
 
@@ -399,7 +399,7 @@ def install_packages() -> dict:
     )
     if proc.returncode != 0:
         raise RuntimeError(
-            f"apt-get install a echoue (code {proc.returncode}) : "
+            f"apt-get install failed (code {proc.returncode}): "
             f"{(proc.stderr or '').strip()[:400]}"
         )
 
@@ -407,8 +407,8 @@ def install_packages() -> dict:
     still_missing = [p for p in missing if not _which(p)]
     if still_missing:
         raise RuntimeError(
-            f"Paquets toujours absents apres install : {', '.join(still_missing)}. "
-            f"Sortie apt : {proc.stdout[-400:]}"
+            f"Packages still missing after install: {', '.join(still_missing)}. "
+            f"apt output: {proc.stdout[-400:]}"
         )
 
     return {
@@ -419,7 +419,7 @@ def install_packages() -> dict:
     }
 
 
-# --- Status (lecture seule) ---
+# --- Status (read-only) ---
 
 def _keepalived_version() -> str | None:
     from app.service_state import pkg_version
@@ -452,9 +452,9 @@ from app.service_state import is_active as _systemd_active, which as _which  # n
 
 
 def _read_vrrp_state() -> list[dict]:
-    """keepalived peut dumper son etat en envoyant SIGUSR1 (cree /tmp/keepalived.data).
-    On evite d'envoyer un signal a chaque requete, on parse les journaux a la place.
-    Fallback : on regarde quelles VIP sont attachees au noyau via `ip -4 addr`.
+    """keepalived can dump its state by sending SIGUSR1 (creates /tmp/keepalived.data).
+    We avoid sending a signal on every request and parse the journal instead.
+    Fallback: we look at which VIPs are attached to the kernel via `ip -4 addr`.
     """
     state: list[dict] = []
     try:

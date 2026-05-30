@@ -55,11 +55,11 @@ def get_vrrp_role() -> str:
 
     STANDALONE = keepalived n'est pas configure (pas de HA).
     """
-    # Methode 1 : fichier ecrit par le hook keepalived.
+    # Method 1: file written by the keepalived hook.
     if VRRP_STATE_FILE.exists():
         try:
             content = VRRP_STATE_FILE.read_text(encoding="utf-8").strip()
-            # Format attendu : "<instance> <state>" ou juste "<state>"
+            # Expected format: "<instance> <state>" or just "<state>"
             parts = content.split()
             if parts:
                 state = parts[-1].upper()
@@ -68,7 +68,7 @@ def get_vrrp_role() -> str:
         except OSError:
             pass
 
-    # Methode 2 : parse de la sortie keepalived via journalctl (heuristique).
+    # Method 2: parse the keepalived output via journalctl (heuristic).
     try:
         r = subprocess.run(
             ["systemctl", "is-active", "keepalived"],
@@ -79,13 +79,13 @@ def get_vrrp_role() -> str:
     except (subprocess.SubprocessError, FileNotFoundError):
         return "STANDALONE"
 
-    # keepalived tourne mais pas de fichier d'etat : suppose MASTER par defaut
-    # (le hook n'a pas encore declenche).
+    # keepalived is running but no state file: assume MASTER by default
+    # (the hook has not fired yet).
     return "MASTER"
 
 
 def is_writable_role() -> bool:
-    """True si le noeud peut accepter des ecritures (MASTER ou STANDALONE)."""
+    """True if the node can accept writes (MASTER or STANDALONE)."""
     role = get_vrrp_role()
     return role in ("MASTER", "STANDALONE")
 
@@ -114,7 +114,7 @@ def _read_db_bytes() -> bytes:
     if not db_path.exists():
         raise RuntimeError(f"DB not found : {db_path}")
 
-    # Checkpoint WAL pour avoir une DB complete dans le fichier principal.
+    # Checkpoint WAL to get a complete DB in the main file.
     try:
         import sqlite3
         conn = sqlite3.connect(str(db_path), timeout=5)
@@ -167,7 +167,7 @@ def test_connection(cfg: models.HaSyncConfig) -> dict:
     headers = {"X-Muros-Sync-Token": cfg.peer_token}
     status, body = _http_get(url, headers, cfg.verify_tls, timeout=5)
     if status != 200:
-        raise RuntimeError(f"Peer a repondu {status} : {body.decode('utf-8', errors='replace')[:200]}")
+        raise RuntimeError(f"Peer responded {status}: {body.decode('utf-8', errors='replace')[:200]}")
     import json
     try:
         data = json.loads(body)
@@ -186,7 +186,7 @@ def push_to_peer(db: Session, cfg: models.HaSyncConfig, triggered_by: str = "man
     if not cfg.peer_url or not cfg.peer_token:
         raise RuntimeError("Peer URL or token missing.")
     if not is_writable_role():
-        raise RuntimeError("Ce noeud n'est pas MASTER, push refuse.")
+        raise RuntimeError("This node is not MASTER, push refused.")
 
     started = time.time()
     db_bytes = b""
@@ -194,7 +194,7 @@ def push_to_peer(db: Session, cfg: models.HaSyncConfig, triggered_by: str = "man
 
     try:
         db_bytes = _read_db_bytes()
-        # Calcul HMAC-SHA256 du contenu avec le token comme cle.
+        # Compute HMAC-SHA256 of the content with the token as the key.
         sig = hmac.new(
             cfg.peer_token.encode("utf-8"), db_bytes, hashlib.sha256,
         ).hexdigest()
@@ -210,7 +210,7 @@ def push_to_peer(db: Session, cfg: models.HaSyncConfig, triggered_by: str = "man
         )
         if status != 200:
             raise RuntimeError(
-                f"Peer a repondu {status} : {body.decode('utf-8', errors='replace')[:300]}"
+                f"Peer responded {status}: {body.decode('utf-8', errors='replace')[:300]}"
             )
     except Exception as exc:  # noqa: BLE001
         error = str(exc)[:500]
@@ -239,7 +239,7 @@ def push_to_peer(db: Session, cfg: models.HaSyncConfig, triggered_by: str = "man
     }
 
 
-# --- Receive : reception de la DB depuis le peer ---
+# --- Receive: receiving the DB from the peer ---
 
 def receive_from_peer(cfg: models.HaSyncConfig, signature: str, body: bytes) -> dict:
     """Recoit une DB sqlite du peer.
@@ -248,9 +248,9 @@ def receive_from_peer(cfg: models.HaSyncConfig, signature: str, body: bytes) -> 
     Le service backend doit etre redemarre apres (caller responsability).
     """
     if not cfg.enabled:
-        raise RuntimeError("Synchronisation HA desactivee sur ce noeud.")
+        raise RuntimeError("HA synchronization disabled on this node.")
     if not cfg.peer_token:
-        raise RuntimeError("Token de sync non configure sur ce noeud.")
+        raise RuntimeError("Sync token not configured on this node.")
 
     expected_sig = hmac.new(
         cfg.peer_token.encode("utf-8"), body, hashlib.sha256,
@@ -269,7 +269,7 @@ def receive_from_peer(cfg: models.HaSyncConfig, signature: str, body: bytes) -> 
         return {
             "received": True,
             "applied": False,
-            "reason": "dry-run (MUROS_APPLY off), DB recue non ecrite.",
+            "reason": "dry-run (MUROS_APPLY off), received DB not written.",
             "size_bytes": len(body),
         }
 
@@ -286,7 +286,7 @@ def receive_from_peer(cfg: models.HaSyncConfig, signature: str, body: bytes) -> 
         except OSError as exc:
             log.warning("Backup pre-sync impossible : %s", exc)
 
-    # Ecriture atomique : on ecrit dans un .tmp puis on remplace.
+    # Atomic write: write to a .tmp then replace.
     tmp_path = db_path.with_suffix(".db.tmp")
     tmp_path.write_bytes(body)
     os.chmod(tmp_path, 0o600)
@@ -318,15 +318,15 @@ def _rotate_log(db: Session, keep: int = 50) -> None:
         db.commit()
 
 
-# --- Auto-push apres apply ---
+# --- Auto-push after apply ---
 
 _AUTO_PUSH_RUNNING = False
 
 
 def maybe_auto_push(db: Session, triggered_by: str = "apply") -> None:
-    """A appeler apres chaque apply de conf.
+    """To call after each config apply.
 
-    Push silencieux vers le peer si sync_mode=auto et qu'on est MASTER.
+    Silent push to the peer if sync_mode=auto and we are MASTER.
     Erreurs loguees mais pas remontees a l'appelant (best-effort).
     """
     global _AUTO_PUSH_RUNNING
@@ -345,3 +345,4 @@ def maybe_auto_push(db: Session, triggered_by: str = "apply") -> None:
         log.warning("Auto-push HA echec : %s", exc)
     finally:
         _AUTO_PUSH_RUNNING = False
+

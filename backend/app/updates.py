@@ -280,10 +280,10 @@ def check_all() -> dict:
 def check_updates() -> dict:
     """Lance `apt-get update` + `apt list --upgradable`."""
     env = {**os.environ, "DEBIAN_FRONTEND": "noninteractive", "LC_ALL": "C"}
-    # Timeout agressif : sur un firewall en prod, si apt-get update n'a
-    # pas repondu en 25s, c'est que DNS est HS ou un mirror down. Mieux
-    # vaut echouer vite avec un message clair que de bloquer un worker
-    # FastAPI 2 minutes (ce qui finit par saturer tout le thread pool).
+    # Aggressive timeout: on a production firewall, if apt-get update has not
+    # responded within 25s, DNS is down or a mirror is down. Better to fail
+    # fast with a clear message than to block a FastAPI worker for 2 minutes
+    # (which ends up saturating the whole thread pool).
     try:
         update = subprocess.run(
             ["apt-get", "update", "-q"],
@@ -291,28 +291,28 @@ def check_updates() -> dict:
         )
     except subprocess.TimeoutExpired:
         raise RuntimeError(
-            "apt-get update n'a pas repondu en 25s. Verifiez que la "
-            "resolution DNS fonctionne (Systeme > DNS) et que les "
-            "mirrors Debian sont joignables."
+            "apt-get update did not respond within 25s. Check that DNS "
+            "resolution works (System > DNS) and that the Debian mirrors "
+            "are reachable."
         )
     if update.returncode != 0:
         stderr = (update.stderr or "").strip()
         if os.geteuid() != 0:
             raise RuntimeError(
-                "apt-get update a echoue : MurOS doit tourner avec les droits root "
-                "pour gerer les mises a jour. "
-                f"Sortie : {stderr[:400] or 'aucune'}"
+                "apt-get update failed: MurOS must run with root privileges "
+                "to manage updates. "
+                f"Output: {stderr[:400] or 'none'}"
             )
-        raise RuntimeError(f"apt-get update code {update.returncode} : {stderr[:400]}")
+        raise RuntimeError(f"apt-get update code {update.returncode}: {stderr[:400]}")
     try:
         listing = subprocess.run(
             ["apt", "list", "--upgradable"],
             env=env, capture_output=True, text=True, timeout=12,
         )
     except subprocess.TimeoutExpired:
-        raise RuntimeError("apt list --upgradable n'a pas repondu en 12s.")
+        raise RuntimeError("apt list --upgradable did not respond within 12s.")
     if listing.returncode != 0:
-        raise RuntimeError(f"apt list --upgradable a echoue : {(listing.stderr or '').strip()[:400]}")
+        raise RuntimeError(f"apt list --upgradable failed: {(listing.stderr or '').strip()[:400]}")
     out = listing.stdout
 
     packages = []
@@ -354,7 +354,7 @@ def install_updates() -> dict:
             cmd, env=env, capture_output=True, text=True, timeout=900,
         )
     except (subprocess.SubprocessError, FileNotFoundError) as exc:
-        raise RuntimeError(f"apt-get install a echoue : {exc}") from exc
+        raise RuntimeError(f"apt-get install failed: {exc}") from exc
     if proc.returncode != 0:
         raise RuntimeError(
             f"apt-get install code {proc.returncode}: {proc.stderr[:400]}"
@@ -544,15 +544,15 @@ def get_muros_install_progress() -> dict:
                 if log_tail and "# done" in log_tail:
                     state = "done"
                 elif "Setting up muros" in log_tail or "Unpacking muros" in log_tail:
-                    # On a vu apt manipuler le paquet, le service tournait,
-                    # il est sorti propre.
+                    # We saw apt handle the package, the service was running,
+                    # it exited cleanly.
                     state = "done"
                 else:
                     state = "idle"
         except (subprocess.SubprocessError, FileNotFoundError):
             state = "unknown"
 
-    # Dpkg etat reel du paquet, source de verite ultime apres l'upgrade.
+    # Real dpkg package state, ultimate source of truth after the upgrade.
     pkg_status = None
     if shutil.which("dpkg-query"):
         try:
@@ -578,48 +578,48 @@ def get_muros_install_progress() -> dict:
 
 
 def repair_muros_package() -> dict:
-    """Reconfigure les paquets dpkg laisses en etat incoherent.
+    """Reconfigure dpkg packages left in an inconsistent state.
 
-    Cas typique : un `apt install muros.deb` lance depuis muros-backend
-    a ete tue par le restart du service en plein postinst. dpkg laisse
-    muros en `half-configured`, plus rien ne marche tant qu'on n'a pas
-    fait `dpkg --configure -a`. Cette fonction lance la reparation et
-    renvoie la sortie pour affichage UI.
+    Typical case: an `apt install muros.deb` launched from muros-backend
+    was killed by the service restart in the middle of the postinst. dpkg
+    leaves muros in `half-configured`, nothing works anymore until a
+    `dpkg --configure -a` is run. This function launches the repair and
+    returns the output for display in the UI.
     """
     if not _apt_available():
         raise RuntimeError("apt/dpkg unavailable: repair impossible.")
     if os.geteuid() != 0:
         raise RuntimeError(
-            "Reparation impossible : MurOS doit tourner en root. "
-            "Lancer manuellement : sudo dpkg --configure -a"
+            "Repair impossible: MurOS must run as root. "
+            "Run manually: sudo dpkg --configure -a"
         )
 
     env = {**os.environ, "DEBIAN_FRONTEND": "noninteractive", "LC_ALL": "C"}
     log_path = STATE_DIR / "muros-upgrade.log"
 
-    # Strategie de reparation, du moins agressif au plus agressif :
-    #   1. dpkg --configure -a            (paquet "half-configured")
+    # Repair strategy, from least to most aggressive:
+    #   1. dpkg --configure -a            (package "half-configured")
     #   2. dpkg --remove --force-remove-reinstreq muros
-    #                                     (paquet "ReinstReq" sans archive)
-    #   3. dpkg --purge --force-all muros (dernier recours)
-    # Puis nettoyage des reliquats /var/lib/dpkg/info/muros.* qui peuvent
-    # bloquer la reinstall.
-    # On enchaine en bash one-liner pour que la suite soit logguee de
-    # facon coherente dans le meme fichier de log.
+    #                                     (package "ReinstReq" without archive)
+    #   3. dpkg --purge --force-all muros (last resort)
+    # Then clean up the /var/lib/dpkg/info/muros.* leftovers that can block
+    # the reinstall.
+    # We chain it in a bash one-liner so the sequence is logged consistently
+    # in the same log file.
     repair_script = (
         "set +e\n"
         "echo '--- repair muros dpkg ---'; date -Is\n"
-        "dpkg-query -W -f='etat avant: ${Status}\\n' muros 2>/dev/null || true\n"
+        "dpkg-query -W -f='state before: ${Status}\\n' muros 2>/dev/null || true\n"
         "echo '[1] dpkg --configure -a'\n"
         "dpkg --configure -a\n"
         "STATUS=$(dpkg-query -W -f='${Status}' muros 2>/dev/null || echo absent)\n"
-        "echo \"etat apres 1: $STATUS\"\n"
+        "echo \"state after 1: $STATUS\"\n"
         "case \"$STATUS\" in\n"
         "  *reinstreq*|*half-*|*unpacked*|*triggers-pending*|*failed-config*)\n"
         "    echo '[2] dpkg --remove --force-remove-reinstreq muros'\n"
         "    dpkg --remove --force-remove-reinstreq muros\n"
         "    STATUS=$(dpkg-query -W -f='${Status}' muros 2>/dev/null || echo absent)\n"
-        "    echo \"etat apres 2: $STATUS\"\n"
+        "    echo \"state after 2: $STATUS\"\n"
         "    ;;\n"
         "esac\n"
         "case \"$STATUS\" in\n"
@@ -629,14 +629,14 @@ def repair_muros_package() -> dict:
         "    rm -f /var/lib/dpkg/info/muros.*\n"
         "    ;;\n"
         "esac\n"
-        "dpkg-query -W -f='etat final: ${Status}\\n' muros 2>/dev/null || echo 'muros absent (OK)'\n"
+        "dpkg-query -W -f='final state: ${Status}\\n' muros 2>/dev/null || echo 'muros absent (OK)'\n"
         "echo '--- repair done ---'\n"
     )
 
     if shutil.which("systemd-run") and shutil.which("dpkg") and shutil.which("bash"):
-        # On utilise bash via systemd-run pour pouvoir enchainer le case
-        # / le test conditionnel proprement, et survivre au restart de
-        # muros-backend si jamais il est declenche par une etape.
+        # We use bash via systemd-run to chain the case / conditional test
+        # cleanly, and survive the muros-backend restart if it ever gets
+        # triggered by a step.
         cmd = [
             "systemd-run",
             "--collect",
@@ -651,22 +651,22 @@ def repair_muros_package() -> dict:
         try:
             proc = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
         except (subprocess.SubprocessError, FileNotFoundError) as exc:
-            raise RuntimeError(f"systemd-run a echoue : {exc}") from exc
+            raise RuntimeError(f"systemd-run failed: {exc}") from exc
         if proc.returncode != 0:
             raise RuntimeError(
-                f"Echec lancement systemd-run (code {proc.returncode}) : "
+                f"Failed to launch systemd-run (code {proc.returncode}): "
                 f"{(proc.stderr or proc.stdout or '').strip()[:400]}"
             )
         return {
             "started": True,
             "message": (
-                "Reparation lancee en arriere-plan : configure -a, puis "
-                "force-remove-reinstreq si necessaire, puis --purge --force-all "
-                "en dernier recours. Suivre /var/lib/muros/muros-upgrade.log."
+                "Repair started in the background: configure -a, then "
+                "force-remove-reinstreq if needed, then --purge --force-all "
+                "as a last resort. Follow /var/lib/muros/muros-upgrade.log."
             ),
         }
 
-    # Fallback sans systemd-run : synchrone.
+    # Fallback without systemd-run: synchronous.
     proc = subprocess.run(
         ["bash", "-c", repair_script],
         env=env, capture_output=True, text=True, timeout=300,
@@ -679,17 +679,17 @@ def repair_muros_package() -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Scheduler background : check_all() periodique
+# Background scheduler: periodic check_all()
 # ---------------------------------------------------------------------------
-# Sans ce thread, le cache last_check n'est jamais rafraichi sauf si l'admin
-# clique "Verifier les MAJ" dans System > Mises a jour. Le badge orange a
-# cote de la version dans la sidebar resterait donc froid a vie.
+# Without this thread, the last_check cache is never refreshed unless the
+# admin clicks "Check for updates" in System > Updates. The orange badge next
+# to the version in the sidebar would therefore stay cold forever.
 #
-# Le scheduler tourne en daemon thread (meurt avec le process), lance
-# check_all() avec une periode reglable via MUROS_UPDATES_INTERVAL_HOURS
-# (defaut 6h, soit 4 checks par jour). Le tout premier check a lieu apres
-# un delai de MUROS_UPDATES_INITIAL_DELAY_SEC (defaut 60s) pour eviter de
-# lancer apt-get update juste au boot quand le reseau peut etre instable.
+# The scheduler runs in a daemon thread (dies with the process), runs
+# check_all() with a period adjustable via MUROS_UPDATES_INTERVAL_HOURS
+# (default 6h, i.e. 4 checks per day). The very first check happens after a
+# delay of MUROS_UPDATES_INITIAL_DELAY_SEC (default 60s) to avoid running
+# apt-get update right at boot when the network can be unstable.
 
 _updates_thread_lock = threading.Lock()
 _updates_thread = None  # Thread | None
@@ -697,28 +697,28 @@ _updates_log = logging.getLogger("muros.updates.scheduler")
 
 
 def _updates_loop(interval_seconds: int, initial_delay: int) -> None:
-    """Boucle thread : check_all() toutes les interval_seconds."""
-    # On dort d'abord pour ne pas lancer apt-get update juste au boot.
+    """Thread loop: check_all() every interval_seconds."""
+    # Sleep first to avoid running apt-get update right at boot.
     time.sleep(initial_delay)
     while True:
         try:
-            _updates_log.info("Lancement du check periodique des MAJ")
+            _updates_log.info("Starting the periodic update check")
             result = check_all()
             apt_n = len(result.get("apt", {}).get("packages", []))
             muros_up = result.get("muros", {}).get("upgrade_available")
             _updates_log.info(
-                "Check termine : %d paquet(s) apt, muros upgrade_available=%s",
+                "Check finished: %d apt package(s), muros upgrade_available=%s",
                 apt_n, muros_up,
             )
         except Exception:
-            # Un check rate (DNS HS, mirror down) ne doit pas tuer le
-            # scheduler. Prochaine tentative dans interval_seconds.
-            _updates_log.exception("Echec du check periodique des MAJ")
+            # A failed check (DNS down, mirror down) must not kill the
+            # scheduler. Next attempt in interval_seconds.
+            _updates_log.exception("Periodic update check failed")
         time.sleep(interval_seconds)
 
 
 def ensure_updates_checker_started() -> None:
-    """Demarre le thread de check periodique si pas deja lance. Idempotent."""
+    """Start the periodic check thread if not already running. Idempotent."""
     global _updates_thread
     with _updates_thread_lock:
         if _updates_thread is not None and _updates_thread.is_alive():
@@ -728,7 +728,7 @@ def ensure_updates_checker_started() -> None:
             initial_delay = int(os.environ.get("MUROS_UPDATES_INITIAL_DELAY_SEC", "60"))
         except (TypeError, ValueError):
             interval_h, initial_delay = 6.0, 60
-        interval_s = max(60, int(interval_h * 3600))  # min 1 min pour les tests
+        interval_s = max(60, int(interval_h * 3600))  # min 1 min for tests
         _updates_thread = threading.Thread(
             target=_updates_loop,
             args=(interval_s, initial_delay),
@@ -737,6 +737,6 @@ def ensure_updates_checker_started() -> None:
         )
         _updates_thread.start()
         _updates_log.info(
-            "Scheduler MAJ demarre (interval=%.1fh, premier check dans %ds)",
+            "Update scheduler started (interval=%.1fh, first check in %ds)",
             interval_h, initial_delay,
         )

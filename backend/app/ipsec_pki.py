@@ -53,7 +53,7 @@ def _utcnow_naive() -> datetime:
 # --- Generation CA ---
 
 def generate_ca(subject_cn: str, subject_o: str, validity_days: int = 3650) -> dict:
-    """Genere une nouvelle paire (cle, cert) auto-signee pour la CA racine."""
+    """Generate a new self-signed (key, cert) pair for the root CA."""
     key = rsa.generate_private_key(public_exponent=65537, key_size=CA_KEY_BITS)
     now = _utcnow()
     not_after = now + timedelta(days=validity_days)
@@ -107,7 +107,7 @@ def generate_ca(subject_cn: str, subject_o: str, validity_days: int = 3650) -> d
 # --- Generation cert peer signe par la CA ---
 
 def _parse_san(san_str: str | None) -> list[x509.GeneralName]:
-    """Parse une chaine 'DNS:foo.com,IP:1.2.3.4,email:x@y' en liste de SAN."""
+    """Parse a string 'DNS:foo.com,IP:1.2.3.4,email:x@y' into a list of SANs."""
     if not san_str:
         return []
     import ipaddress
@@ -138,19 +138,19 @@ def _parse_san(san_str: str | None) -> list[x509.GeneralName]:
 
 def sign_cert(ca, subject_cn: str, san: str | None,
               validity_days: int = 825, is_local: bool = True) -> dict:
-    """Genere une paire cle/cert signee par la CA.
+    """Generate a key/cert pair signed by the CA.
 
-    is_local : True = cert utilisable comme identite locale du firewall.
-               False = utile pour valider un peer (mais en general on
-               importe le cert distant, on ne le genere pas).
+    is_local: True = cert usable as the firewall's local identity.
+              False = useful to validate a peer (but usually we import the
+              remote cert, we do not generate it).
     """
-    # Charge la cle privee et le cert de la CA.
+    # Load the CA private key and cert.
     ca_key = serialization.load_pem_private_key(
         ca.key_pem.encode("ascii"), password=None,
     )
     ca_cert = x509.load_pem_x509_certificate(ca.cert_pem.encode("ascii"))
 
-    # Genere la cle pour ce cert.
+    # Generate the key for this cert.
     key = rsa.generate_private_key(public_exponent=65537, key_size=CERT_KEY_BITS)
     now = _utcnow()
     not_after = now + timedelta(days=validity_days)
@@ -314,9 +314,9 @@ def deploy_to_disk(ca, certs: list, revoked_certs: list) -> None:
     ca_path.write_text(ca.cert_pem, encoding="utf-8")
     os.chmod(ca_path, 0o644)
 
-    # Certs : on ecrit ceux qui sont locaux (avec cle privee) et ceux qui
-    # sont remote (sans cle privee).
-    # On nettoie d'abord les anciens certs pour eviter d'avoir des residus.
+    # Certs: we write the local ones (with a private key) and the remote
+    # ones (without a private key).
+    # First clean up the old certs to avoid leftovers.
     for old in DIR_X509.glob("muros-*.pem"):
         old.unlink()
     for old in DIR_PRIVATE.glob("muros-*-key.pem"):
@@ -342,6 +342,6 @@ def deploy_to_disk(ca, certs: list, revoked_certs: list) -> None:
 
 
 def cert_filename(cert) -> str:
-    """Retourne le nom du fichier .pem qui sera utilise dans swanctl.conf."""
+    """Return the .pem file name that will be used in swanctl.conf."""
     safe = cert.name.replace("/", "_")
     return f"muros-{safe}.pem"

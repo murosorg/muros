@@ -203,7 +203,7 @@ def install_packages() -> dict:
     )
     if proc_update.returncode != 0:
         raise RuntimeError(
-            f"apt-get update a echoue : {(proc_update.stderr or '').strip()[:400]}"
+            f"apt-get update failed: {(proc_update.stderr or '').strip()[:400]}"
         )
 
     # For strongswan we keep --no-install-recommends, the recommends include
@@ -214,13 +214,13 @@ def install_packages() -> dict:
     )
     if proc.returncode != 0:
         raise RuntimeError(
-            f"apt-get install a echoue (code {proc.returncode}) : "
+            f"apt-get install failed (code {proc.returncode}): "
             f"{(proc.stderr or '').strip()[:400]}"
         )
 
     if not (_which("swanctl") and _which("ipsec")):
         raise RuntimeError(
-            f"Binaires absents apres install : swanctl/ipsec. Sortie : {proc.stdout[-400:]}"
+            f"Binaries missing after install: swanctl/ipsec. Output: {proc.stdout[-400:]}"
         )
 
     return {
@@ -442,15 +442,15 @@ def apply_config(connections: list, ca=None, certs: list | None = None,
     revoked_certs = revoked_certs or []
     certs_by_id = {c.id: c for c in certs}
 
-    # Si une connexion est en mode cert, on a besoin de la PKI.
+    # If a connection is in cert mode, we need the PKI.
     needs_pki = any(
         (c.auth_mode or "psk").lower() == "cert"
         for c in connections if c.enabled
     )
     if needs_pki and (ca is None or not ca.cert_pem):
         raise RuntimeError(
-            "Une connexion est en mode certificat mais la CA MurOS n'a pas "
-            "ete generee. Generer la CA depuis l'onglet PKI d'abord."
+            "A connection is in certificate mode but the MurOS CA has not "
+            "been generated. Generate the CA from the PKI tab first."
         )
 
     conf_text = render_swanctl_conf(connections, certs_by_id)
@@ -462,13 +462,13 @@ def apply_config(connections: list, ca=None, certs: list | None = None,
             "conf_preview": conf_text,
         }
 
-    # Pre-requis : swanctl present + service tournant. Si le service n'est
-    # pas la, on ecrit quand meme les fichiers (ils seront lus au prochain
-    # demarrage) et on previent.
+    # Prerequisite: swanctl present + service running. If the service is not
+    # there, we still write the files (they will be read at the next startup)
+    # and we warn.
     if not _which("swanctl"):
         raise RuntimeError(
             "swanctl not found. Install strongswan-swanctl first "
-            "(bouton 'Installer maintenant')."
+            "('Install now' button)."
         )
 
     SWANCTL_CONF.parent.mkdir(parents=True, exist_ok=True)
@@ -478,8 +478,8 @@ def apply_config(connections: list, ca=None, certs: list | None = None,
     SWANCTL_SECRETS.write_text(secrets_text, encoding="utf-8")
     os.chmod(SWANCTL_SECRETS, 0o600)
 
-    # Deploiement de la PKI si on a une CA (meme si pas de connexion cert,
-    # on garde la CA prete pour l'avenir).
+    # Deploy the PKI if we have a CA (even without a cert connection, we
+    # keep the CA ready for the future).
     if ca is not None and ca.cert_pem:
         ipsec_pki.deploy_to_disk(ca, certs, revoked_certs)
 
@@ -516,24 +516,24 @@ def apply_config(connections: list, ca=None, certs: list | None = None,
             "service": svc_name or "",
         }
 
-    # enable + start (persistant + immediat). Essai des deux noms de
-    # service au cas ou (strongswan vs strongswan-starter selon la distro).
+    # enable + start (persistent + immediate). Try both service names just
+    # in case (strongswan vs strongswan-starter depending on the distro).
     target_svc = svc_name or "strongswan-starter"
     if not active:
         for s in IPSEC_SERVICES:
-            # enable (persistance) sans --now : ne touche pas l'etat
-            # runtime, ne depend d'aucune target, safe en contexte boot.
+            # enable (persistence) without --now: does not touch the runtime
+            # state, depends on no target, safe in boot context.
             r_en = subprocess.run(
                 ["systemctl", "enable", s],
                 capture_output=True, text=True, timeout=5,
             )
             if r_en.returncode != 0:
-                # nom de service inexistant : essaie le suivant
+                # service name does not exist: try the next one
                 continue
             target_svc = s
-            # Demarrage : --no-block en contexte boot (rend la main
-            # tout de suite, systemd executera le start apres muros-boot
-            # une fois network-online.target atteinte ; pas de deadlock).
+            # Startup: --no-block in boot context (returns immediately,
+            # systemd will run the start after muros-boot once
+            # network-online.target is reached; no deadlock).
             start_cmd = ["systemctl", "start", s]
             if defer_start:
                 start_cmd.insert(2, "--no-block")
@@ -544,15 +544,15 @@ def apply_config(connections: list, ca=None, certs: list | None = None,
             if r_start.returncode == 0:
                 break
 
-    # Reload a chaud des connexions et secrets. En contexte boot avec
-    # demarrage differe, le daemon n'est pas encore tourne donc le
-    # socket vici n'existe pas : on saute le --load-all, la conf sera
-    # chargee par strongswan lui-meme a son demarrage.
+    # Hot reload of connections and secrets. In boot context with deferred
+    # startup, the daemon is not running yet so the vici socket does not
+    # exist: we skip --load-all, the config will be loaded by strongswan
+    # itself at its startup.
     if defer_start:
         return {
             "message": (
-                f"Conf IPsec ecrite, demarrage differe de {target_svc} "
-                f"({nb_enabled} connexion(s) active(s))."
+                f"IPsec configuration written, deferred startup of {target_svc} "
+                f"({nb_enabled} active connection(s))."
             ),
             "service": target_svc,
         }
@@ -561,11 +561,11 @@ def apply_config(connections: list, ca=None, certs: list | None = None,
     )
     if res.returncode != 0:
         raise RuntimeError(
-            f"swanctl --load-all a echoue : {(res.stderr or res.stdout).strip()[:400]}"
+            f"swanctl --load-all failed: {(res.stderr or res.stdout).strip()[:400]}"
         )
 
     return {
-        "message": f"Conf IPsec rechargee ({nb_enabled} connexion(s) active(s)).",
+        "message": f"IPsec configuration reloaded ({nb_enabled} active connection(s)).",
         "service": target_svc,
         "swanctl_output": (res.stdout or res.stderr).strip()[:400],
     }
