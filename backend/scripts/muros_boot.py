@@ -197,6 +197,22 @@ def _restore_nftables(db) -> None:
         log.error("Echec nft -f : %s", (res.stderr or res.stdout).strip())
 
 
+def _restore_dhcp(db) -> None:
+    """Reconcile the Kea DHCPv4 config from the DB at boot.
+
+    Like NTP/RA, the Kea config is regenerated from the single source of
+    truth (the DB) so a freshly seeded pool (e.g. the management fallback)
+    is served even if the on-disk config predates it. Best-effort: a Kea
+    failure must not abort the boot restore.
+    """
+    from app.services import dhcp_apply
+    try:
+        dhcp_apply.apply(db)
+        log.info("Kea DHCPv4 reconciled from DB")
+    except Exception as exc:  # noqa: BLE001
+        log.warning("DHCP reconcile failed: %r", exc)
+
+
 def _restore_wireguard(db) -> None:
     """Reecrit /etc/wireguard/<iface>.conf et monte l'interface si activee."""
     from app import wireguard, models, service_dirty
@@ -403,13 +419,18 @@ def main() -> int:
             # le default drop sur input bloque SSH/HTTPS. Doit tourner ici
             # plutot que dans le lifespan FastAPI, car muros-boot.service
             # est ordonne AVANT muros-backend.service.
-            from app.seed import seed_if_empty
+            from app.seed import seed_if_empty, ensure_management_fallback
             seed_if_empty(db)
+            # Anti-lock-out safety net: if the box has no usable IP at all,
+            # assign a deterministic management address + DHCP pool so the
+            # UI stays reachable without a shell. No-op when an IP exists.
+            ensure_management_fallback(db)
             _purge_foreign_network_state()
             _restore_vlans(db)
             _restore_interfaces(db)
             _restore_routes(db)
             _restore_nftables(db)
+            _restore_dhcp(db)
             _restore_wireguard(db)
             _restore_ipsec(db)
             _restore_ha(db)

@@ -1,5 +1,7 @@
 """Initial data: created on first boot if the database is empty."""
+import ipaddress
 import logging
+import os
 
 from sqlalchemy.orm import Session
 
@@ -7,6 +9,13 @@ from app import models
 from app.system import list_system_interfaces, get_default_gateway
 
 log = logging.getLogger("muros.seed")
+
+# Default management address used as an anti-lock-out safety net when the
+# box comes up with no usable IP at all (no DHCP at install, nothing
+# configured statically). Mirrors the appliance convention (pfSense /
+# OPNsense ship 192.168.1.1 on the LAN). Overridable at boot through
+# MUROS_FALLBACK_MGMT_CIDR.
+DEFAULT_FALLBACK_MGMT_CIDR = "192.168.1.1/24"
 
 
 def seed_root_user(db: Session) -> None:
@@ -220,3 +229,144 @@ def seed_if_empty(db: Session) -> None:
     db.add_all(rules)
 
     db.commit()
+
+
+def _has_management_ip(db: Session) -> bool:
+    """True if the box can already be reached on some IPv4.
+
+    Either an interface carries a static IPv4 in the DB (the common case:
+    the install-time DHCP lease is frozen as static by seed_if_empty), or
+    the kernel currently holds a usable global IPv4 on any interface.
+    Loopback, link-local (169.254/16) and IPv6 do not count.
+    """
+    for i in db.query(models.Interface).filter(models.Interface.enabled.is_(True)).all():
+        if i.ip_mode == "static" and i.ip_address:
+            try:
+                ipaddress.ip_interface(i.ip_address)
+                return True
+            except ValueError:
+                pass
+    for sif in list_system_interfaces():
+        for addr in sif.get("addresses", []):
+            ip = addr.split("/", 1)[0]
+            if ":" in ip or ip.startswith("169.254.") or ip.startswith("127."):
+                continue
+            return True
+    return False
+
+
+def _pick_fallback_interface(db: Session) -> models.Interface | None:
+    """Choose the NIC that carries the fallback management address.
+
+    Prefer a physical interface that is not attached to the WAN zone (the
+    LAN/management side), falling back to the first physical interface.
+    """
+    wan = db.query(models.Zone).filter(models.Zone.name == "wan").first()
+    wan_id = wan.id if wan else None
+    candidates = (
+        db.query(models.Interface)
+        .filter(models.Interface.type == "physical")
+        .order_by(models.Interface.name)
+        .all()
+    )
+    non_wan = [i for i in candidates if i.zone_id != wan_id]
+    pool = non_wan or candidates
+    return pool[0] if pool else None
+
+
+def _fallback_pool_range(net: ipaddress.IPv4Interface) -> tuple[str, str]:
+    """Derive a sane DHCP range inside the fallback subnet.
+
+    Uses .100-.200 of the subnet by default (matches the /24 case), and
+    clamps to the usable host range for smaller subnets so the range
+    never spills onto the network/broadcast addresses or the gateway.
+    """
+    base = int(net.network.network_address)
+    bcast = int(net.network.broadcast_address)
+    gw = int(net.ip)
+    first_host, last_host = base + 1, bcast - 1
+    start = min(max(base + 100, first_host), last_host)
+    end = min(base + 200, last_host)
+    if end < start:
+        end = start
+    # Never start the pool on the gateway address.
+    if start == gw and start < last_host:
+        start += 1
+    if end < start:
+        end = start
+    return str(ipaddress.ip_address(start)), str(ipaddress.ip_address(end))
+
+
+def ensure_management_fallback(db: Session) -> None:
+    """Anti-lock-out safety net: guarantee the UI is reachable on first boot.
+
+    When the box comes up with no usable IPv4 anywhere (no DHCP at install
+    and nothing configured statically), an operator would otherwise have
+    to drop to a shell to set an address. Instead we assign a deterministic
+    management IP on a physical NIC and stand up a DHCP pool on it, so the
+    operator just plugs a laptop into that port, gets a lease from Kea and
+    reaches https://<gateway>/. The choice is persisted in the DB and stays
+    editable from the Network page, exactly like an appliance default.
+
+    This only fires when there is no other way in: a box that already holds
+    an IP (frozen install lease or a static address) is left untouched.
+    """
+    if _has_management_ip(db):
+        return
+
+    raw = os.environ.get("MUROS_FALLBACK_MGMT_CIDR", DEFAULT_FALLBACK_MGMT_CIDR)
+    try:
+        net = ipaddress.ip_interface(raw)
+        if not isinstance(net, ipaddress.IPv4Interface) or net.network.prefixlen >= 31:
+            raise ValueError("need an IPv4 address in a subnet large enough for clients")
+    except ValueError as exc:
+        log.error("Invalid MUROS_FALLBACK_MGMT_CIDR=%r (%s), using %s",
+                  raw, exc, DEFAULT_FALLBACK_MGMT_CIDR)
+        net = ipaddress.ip_interface(DEFAULT_FALLBACK_MGMT_CIDR)
+
+    iface = _pick_fallback_interface(db)
+    if iface is None:
+        log.error("No physical interface available to host the management "
+                  "fallback address; the box may be unreachable")
+        return
+
+    iface.ip_mode = "static"
+    iface.ip_address = str(net)
+    iface.enabled = True
+    iface.dirty = True
+    # Attach to the LAN zone so the seeded "LAN to firewall" rule lets the
+    # operator reach SSH/UI/services through this interface.
+    lan = db.query(models.Zone).filter(models.Zone.name == "lan").first()
+    if lan is not None and iface.zone_id is None:
+        iface.zone_id = lan.id
+    db.flush()
+
+    # Stand up Kea on this interface so a directly attached laptop gets a
+    # lease without any upstream DHCP server.
+    cfg = db.get(models.DhcpConfig, 1)
+    if cfg is None:
+        cfg = models.DhcpConfig(id=1, enabled=True)
+        db.add(cfg)
+    else:
+        cfg.enabled = True
+    existing = (
+        db.query(models.DhcpPool)
+        .filter(models.DhcpPool.interface_id == iface.id)
+        .first()
+    )
+    if existing is None:
+        start, end = _fallback_pool_range(net)
+        db.add(models.DhcpPool(
+            interface_id=iface.id,
+            range_start=start,
+            range_end=end,
+            enabled=True,
+            comment="Auto-created management fallback pool",
+        ))
+    db.commit()
+    log.error(
+        "No management IP detected: assigned fallback %s on %s and enabled a "
+        "DHCP pool. Plug a laptop into that port and open https://%s/ to "
+        "finish setup (change this from the Network page).",
+        str(net), iface.name, net.ip,
+    )

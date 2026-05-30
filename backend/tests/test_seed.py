@@ -127,3 +127,85 @@ def test_seed_ssh_does_not_touch_existing_row(session):
 def test_seed_snmp_row_created_once(session):
     seed.seed_snmp_if_missing(session)
     assert session.get(models.SnmpConfig, 1) is not None
+
+
+# --- Management fallback (anti-lock-out safety net) ---------------------
+
+def _physical_iface(session, name="eth0", **kw):
+    iface = models.Interface(name=name, type="physical", **kw)
+    session.add(iface)
+    session.commit()
+    return iface
+
+
+def test_fallback_not_applied_when_static_ip_exists(session):
+    seed.seed_if_empty(session)
+    _physical_iface(session, ip_mode="static", ip_address="10.0.0.2/24")
+    seed.ensure_management_fallback(session)
+    eth0 = session.query(models.Interface).filter_by(name="eth0").one()
+    # Untouched: a configured box is never overridden.
+    assert eth0.ip_address == "10.0.0.2/24"
+    assert session.query(models.DhcpPool).count() == 0
+
+
+def test_fallback_not_applied_when_kernel_holds_global_ip(session, monkeypatch):
+    seed.seed_if_empty(session)
+    _physical_iface(session, ip_mode="none")
+    monkeypatch.setattr(seed, "list_system_interfaces", lambda: [{
+        "name": "eth0", "is_virtual": False, "mac": "", "mtu": 1500,
+        "state": "UP", "addresses": ["192.168.5.10/24"],
+    }])
+    seed.ensure_management_fallback(session)
+    eth0 = session.query(models.Interface).filter_by(name="eth0").one()
+    assert eth0.ip_mode == "none"
+    assert session.query(models.DhcpPool).count() == 0
+
+
+def test_fallback_assigns_default_ip_and_dhcp_pool(session):
+    seed.seed_if_empty(session)
+    _physical_iface(session, ip_mode="none")
+    seed.ensure_management_fallback(session)
+    eth0 = session.query(models.Interface).filter_by(name="eth0").one()
+    assert eth0.ip_mode == "static"
+    assert eth0.ip_address == "192.168.1.1/24"
+    assert eth0.enabled is True
+    lan = session.query(models.Zone).filter_by(name="lan").one()
+    assert eth0.zone_id == lan.id
+    cfg = session.get(models.DhcpConfig, 1)
+    assert cfg is not None and cfg.enabled is True
+    pool = session.query(models.DhcpPool).filter_by(interface_id=eth0.id).one()
+    assert pool.range_start == "192.168.1.100"
+    assert pool.range_end == "192.168.1.200"
+    assert pool.enabled is True
+
+
+def test_fallback_prefers_non_wan_interface(session):
+    seed.seed_if_empty(session)
+    wan = session.query(models.Zone).filter_by(name="wan").one()
+    _physical_iface(session, name="eth0", ip_mode="none", zone_id=wan.id)
+    _physical_iface(session, name="eth1", ip_mode="none")
+    seed.ensure_management_fallback(session)
+    eth0 = session.query(models.Interface).filter_by(name="eth0").one()
+    eth1 = session.query(models.Interface).filter_by(name="eth1").one()
+    assert eth0.ip_address is None  # WAN-side NIC left alone
+    assert eth1.ip_address == "192.168.1.1/24"
+
+
+def test_fallback_respects_env_override(session, monkeypatch):
+    monkeypatch.setenv("MUROS_FALLBACK_MGMT_CIDR", "10.10.0.1/24")
+    seed.seed_if_empty(session)
+    _physical_iface(session, ip_mode="none")
+    seed.ensure_management_fallback(session)
+    eth0 = session.query(models.Interface).filter_by(name="eth0").one()
+    assert eth0.ip_address == "10.10.0.1/24"
+    pool = session.query(models.DhcpPool).filter_by(interface_id=eth0.id).one()
+    assert pool.range_start == "10.10.0.100"
+    assert pool.range_end == "10.10.0.200"
+
+
+def test_fallback_is_idempotent(session):
+    seed.seed_if_empty(session)
+    _physical_iface(session, ip_mode="none")
+    seed.ensure_management_fallback(session)
+    seed.ensure_management_fallback(session)  # IP now exists -> no-op
+    assert session.query(models.DhcpPool).count() == 1
