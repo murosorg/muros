@@ -365,13 +365,10 @@ function ConfigCard({ form, setForm, dirty, busy, onSave }: {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <label className="block">
-          <div className="text-sm font-medium mb-1">Allow queries from</div>
-          <input className="input font-mono text-sm" placeholder="192.168.0.0/16, 10.0.0.0/8"
-            value={form.allow_query_cidrs}
-            onChange={(e) => setForm({ ...form, allow_query_cidrs: e.target.value })} />
-          <div className="text-xs text-gray-600 mt-1">CIDR list, comma-separated. Always include 127.0.0.0/8 so the firewall itself can resolve.</div>
-        </label>
+        <div className="text-xs text-gray-600 self-center">
+          The resolver listens on every interface. Which networks may
+          query it is controlled by your firewall rules, not here.
+        </div>
         <div className="flex flex-col gap-2 pt-6">
           <label className="flex items-center gap-2">
             <Toggle checked={form.dnssec} onChange={(v) => setForm({ ...form, dnssec: v })} />

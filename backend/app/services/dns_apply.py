@@ -80,12 +80,14 @@ def render(db: Session) -> str:
         "  harden-dnssec-stripped: yes",
         "  use-caps-for-id: yes",
         f"  prefetch: {'yes' if cfg.prefetch else 'no'}",
-        # Refuse explicite par defaut : Unbound n'accepte que les CIDRs listes.
-        "  access-control: 0.0.0.0/0 refuse",
-        "  access-control: ::0/0 refuse",
+        # OPNsense model: Unbound listens on every interface and accepts
+        # queries at the daemon level; who can actually reach the resolver
+        # is decided at the firewall (input chain udp/tcp 53). The
+        # default-drop input policy plus the seeded "allow LAN to firewall"
+        # rule keep the WAN closed, so the box is not an open resolver.
+        "  access-control: 0.0.0.0/0 allow",
+        "  access-control: ::0/0 allow",
     ]
-    for cidr in [c.strip() for c in cfg.allow_query_cidrs.split(",") if c.strip()]:
-        lines.append(f"  access-control: {cidr} allow")
 
     # Note: do NOT emit `auto-trust-anchor-file` here. The Debian
     # `unbound` package already ships

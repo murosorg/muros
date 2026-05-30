@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  api, type User, type ListenAddress, type HttpConfig, type HttpConfigInput,
-  type TlsStatus,
+  api, type User, type HttpConfig, type HttpConfigInput,
+  type TlsStatus, type TwoFASetup,
 } from '../lib/api'
 import PageHeader from '../components/PageHeader'
 import { ServiceStatusInline, type ServiceState } from '../components/ServiceStatusLine'
@@ -60,6 +60,7 @@ export default function HttpAccess() {
       />
       <div className="px-6 py-4 space-y-6">
         <AccountSection />
+        <TwoFactorSection />
         <ListenSection
           register={(api) => { listenApplyRef.current = api; forceRerender((x) => x + 1) }}
         />
@@ -139,6 +140,115 @@ function AccountSection() {
   )
 }
 
+// --- Two-factor authentication (TOTP) ---
+
+function TwoFactorSection() {
+  const [enabled, setEnabled] = useState<boolean | null>(null)
+  const [setup, setSetup] = useState<TwoFASetup | null>(null)
+  const [code, setCode] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const load = () => api.auth.twofa.status().then((s) => setEnabled(s.enabled)).catch(() => {})
+  useEffect(() => { load() }, [])
+
+  const startSetup = async () => {
+    setBusy(true); setError(null)
+    try { setSetup(await api.auth.twofa.setup()); setCode('') }
+    catch (e) { setError(String(e)) } finally { setBusy(false) }
+  }
+  const confirmEnable = async () => {
+    setBusy(true); setError(null)
+    try {
+      await api.auth.twofa.enable(code)
+      setSetup(null); setCode(''); setEnabled(true)
+      toast.success('Two-factor authentication enabled')
+    } catch (e) { setError(String(e)) } finally { setBusy(false) }
+  }
+  const disable = async () => {
+    setBusy(true); setError(null)
+    try {
+      await api.auth.twofa.disable(code)
+      setCode(''); setEnabled(false)
+      toast.success('Two-factor authentication disabled')
+    } catch (e) { setError(String(e)) } finally { setBusy(false) }
+  }
+
+  const codeInput = (
+    <input
+      className="input tracking-widest text-center font-mono max-w-[10rem]"
+      value={code}
+      onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+      inputMode="numeric"
+      autoComplete="one-time-code"
+      placeholder="000000"
+    />
+  )
+
+  return (
+    <div className="card">
+      <h2 className="text-lg font-semibold mb-1">Two-factor authentication</h2>
+      <p className="text-sm text-gray-600 mb-3">
+        Time-based one-time password (TOTP). Adds a 6-digit code from an
+        authenticator app on top of your password at login.
+      </p>
+      {error && <ErrorBlock message={error} />}
+
+      {enabled === null ? (
+        <div className="text-sm text-gray-500">Loading...</div>
+      ) : enabled ? (
+        <div>
+          <div className="text-sm text-green-700 mb-3">
+            Two-factor authentication is <strong>enabled</strong> on your account.
+          </div>
+          <div className="flex items-end gap-2">
+            <label className="block">
+              <div className="text-xs font-medium text-gray-600 mb-1">Current code to disable</div>
+              {codeInput}
+            </label>
+            <button className="btn-danger" onClick={disable} disabled={busy || code.length < 6}>
+              {busy ? 'Working...' : 'Disable 2FA'}
+            </button>
+          </div>
+        </div>
+      ) : !setup ? (
+        <button className="btn-primary" onClick={startSetup} disabled={busy}>
+          {busy ? 'Working...' : 'Enable 2FA'}
+        </button>
+      ) : (
+        <div className="space-y-3">
+          <p className="text-sm text-gray-700">
+            Scan this QR code with your authenticator app, then enter the
+            generated code to confirm.
+          </p>
+          <div className="flex flex-wrap items-start gap-6">
+            <div
+              className="w-40 h-40 [&>svg]:w-full [&>svg]:h-full border border-gray-200 rounded p-2 bg-white"
+              dangerouslySetInnerHTML={{ __html: setup.qr_svg }}
+            />
+            <div className="text-xs text-gray-600">
+              <div className="mb-1">Or enter this secret manually:</div>
+              <code className="font-mono break-all text-gray-900">{setup.secret}</code>
+            </div>
+          </div>
+          <div className="flex items-end gap-2">
+            <label className="block">
+              <div className="text-xs font-medium text-gray-600 mb-1">Verification code</div>
+              {codeInput}
+            </label>
+            <button className="btn-primary" onClick={confirmEnable} disabled={busy || code.length < 6}>
+              {busy ? 'Working...' : 'Confirm and enable'}
+            </button>
+            <button className="btn-secondary" onClick={() => { setSetup(null); setCode('') }} disabled={busy}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // --- Listen interface HTTP / HTTPS ---
 
 type ListenApplyApi = { apply: () => void; busy: boolean; dirty: boolean }
@@ -146,22 +256,20 @@ type ListenApplyApi = { apply: () => void; busy: boolean; dirty: boolean }
 function ListenSection({ register }: { register: (api: ListenApplyApi) => void }) {
   const [cfg, setCfg] = useState<HttpConfig | null>(null)
   const [form, setForm] = useState<HttpConfigInput | null>(null)
-  const [addresses, setAddresses] = useState<ListenAddress[]>([])
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
 
   const reload = async () => {
     try {
-      const [c, ad] = await Promise.all([
-        api.http.getConfig(),
-        api.systemActions.listenAddresses(),
-      ])
+      const c = await api.http.getConfig()
       setCfg(c)
-      setAddresses(ad)
       if (!form) {
         setForm({
-          listen_address: c.listen_address || '0.0.0.0',
+          // MurOS always binds the UI on every interface (0.0.0.0).
+          // Restricting who can reach it is done with firewall rules,
+          // the OPNsense way, so there is no per-interface selector here.
+          listen_address: '0.0.0.0',
           port_https: c.port_https,
           port_http: c.port_http,
           redirect_http_to_https: c.redirect_http_to_https,
@@ -186,7 +294,8 @@ function ListenSection({ register }: { register: (api: ListenApplyApi) => void }
 
   // Orange dot on the page-level Apply while form diverges from server.
   const dirty = isDirty(form, cfg && {
-    listen_address: cfg.listen_address || '0.0.0.0',
+    // Always 0.0.0.0: the listen address is no longer user-selectable.
+    listen_address: '0.0.0.0',
     port_https: cfg.port_https,
     port_http: cfg.port_http,
     redirect_http_to_https: cfg.redirect_http_to_https,
@@ -202,24 +311,16 @@ function ListenSection({ register }: { register: (api: ListenApplyApi) => void }
 
   return (
     <div className="card">
-      <CardHeader title="Web listen interface" />
+      <CardHeader title="Web access" />
 
       {err && <div className="mb-3"><ErrorBlock message={err} /></div>}
       {msg && <SuccessBlock message={msg} onDismiss={() => setMsg(null)} />}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        <div className="md:col-span-3">
-          <div className="text-sm font-medium mb-1">Listen address</div>
-          <select className="input" value={form.listen_address}
-            onChange={(e) => setForm({ ...form, listen_address: e.target.value })}>
-            {addresses.length === 0 && <option value={form.listen_address}>{form.listen_address}</option>}
-            {addresses.map((a) => (
-              <option key={a.address} value={a.address}>{a.label}</option>
-            ))}
-          </select>
-          <div className="text-xs text-gray-600 mt-1">
-            Restricting the UI to a specific IP (e.g. admin LAN) is safer than listening on any interface.
-          </div>
+        <div className="md:col-span-3 text-xs text-gray-600">
+          The web UI listens on every interface. Restrict who can reach it
+          with firewall rules (input chain), the same way you control any
+          other service.
         </div>
         <div>
           <div className="text-sm font-medium mb-1">Port HTTPS</div>
@@ -236,19 +337,6 @@ function ListenSection({ register }: { register: (api: ListenApplyApi) => void }
             onChange={(v) => setForm({ ...form, redirect_http_to_https: v })} />
           <span>Redirect HTTP to HTTPS</span>
         </div>
-        {(form.listen_address.startsWith('127.') || form.listen_address === '::1') && (
-          <div className="md:col-span-3 border border-amber-300 bg-amber-50 rounded p-3 text-sm flex items-start gap-3">
-            <Toggle checked={!!form.confirm_loopback}
-              onChange={(v) => setForm({ ...form, confirm_loopback: v })} />
-            <div>
-              <div className="font-medium text-amber-900">Confirm loopback bind</div>
-              <div className="text-xs text-amber-800 mt-0.5">
-                The UI will only be reachable from the machine itself (or via SSH tunnel).
-                All direct access from your LAN will be lost. Check to confirm.
-              </div>
-            </div>
-          </div>
-        )}
         {/* Option dangereuse : si l'utilisateur active le toggle, on bascule
             fond + bordure en amber pour materialiser visuellement le risque.
             Un texte fait office de label de risque sous le titre. */}

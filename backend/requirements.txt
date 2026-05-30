@@ -6,6 +6,8 @@ pyjwt==2.9.0
 bcrypt==4.2.0
 cryptography==43.0.3
 qrcode==8.0
+# TOTP two-factor authentication (RFC 6238) for the web UI login.
+pyotp==2.9.0
 python-pam==2.0.2
 # python-pam 2.0.2 imports 'six' at import time but does NOT declare it
 # as a dependency (packaging bug), so it must be pinned explicitly here.

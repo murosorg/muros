@@ -61,6 +61,13 @@ class User(Base):
     # only 'root' is granted by default, every other account stays locked
     # out until root explicitly enables it from the Access > Users page.
     ui_access: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # TOTP two-factor authentication (RFC 6238). totp_secret holds the
+    # base32 shared secret; totp_enabled is only set to True once the user
+    # has confirmed a valid code during enrolment. When enabled, the login
+    # flow requires a second step (the 6-digit code) after PAM validates
+    # the password.
+    totp_secret: Mapped[str | None] = mapped_column(String(64))
+    totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     last_login: Mapped[datetime | None] = mapped_column(DateTime)
 

@@ -125,7 +125,22 @@ def _compile_rule(rule: models.FirewallRule) -> list[str]:
 
     A rule that references a service_group with several protocols
     (e.g. AD = tcp + udp) yields several lines, one per protocol.
+
+    Empty-zone guard: when a rule is scoped to a zone that currently has
+    no member interface, it must match nothing. Without this the zone
+    clause would simply be omitted from the output (see
+    _compile_addresses_zones) and the rule would wrongly match every
+    interface. Concretely, the default "allow LAN to firewall" seed rule
+    would behave as "allow from anywhere", including the WAN, as long as
+    the LAN zone is not wired yet. This mirrors OPNsense, where an
+    unassigned interface simply carries no rule. A src_zone/dst_zone of
+    None means "any" and is intentionally not affected.
     """
+    if rule.src_zone is not None and not _zone_interfaces(rule.src_zone):
+        return []
+    if rule.dst_zone is not None and not _zone_interfaces(rule.dst_zone):
+        return []
+
     common = _compile_addresses_zones(rule)
     proto_variants = _compile_proto_ports(rule)
     action = rule.action

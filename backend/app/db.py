@@ -172,6 +172,19 @@ def _migrate_schema() -> None:
             ))
             conn.commit()
 
+        # TOTP 2FA : optional per-account two-factor. Additive columns,
+        # default off so existing accounts keep logging in with the
+        # password only until they opt in from the UI.
+        if ucols and "totp_secret" not in ucols:
+            conn.execute(text("ALTER TABLE users ADD COLUMN totp_secret VARCHAR(64)"))
+            conn.commit()
+        if ucols and "totp_enabled" not in ucols:
+            conn.execute(text(
+                "ALTER TABLE users ADD COLUMN totp_enabled "
+                "BOOLEAN NOT NULL DEFAULT 0"
+            ))
+            conn.commit()
+
         # rc128 : drop the legacy "Deny all (catch-all)" rule on the
         # forward chain. The chain already has policy drop in the
         # compiler output, so the explicit catch-all rule is redundant

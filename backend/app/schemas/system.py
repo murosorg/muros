@@ -76,11 +76,9 @@ class NtpServersIn(BaseModel):
 class NtpServersOut(BaseModel):
     servers: list[str]
     config_path: str
-    # When True, chrony also answers NTP requests from the LAN subnets.
+    # When True, chrony answers NTP requests on every interface
+    # (chrony 'allow all'); exposure is then controlled at the firewall.
     serve_lan: bool = True
-    # LAN network CIDRs currently served (empty when serve_lan is off
-    # or no LAN interface is configured yet).
-    served_subnets: list[str] = []
 
 
 # --- DNS ---

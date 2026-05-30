@@ -34,6 +34,10 @@ def _load_or_create_secret() -> str:
 JWT_SECRET = _load_or_create_secret()
 JWT_ALGO = "HS256"
 TOKEN_TTL = timedelta(hours=8)
+# Short-lived token issued between the password step and the TOTP step of
+# a two-factor login. It only proves the password was accepted; it cannot
+# be used as an access token (guarded by the "scope": "mfa" claim).
+MFA_TOKEN_TTL = timedelta(minutes=5)
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
 
@@ -60,11 +64,39 @@ def create_token(user: models.User) -> str:
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGO)
 
 
-def _decode_token(token: str) -> dict:
+def create_mfa_token(user: models.User) -> str:
+    """Intermediate token proving the password step passed (TOTP pending)."""
+    now = datetime.now(timezone.utc)
+    payload = {
+        "sub": str(user.id),
+        "username": user.username,
+        "scope": "mfa",
+        "iat": int(now.timestamp()),
+        "exp": int((now + MFA_TOKEN_TTL).timestamp()),
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGO)
+
+
+def decode_mfa_token(token: str) -> dict:
+    """Decode and validate an MFA step token; raise 401 otherwise."""
     try:
-        return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGO])
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGO])
     except jwt.PyJWTError:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid or expired token")
+    if payload.get("scope") != "mfa":
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid token")
+    return payload
+
+
+def _decode_token(token: str) -> dict:
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGO])
+    except jwt.PyJWTError:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid or expired token")
+    # An MFA step token must never be accepted as a full access token.
+    if payload.get("scope") == "mfa":
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid token")
+    return payload
 
 
 def current_user(

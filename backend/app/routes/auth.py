@@ -7,8 +7,8 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
-from app import models, pam_auth, schemas
-from app.auth import create_token, current_user
+from app import models, pam_auth, schemas, totp
+from app.auth import create_token, create_mfa_token, current_user, decode_mfa_token
 from app.db import get_db
 
 _auth_dep = [Depends(current_user)]
@@ -62,6 +62,36 @@ def login(request: Request, data: schemas.LoginRequest, db: Session = Depends(ge
         )
         raise HTTPException(403, "This account is not allowed to access the MurOS UI")
 
+    # Password step passed. If the account has TOTP enabled, do not issue
+    # an access token yet: hand back a short-lived MFA token that must be
+    # exchanged with a valid 6-digit code at /login/verify.
+    if user.totp_enabled and user.totp_secret:
+        return schemas.LoginResponse(
+            mfa_required=True,
+            mfa_token=create_mfa_token(user),
+        )
+
+    user.last_login = datetime.now(timezone.utc)
+    db.commit()
+    return schemas.LoginResponse(
+        access_token=create_token(user),
+        must_change_password=user.must_change_password,
+    )
+
+
+@auth_router.post("/login/verify", response_model=schemas.LoginResponse)
+def login_verify(
+    request: Request, data: schemas.MfaVerifyRequest, db: Session = Depends(get_db)
+):
+    """Second step of a two-factor login: verify the TOTP code."""
+    payload = decode_mfa_token(data.mfa_token)
+    user = db.get(models.User, int(payload.get("sub", 0)))
+    if user is None or not user.totp_enabled or not user.totp_secret:
+        raise HTTPException(401, "Invalid token")
+    client_ip = (request.client.host if request.client else "?") or "?"
+    if not totp.verify(user.totp_secret, data.code):
+        _auth_log.warning("2FA failed for %s from %s", user.username, client_ip)
+        raise HTTPException(401, "Invalid verification code")
     user.last_login = datetime.now(timezone.utc)
     db.commit()
     return schemas.LoginResponse(
@@ -73,6 +103,60 @@ def login(request: Request, data: schemas.LoginRequest, db: Session = Depends(ge
 @auth_router.get("/me", response_model=schemas.UserOut)
 def me(user: models.User = Depends(current_user)):
     return user
+
+
+@auth_router.get("/2fa/status", response_model=schemas.TwoFAStatusOut)
+def twofa_status(user: models.User = Depends(current_user)):
+    return schemas.TwoFAStatusOut(enabled=bool(user.totp_enabled))
+
+
+@auth_router.post("/2fa/setup", response_model=schemas.TwoFASetupOut)
+def twofa_setup(
+    user: models.User = Depends(current_user), db: Session = Depends(get_db)
+):
+    """Start enrolment: generate a fresh secret (stored, not yet enabled).
+
+    Returns the otpauth URI and a QR code. The secret only becomes active
+    once a valid code is confirmed via /2fa/enable.
+    """
+    secret = totp.new_secret()
+    user.totp_secret = secret
+    user.totp_enabled = False
+    db.commit()
+    uri = totp.provisioning_uri(secret, user.username)
+    return schemas.TwoFASetupOut(secret=secret, otpauth_uri=uri, qr_svg=totp.qr_svg(uri))
+
+
+@auth_router.post("/2fa/enable", response_model=schemas.TwoFAStatusOut)
+def twofa_enable(
+    data: schemas.TwoFACodeRequest,
+    user: models.User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    if not user.totp_secret:
+        raise HTTPException(400, "Start the 2FA setup first")
+    if not totp.verify(user.totp_secret, data.code):
+        raise HTTPException(400, "Invalid verification code")
+    user.totp_enabled = True
+    db.commit()
+    return schemas.TwoFAStatusOut(enabled=True)
+
+
+@auth_router.post("/2fa/disable", response_model=schemas.TwoFAStatusOut)
+def twofa_disable(
+    data: schemas.TwoFACodeRequest,
+    user: models.User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Disable 2FA. Requires a current valid code (proves possession)."""
+    if not user.totp_enabled:
+        return schemas.TwoFAStatusOut(enabled=False)
+    if not totp.verify(user.totp_secret, data.code):
+        raise HTTPException(400, "Invalid verification code")
+    user.totp_secret = None
+    user.totp_enabled = False
+    db.commit()
+    return schemas.TwoFAStatusOut(enabled=False)
 
 
 @auth_router.post("/change-password", response_model=schemas.UserOut)

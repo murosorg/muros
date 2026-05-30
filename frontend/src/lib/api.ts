@@ -231,7 +231,22 @@ export type User = {
   username: string
   is_admin: boolean
   must_change_password: boolean
+  totp_enabled?: boolean
   last_login: string | null
+}
+
+export type LoginResult = {
+  access_token?: string
+  token_type: string
+  must_change_password: boolean
+  mfa_required?: boolean
+  mfa_token?: string
+}
+
+export type TwoFASetup = {
+  secret: string
+  otpauth_uri: string
+  qr_svg: string
 }
 
 export type AdminUser = {
@@ -474,12 +489,18 @@ export const api = {
 
   auth: {
     login: (username: string, password: string) =>
-      request<{ access_token: string; token_type: string; must_change_password: boolean }>(
-        'POST', '/api/auth/login', { username, password },
-      ),
+      request<LoginResult>('POST', '/api/auth/login', { username, password }),
+    verifyMfa: (mfa_token: string, code: string) =>
+      request<LoginResult>('POST', '/api/auth/login/verify', { mfa_token, code }),
     me: () => request<User>('GET', '/api/auth/me'),
     changePassword: (current_password: string, new_password: string) =>
       request<User>('POST', '/api/auth/change-password', { current_password, new_password }),
+    twofa: {
+      status: () => request<{ enabled: boolean }>('GET', '/api/auth/2fa/status'),
+      setup: () => request<TwoFASetup>('POST', '/api/auth/2fa/setup', {}),
+      enable: (code: string) => request<{ enabled: boolean }>('POST', '/api/auth/2fa/enable', { code }),
+      disable: (code: string) => request<{ enabled: boolean }>('POST', '/api/auth/2fa/disable', { code }),
+    },
   },
 
   users: {
@@ -1447,7 +1468,6 @@ export type NtpServers = {
   servers: string[]
   config_path: string
   serve_lan: boolean
-  served_subnets: string[]
 }
 
 export type DnsConfig = {

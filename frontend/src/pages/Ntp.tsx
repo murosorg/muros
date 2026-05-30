@@ -124,24 +124,14 @@ export default function Ntp() {
               onChange={(e) => setServeLan(e.target.checked)}
             />
             <span className="text-sm text-gray-800">
-              Serve time to LAN clients
+              Act as NTP server
               <span className="block text-xs text-gray-600">
-                chrony answers NTP requests from the LAN networks (one{' '}
-                <code className="font-mono">allow</code> directive per LAN subnet).
-                The WAN is never served. Save to apply.
+                chrony answers NTP requests on every interface. Which
+                networks can actually reach it is controlled by your
+                firewall rules, not here. Save to apply.
               </span>
             </span>
           </label>
-          <div className="mt-3 text-xs text-gray-700">
-            Currently serving:{' '}
-            {config && config.served_subnets.length > 0 ? (
-              <span className="font-mono text-gray-900">{config.served_subnets.join(', ')}</span>
-            ) : (
-              <span className="text-gray-600">
-                no LAN subnet (client only{config && !config.serve_lan ? ', server mode off' : ', configure a LAN interface'})
-              </span>
-            )}
-          </div>
         </section>
       </div>
     </div>

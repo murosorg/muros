@@ -48,9 +48,19 @@ class LoginRequest(BaseModel):
 
 
 class LoginResponse(BaseModel):
-    access_token: str
+    # When the account has TOTP enabled, the password step does NOT return
+    # an access_token: it returns mfa_required=True plus a short-lived
+    # mfa_token to be exchanged (with the 6-digit code) at /login/verify.
+    access_token: str | None = None
     token_type: str = "bearer"
     must_change_password: bool = False
+    mfa_required: bool = False
+    mfa_token: str | None = None
+
+
+class MfaVerifyRequest(BaseModel):
+    mfa_token: str
+    code: str
 
 
 class ChangePasswordRequest(BaseModel):
@@ -58,11 +68,27 @@ class ChangePasswordRequest(BaseModel):
     new_password: str = Field(min_length=8)
 
 
+class TwoFASetupOut(BaseModel):
+    secret: str
+    otpauth_uri: str
+    # Inline SVG QR code of the otpauth URI (same renderer as WireGuard).
+    qr_svg: str
+
+
+class TwoFACodeRequest(BaseModel):
+    code: str
+
+
+class TwoFAStatusOut(BaseModel):
+    enabled: bool
+
+
 class UserOut(BaseModel):
     id: int
     username: str
     is_admin: bool
     must_change_password: bool
+    totp_enabled: bool = False
     last_login: datetime | None = None
     model_config = ConfigDict(from_attributes=True)
 
