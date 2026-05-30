@@ -275,7 +275,7 @@ function TlsSection() {
             : 'n/a'} />
           <KV k="Private key" v={status.key_present ? 'present' : 'missing'} />
           <div className="md:col-span-2">
-            <div className="text-xs text-gray-600">Empreinte SHA-256</div>
+            <div className="text-xs text-gray-600">SHA-256 fingerprint</div>
             <div className="font-mono text-xs text-gray-700 break-all">{status.fingerprint_sha256 || 'n/a'}</div>
           </div>
         </div>

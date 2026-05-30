@@ -209,7 +209,7 @@ function ConfigPanel({ form, setForm, dirty, busy, onSave }: {
           for the same flag. */}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <Field label="Port UDP" hint="161 by default">
+        <Field label="UDP port" hint="161 by default">
           <input type="number" className="input" value={form.port}
             onChange={(e) => setForm({ ...form, port: parseInt(e.target.value) || 161 })} />
         </Field>
