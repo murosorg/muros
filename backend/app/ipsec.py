@@ -312,7 +312,7 @@ def render_swanctl_conf(connections: list, certs_by_id: dict | None = None) -> s
         ])
     lines.append("}")
     if not has_enabled:
-        lines.append("# (aucune connexion activee)")
+        lines.append("# (no connection enabled)")
     return "\n".join(lines) + "\n"
 
 
@@ -505,14 +505,14 @@ def apply_config(connections: list, ca=None, certs: list | None = None,
         }
 
     if nb_enabled == 0:
-        # Plus aucune connexion active : on coupe strongswan completement.
+        # No active connection left: shut strongswan down completely.
         for s in IPSEC_SERVICES:
             subprocess.run(
                 ["systemctl", "disable", "--now", s],
                 capture_output=True, text=True, timeout=15,
             )
         return {
-            "message": "Conf IPsec sauvegardee, aucune connexion active : strongswan desactive.",
+            "message": "IPsec configuration saved, no active connection: strongswan disabled.",
             "service": svc_name or "",
         }
 

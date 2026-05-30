@@ -1,15 +1,15 @@
-"""Audit log : trace toutes les actions d'ecriture effectuees via l'UI.
+"""Audit log: record every write action performed through the UI.
 
-Middleware FastAPI qui :
-  - intercepte POST/PUT/PATCH/DELETE
-  - laisse passer les GET/HEAD/OPTIONS (consultation, pas trace)
-  - exclut le polling tres frequent (/api/health, /api/ha/role,
+FastAPI middleware that:
+  - intercepts POST/PUT/PATCH/DELETE
+  - lets GET/HEAD/OPTIONS through (reads, not recorded)
+  - excludes very frequent polling (/api/health, /api/ha/role,
     /api/system/services)
-  - extrait le user du JWT Bearer
-  - enregistre en DB apres response avec status_code et duree
-  - rotation auto (garde les 5000 derniers)
+  - extracts the user from the JWT Bearer token
+  - records to the DB after the response with status_code and duration
+  - auto rotation (keeps the last 5000 entries)
 
-Utilise au render pour la page Logs > onglet 'Actions web'.
+Used to render the Logs > 'Web actions' tab.
 """
 from __future__ import annotations
 
@@ -25,10 +25,10 @@ from app import models
 
 log = logging.getLogger("muros.audit")
 
-# Methodes HTTP a auditer.
+# HTTP methods to audit.
 AUDITED_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
-# Endpoints exclus (polling frequent, pas d'interet operationnel).
+# Excluded endpoints (frequent polling, no operational interest).
 EXCLUDED_PATHS_PREFIX = (
     "/api/health",
     "/api/system/services",
@@ -36,90 +36,90 @@ EXCLUDED_PATHS_PREFIX = (
     "/api/ha/role",
     "/api/auth/me",
     "/api/auth/refresh",
-    # Le polling sync HA (push/receive) entre noeuds n'est pas une action UI.
+    # HA sync polling (push/receive) between nodes is not a UI action.
     "/api/ha/sync/receive",
     "/api/ha/sync/ping",
 )
 
-# Map prefix -> resume d'action lisible.
+# Map prefix -> human-readable action summary.
 _ACTION_MAP: list[tuple[str, dict[str, str]]] = [
     ("/api/firewall/rules", {
-        "POST": "Creation regle firewall",
-        "PUT": "Modification regle firewall",
-        "DELETE": "Suppression regle firewall",
+        "POST": "Create firewall rule",
+        "PUT": "Update firewall rule",
+        "DELETE": "Delete firewall rule",
     }),
-    ("/api/firewall/apply", {"POST": "Application de la conf firewall"}),
+    ("/api/firewall/apply", {"POST": "Apply firewall configuration"}),
     ("/api/zones", {
-        "POST": "Creation zone", "PUT": "Modification zone",
-        "DELETE": "Suppression zone",
+        "POST": "Create zone", "PUT": "Update zone",
+        "DELETE": "Delete zone",
     }),
     ("/api/interfaces", {
-        "POST": "Creation interface", "PUT": "Modification interface",
-        "DELETE": "Suppression interface",
+        "POST": "Create interface", "PUT": "Update interface",
+        "DELETE": "Delete interface",
     }),
     ("/api/routes", {
-        "POST": "Creation route", "PUT": "Modification route",
-        "DELETE": "Suppression route",
+        "POST": "Create route", "PUT": "Update route",
+        "DELETE": "Delete route",
     }),
     ("/api/nat", {
-        "POST": "Creation regle NAT", "PUT": "Modification regle NAT",
-        "DELETE": "Suppression regle NAT",
+        "POST": "Create NAT rule", "PUT": "Update NAT rule",
+        "DELETE": "Delete NAT rule",
     }),
     ("/api/wireguard/peers", {
-        "POST": "Creation peer WireGuard", "PUT": "Modification peer WireGuard",
-        "DELETE": "Suppression peer WireGuard",
+        "POST": "Create WireGuard peer", "PUT": "Update WireGuard peer",
+        "DELETE": "Delete WireGuard peer",
     }),
-    ("/api/wireguard/config", {"PUT": "Modification config WireGuard"}),
-    ("/api/wireguard/apply", {"POST": "Application de la conf WireGuard"}),
-    ("/api/wireguard/install", {"POST": "Installation WireGuard"}),
+    ("/api/wireguard/config", {"PUT": "Update WireGuard configuration"}),
+    ("/api/wireguard/apply", {"POST": "Apply WireGuard configuration"}),
+    ("/api/wireguard/install", {"POST": "Install WireGuard"}),
     ("/api/ipsec/connections", {
-        "POST": "Creation connexion IPsec", "PUT": "Modification connexion IPsec",
-        "DELETE": "Suppression connexion IPsec",
+        "POST": "Create IPsec connection", "PUT": "Update IPsec connection",
+        "DELETE": "Delete IPsec connection",
     }),
-    ("/api/ipsec/apply", {"POST": "Application de la conf IPsec"}),
-    ("/api/ipsec/install", {"POST": "Installation StrongSwan"}),
-    ("/api/ipsec/ca", {"POST": "Generation CA IPsec"}),
+    ("/api/ipsec/apply", {"POST": "Apply IPsec configuration"}),
+    ("/api/ipsec/install", {"POST": "Install StrongSwan"}),
+    ("/api/ipsec/ca", {"POST": "Generate IPsec CA"}),
     ("/api/ipsec/certs", {
-        "POST": "Generation certificat IPsec", "DELETE": "Revocation certificat IPsec",
+        "POST": "Generate IPsec certificate", "DELETE": "Revoke IPsec certificate",
     }),
-    ("/api/ha/sync/config", {"PUT": "Modification config sync HA"}),
-    ("/api/ha/sync/push", {"POST": "Push HA manuel"}),
-    ("/api/ha/install", {"POST": "Installation HA (keepalived/conntrackd)"}),
+    ("/api/ha/sync/config", {"PUT": "Update HA sync configuration"}),
+    ("/api/ha/sync/push", {"POST": "Manual HA push"}),
+    ("/api/ha/install", {"POST": "Install HA (keepalived/conntrackd)"}),
     ("/api/ha", {
-        "POST": "Creation entree HA", "PUT": "Modification HA",
-        "DELETE": "Suppression HA",
+        "POST": "Create HA entry", "PUT": "Update HA",
+        "DELETE": "Delete HA",
     }),
-    ("/api/notifications/config", {"PUT": "Modification config notifications"}),
-    ("/api/notifications/test", {"POST": "Test d'envoi notification"}),
-    ("/api/snmp/config", {"PUT": "Modification config SNMP"}),
-    ("/api/snmp/apply", {"POST": "Application config SNMP"}),
-    ("/api/snmp/install", {"POST": "Installation SNMP"}),
-    ("/api/tls/upload", {"POST": "Upload certificat TLS UI"}),
-    ("/api/tls/regenerate-self-signed", {"POST": "Regeneration cert TLS auto-signe"}),
-    ("/api/ssh/config", {"PUT": "Modification config SSH"}),
-    ("/api/ssh/apply", {"POST": "Application config SSH"}),
-    ("/api/ssh/install", {"POST": "Installation sshd"}),
+    ("/api/notifications/config", {"PUT": "Update notifications configuration"}),
+    ("/api/notifications/test", {"POST": "Send test notification"}),
+    ("/api/snmp/config", {"PUT": "Update SNMP configuration"}),
+    ("/api/snmp/apply", {"POST": "Apply SNMP configuration"}),
+    ("/api/snmp/install", {"POST": "Install SNMP"}),
+    ("/api/tls/upload", {"POST": "Upload UI TLS certificate"}),
+    ("/api/tls/regenerate-self-signed", {"POST": "Regenerate self-signed TLS certificate"}),
+    ("/api/ssh/config", {"PUT": "Update SSH configuration"}),
+    ("/api/ssh/apply", {"POST": "Apply SSH configuration"}),
+    ("/api/ssh/install", {"POST": "Install sshd"}),
     ("/api/ssh/keys", {
-        "POST": "Ajout cle SSH autorisee", "DELETE": "Suppression cle SSH autorisee",
+        "POST": "Add authorized SSH key", "DELETE": "Remove authorized SSH key",
     }),
-    ("/api/http/config", {"PUT": "Modification config HTTP nginx"}),
-    ("/api/http/apply", {"POST": "Application config HTTP nginx"}),
-    ("/api/system/reboot", {"POST": "Redemarrage du firewall"}),
-    ("/api/system/shutdown", {"POST": "Arret du firewall"}),
-    ("/api/auth/change-password", {"POST": "Changement mot de passe"}),
-    ("/api/auth/login", {"POST": "Connexion UI"}),
-    ("/api/auth/logout", {"POST": "Deconnexion UI"}),
+    ("/api/http/config", {"PUT": "Update nginx HTTP configuration"}),
+    ("/api/http/apply", {"POST": "Apply nginx HTTP configuration"}),
+    ("/api/system/reboot", {"POST": "Reboot the firewall"}),
+    ("/api/system/shutdown", {"POST": "Shut down the firewall"}),
+    ("/api/auth/change-password", {"POST": "Change password"}),
+    ("/api/auth/login", {"POST": "UI login"}),
+    ("/api/auth/logout", {"POST": "UI logout"}),
     ("/api/backups", {
-        "POST": "Creation backup", "DELETE": "Suppression backup",
+        "POST": "Create backup", "DELETE": "Delete backup",
     }),
-    ("/api/dns", {"PUT": "Modification DNS"}),
-    ("/api/ntp", {"PUT": "Modification NTP"}),
-    ("/api/hostname", {"PUT": "Modification hostname"}),
+    ("/api/dns", {"PUT": "Update DNS"}),
+    ("/api/ntp", {"PUT": "Update NTP"}),
+    ("/api/hostname", {"PUT": "Update hostname"}),
 ]
 
 
 def _action_summary(method: str, path: str) -> str:
-    """Tente de donner un libelle lisible a partir du path + method."""
+    """Build a human-readable label from the path + method."""
     for prefix, methods in _ACTION_MAP:
         if path.startswith(prefix) and method in methods:
             return methods[method]
@@ -127,7 +127,7 @@ def _action_summary(method: str, path: str) -> str:
 
 
 def _extract_user(request: Request) -> tuple[int | None, str | None]:
-    """Extrait (user_id, username) du JWT dans le header Authorization."""
+    """Extract (user_id, username) from the JWT in the Authorization header."""
     auth_hdr = request.headers.get("Authorization", "")
     if not auth_hdr.startswith("Bearer "):
         return None, None
@@ -160,12 +160,12 @@ async def audit_middleware(request: Request, call_next: Callable[[Request], Awai
     method = request.method.upper()
     path = request.url.path
 
-    # Ne pas auditer GET/HEAD/OPTIONS (consultation) et exclusions.
+    # Do not audit GET/HEAD/OPTIONS (reads) and exclusions.
     if method not in AUDITED_METHODS:
         return await call_next(request)
     if any(path.startswith(p) for p in EXCLUDED_PATHS_PREFIX):
         return await call_next(request)
-    # On audite uniquement les routes /api/*.
+    # We only audit /api/* routes.
     if not path.startswith("/api/"):
         return await call_next(request)
 
@@ -177,12 +177,12 @@ async def audit_middleware(request: Request, call_next: Callable[[Request], Awai
 
     duration_ms = int((time.time() - started) * 1000)
 
-    # Si le user n'a pas pu etre lu en debut (ex: POST /api/auth/login),
-    # on essaye apres : sur login reussi on a le username dans le body...
-    # Trop complique pour V1, on note ce qu'on a.
+    # If the user could not be read up front (e.g. POST /api/auth/login),
+    # we could try afterwards: on a successful login the username is in the
+    # body... Too complex for V1, we record what we have.
 
-    # Persist en DB en best-effort. Si la DB est busy, on log un warning
-    # et on continue (ne bloque jamais la response).
+    # Persist to the DB best-effort. If the DB is busy, we log a warning
+    # and continue (never blocks the response).
     try:
         with SessionLocal() as db:
             entry = models.AuditLog(
@@ -198,16 +198,16 @@ async def audit_middleware(request: Request, call_next: Callable[[Request], Awai
             )
             db.add(entry)
             db.commit()
-            # Rotation : garde les 5000 derniers.
+            # Rotation: keep the last 5000 entries.
             _rotate(db, keep=5000)
     except Exception as exc:  # noqa: BLE001
-        log.warning("audit log write failed : %s", exc)
+        log.warning("audit log write failed: %s", exc)
 
     return response
 
 
 def _rotate(db, keep: int = 5000) -> None:
-    """Supprime les entrees au-dela des N derniers (par id desc)."""
+    """Delete entries beyond the last N (by id desc)."""
     ids = (
         db.query(models.AuditLog.id)
         .order_by(models.AuditLog.id.desc())

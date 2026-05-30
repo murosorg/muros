@@ -106,14 +106,14 @@ def set_config(data: dict[str, Any]) -> dict[str, Any]:
         try:
             port = int(data["port"])
         except (TypeError, ValueError) as exc:
-            raise ValueError("port doit etre un entier") from exc
+            raise ValueError("port must be an integer") from exc
         if not 1 <= port <= 65535:
             raise ValueError("port hors plage 1-65535")
         cfg["port"] = port
     if "path" in data:
         path = (data["path"] or "").strip()
         if path and (not path.startswith("/") or ".." in path):
-            raise ValueError("path distant doit etre absolu et sans '..'")
+            raise ValueError("remote path must be absolute and without '..'")
         cfg["path"] = path
     if "ssh_key_path" in data:
         keypath = (data["ssh_key_path"] or "").strip()
@@ -229,7 +229,7 @@ def generate_ssh_key(force: bool = False) -> dict:
         return {
             "generated": False,
             "dry_run": False,
-            "message": "Une cle existe deja. Utiliser force=true pour regenerer.",
+            "message": "A key already exists. Use force=true to regenerate.",
             "key_path": str(key_path),
             "public_key": pub,
         }
@@ -283,7 +283,7 @@ def generate_ssh_key(force: bool = False) -> dict:
     return {
         "generated": True,
         "dry_run": False,
-        "message": "Cle ed25519 generee. Deposer la cle publique sur le serveur distant.",
+        "message": "ed25519 key generated. Add the public key on the remote server.",
         "key_path": str(key_path),
         "public_key": pub,
     }

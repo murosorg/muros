@@ -309,7 +309,7 @@ def install_muros() -> dict:
     SHA-256 cote applicatif : tout passe par apt, comme l'installation.
     """
     if not _apt_available():
-        raise RuntimeError("apt n'est pas disponible : impossible de mettre a jour MurOS.")
+        raise RuntimeError("apt is not available: cannot update MurOS.")
 
     # 1. Snapshot pre-upgrade : DB + nftables.conf, archive horodatee.
     # Label porte la version installee AVANT upgrade pour que l'admin
@@ -514,7 +514,7 @@ def repair_muros_package() -> dict:
     renvoie la sortie pour affichage UI.
     """
     if not _apt_available():
-        raise RuntimeError("apt/dpkg indisponibles : reparation impossible.")
+        raise RuntimeError("apt/dpkg unavailable: repair impossible.")
     if os.geteuid() != 0:
         raise RuntimeError(
             "Reparation impossible : MurOS doit tourner en root. "

@@ -162,7 +162,7 @@ def _http_get(url: str, headers: dict, verify_tls: bool, timeout: int = 10) -> t
 def test_connection(cfg: models.HaSyncConfig) -> dict:
     """Ping le peer via GET /api/ha/sync/ping. Renvoie le role et la version peer."""
     if not cfg.peer_url or not cfg.peer_token:
-        raise RuntimeError("Peer URL ou token manquant.")
+        raise RuntimeError("Peer URL or token missing.")
     url = cfg.peer_url.rstrip("/") + "/api/ha/sync/ping"
     headers = {"X-Muros-Sync-Token": cfg.peer_token}
     status, body = _http_get(url, headers, cfg.verify_tls, timeout=5)
@@ -184,7 +184,7 @@ def push_to_peer(db: Session, cfg: models.HaSyncConfig, triggered_by: str = "man
     if not cfg.enabled:
         raise RuntimeError("Synchronisation HA desactivee.")
     if not cfg.peer_url or not cfg.peer_token:
-        raise RuntimeError("Peer URL ou token manquant.")
+        raise RuntimeError("Peer URL or token missing.")
     if not is_writable_role():
         raise RuntimeError("Ce noeud n'est pas MASTER, push refuse.")
 
@@ -263,7 +263,7 @@ def receive_from_peer(cfg: models.HaSyncConfig, signature: str, body: bytes) -> 
 
     # Verif sqlite header : doit commencer par 'SQLite format 3\x00'
     if not body.startswith(b"SQLite format 3\x00"):
-        raise RuntimeError("DB recue n'est pas un fichier SQLite valide.")
+        raise RuntimeError("Received DB is not a valid SQLite file.")
 
     if not APPLY_ENABLED:
         return {

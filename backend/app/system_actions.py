@@ -17,12 +17,12 @@ log = logging.getLogger("muros.system_actions")
 
 
 def reboot(delay_seconds: int = 5) -> dict:
-    """Reboot du firewall apres delay_seconds.
+    """Reboot the firewall after delay_seconds.
 
     Le delay permet a la requete HTTP de retourner 200 avant le shutdown.
     """
     if not APPLY_ENABLED:
-        return {"scheduled": False, "message": "dry-run : aucune action."}
+        return {"scheduled": False, "message": "dry-run: no action."}
     if os.geteuid() != 0:
         raise RuntimeError("Reboot impossible: MurOS must run as root.")
     # systemd-run nous permet de declencher en background avec un delai.
@@ -172,7 +172,7 @@ def list_services() -> list[dict]:
 
 
 def shutdown(delay_seconds: int = 5) -> dict:
-    """Shutdown (arret) du firewall apres delay_seconds."""
+    """Shut down the firewall after delay_seconds."""
     if not APPLY_ENABLED:
         return {"scheduled": False, "message": "dry-run : aucune action."}
     if os.geteuid() != 0:
@@ -183,3 +183,4 @@ def shutdown(delay_seconds: int = 5) -> dict:
     ])
     log.warning("Shutdown planifie dans %ds via systemd-run.", delay_seconds)
     return {"scheduled": True, "message": f"Shutdown planifie dans {delay_seconds}s."}
+

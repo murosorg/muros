@@ -416,7 +416,7 @@ def network_apply(db: Session = Depends(get_db)):
     )
 
     if not dirty_ifaces and not dirty_routes:
-        return {"applied": False, "message": "Aucun changement reseau en attente.", "pending_id": None}
+        return {"applied": False, "message": "No pending network change.", "pending_id": None}
 
     # Snapshot du noyau AVANT pour rollback
     iface_snapshots: list[dict] = []
@@ -548,7 +548,7 @@ def network_apply(db: Session = Depends(get_db)):
 
     return {
         "applied": True,
-        "message": description + (f" (avec {len(errors)} erreur(s))" if errors else ""),
+        "message": description + (f" (with {len(errors)} error(s))" if errors else ""),
         "errors": errors,
         "pending_id": change.id,
     }
@@ -676,7 +676,7 @@ def move_rule(
     l'augmente. NOP si la regle est deja en bord de chaine.
     """
     if direction not in ("up", "down"):
-        raise HTTPException(400, "direction doit etre 'up' ou 'down'")
+        raise HTTPException(400, "direction must be 'up' or 'down'")
     rule = db.get(models.FirewallRule, rule_id)
     if not rule:
         raise HTTPException(404, "Rule not found")

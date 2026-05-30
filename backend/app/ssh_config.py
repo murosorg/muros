@@ -356,7 +356,7 @@ def delete_authorized_key(key_b64: str) -> dict:
         raise RuntimeError("Cannot write SSH keys: MurOS must run as root.")
 
     if not os.path.exists(AUTHORIZED_KEYS_PATH):
-        raise ValueError("Aucun fichier authorized_keys.")
+        raise ValueError("No authorized_keys file.")
 
     new_lines: list[str] = []
     deleted = False

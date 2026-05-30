@@ -208,13 +208,13 @@ def render_conf(cfg) -> str:
         f"sysContact {cfg.syscontact}",
         "sysServices 76",
         "",
-        "# Community SNMPv2c en lecture seule, restreinte par CIDR",
+        "# Read-only SNMPv2c community, restricted by CIDR",
     ]
     for net in networks:
         lines.append(f"rocommunity {cfg.community} {net}")
     lines.extend([
         "",
-        "# Vues : on expose la mib-2 complete (system, interfaces, host-resources, etc.)",
+        "# Views: expose the full mib-2 (system, interfaces, host-resources, etc.)",
         "view systemview included .1.3.6.1.2.1",
         "view systemview included .1.3.6.1.4.1.2021",
         "",

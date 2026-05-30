@@ -59,7 +59,7 @@ def validate_vlan_params(name: str, parent: str | None, vlan_id: int | None) -> 
     if not parent or not _VALID_IFNAME.match(parent):
         raise ValueError("parent_interface is required for a VLAN")
     if not vlan_id or not (1 <= vlan_id <= 4094):
-        raise ValueError("vlan_id doit etre entre 1 et 4094")
+        raise ValueError("vlan_id must be between 1 and 4094")
 
 
 def create_vlan(name: str, parent: str, vlan_id: int) -> tuple[int, str]:
