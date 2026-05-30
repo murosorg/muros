@@ -102,13 +102,99 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  # Install the freshly built .deb on a clean Debian trixie and exercise
+  # the real deployment path end to end. This job exists because three
+  # shipped releases broke a real box in ways unit tests never see: a
+  # dependency missing from the venv (python-pam, then six) made login
+  # impossible, and a reused venv on upgrade never received new deps.
+  # Catching those needs an actual install + service start + login, so we
+  # run a privileged systemd container (the package relies on systemd) and
+  # check: install succeeds, the backend serves /api/health, the Python
+  # venv imports every runtime dependency, a PAM login returns a token,
+  # the nftables ruleset loads, an upgrade/reinstall keeps login working,
+  # and an uninstall leaves DNS resolving. A failure here blocks the apt
+  # publish below.
+  smoke-test:
+    runs-on: ubuntu-24.04
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: muros-deb
+          path: artifacts
+      - name: Boot a systemd debian:trixie container
+        run: |
+          docker run -d --name muros --privileged --cgroupns=host \
+            -v /sys/fs/cgroup:/sys/fs/cgroup:rw \
+            -v "$PWD/artifacts:/artifacts:ro" \
+            debian:trixie /sbin/init
+          for i in $(seq 1 30); do
+            state=$(docker exec muros systemctl is-system-running 2>/dev/null || true)
+            case "$state" in running|degraded) echo "systemd: $state"; break;; esac
+            sleep 1
+          done
+      - name: Install the freshly built .deb
+        run: |
+          docker exec muros bash -c 'apt-get update -qq'
+          docker exec muros bash -c 'apt-get install -y $(ls /artifacts/muros_*.deb)'
+      - name: Backend answers /api/health
+        run: |
+          docker exec muros bash -c '
+            for i in $(seq 1 30); do
+              curl -fsS http://127.0.0.1:8000/api/health && exit 0
+              sleep 2
+            done
+            echo "backend never became healthy"; journalctl -u muros-backend -n 50 --no-pager || true; exit 1'
+      - name: Python venv imports every runtime dependency
+        # Direct guard against the python-pam / six / pyotp class of bugs:
+        # a dependency missing from the built venv fails the import here
+        # instead of silently breaking login on a customer box.
+        run: |
+          docker exec muros /opt/muros/backend/venv/bin/python -c \
+            "import app.main, app.totp, pam, pyotp, six, qrcode; print('imports ok')"
+      - name: PAM login returns a token
+        run: |
+          docker exec muros bash -c 'echo "root:SmokeTest123!" | chpasswd'
+          docker exec muros bash -c '
+            curl -fsS -X POST http://127.0.0.1:8000/api/auth/login \
+              -H "Content-Type: application/json" \
+              -d "{\"username\":\"root\",\"password\":\"SmokeTest123!\"}" \
+              | grep -q access_token && echo "login ok"'
+      - name: nftables ruleset is loaded
+        run: docker exec muros bash -c 'nft list ruleset | grep -q "chain "'
+      - name: Reinstall keeps the venv in sync and login working
+        # Reproduces the upgrade/reinstall path: installing again over an
+        # existing venv must re-sync requirements (the rc12 fix) and keep
+        # login working.
+        run: |
+          docker exec muros bash -c 'apt-get install -y --reinstall $(ls /artifacts/muros_*.deb)'
+          docker exec muros bash -c '
+            for i in $(seq 1 20); do
+              curl -fsS -X POST http://127.0.0.1:8000/api/auth/login \
+                -H "Content-Type: application/json" \
+                -d "{\"username\":\"root\",\"password\":\"SmokeTest123!\"}" \
+                | grep -q access_token && echo "login ok after reinstall" && exit 0
+              sleep 2
+            done
+            echo "login broken after reinstall"; exit 1'
+      - name: Uninstall leaves a resolving box
+        # The rc11/rc12 uninstall fixes: purging must not leave a dead
+        # resolver or a stale nftables ruleset that breaks DNS / apt.
+        run: |
+          docker exec muros bash -c 'apt-get purge -y muros'
+          docker exec muros bash -c 'getent hosts deb.debian.org >/dev/null && echo "dns still resolves"'
+      - name: Tear down
+        if: always()
+        run: docker rm -f muros || true
+
   # After the GitHub release is published, push the same release into the
   # signed apt repository at apt.muros.org. The deploy key is locked on
   # the server to a single forced command (muros-apt-deploy), so it can
   # only publish a release, never open a shell or run anything else.
   publish-apt:
     runs-on: ubuntu-24.04
-    needs: build
+    needs: [build, smoke-test]
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
       - name: Publish to apt.muros.org
