@@ -168,11 +168,14 @@ export default function Monitoring() {
                 </span>
               </div>
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                <ServiceTable services={services.slice(0, Math.floor(services.length / 2))} />
-                {/* Second column hides the duplicate "Service / State"
-                    header: at xl+ they sit side by side and a single
-                    header reads across both. */}
-                <ServiceTable services={services.slice(Math.floor(services.length / 2))} hideHeaderOnDesktop />
+                {/* Left column: services enabled out of the box at install
+                    (default_on). Right column: on-demand services (SSH off
+                    by default, HA, VPN, MurOS feature daemons). The second
+                    table hides the duplicate "Service / State" header: at
+                    xl+ they sit side by side and a single header reads
+                    across both. */}
+                <ServiceTable services={services.filter((s) => s.default_on)} />
+                <ServiceTable services={services.filter((s) => !s.default_on)} hideHeaderOnDesktop />
               </div>
             </div>
           )}

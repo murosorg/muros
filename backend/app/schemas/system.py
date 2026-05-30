@@ -277,6 +277,8 @@ class SystemServiceOut(BaseModel):
     page: str
     category: str
     status: str  # active / inactive / failed / activating / unknown
+    # True for services enabled out of the box by the package postinst.
+    default_on: bool = False
 
 
 class AuditLogOut(BaseModel):

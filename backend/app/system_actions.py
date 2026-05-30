@@ -75,33 +75,40 @@ def _unit_exists(unit: str) -> bool:
 #
 # The `category` field is kept for backward compatibility (still
 # returned by the API) but the UI no longer groups by it.
+#   The `default_on` field flags services enabled out of the box by the
+#   package postinst (see packaging/debian/postinst). The Monitoring page
+#   uses it to put the install-time services in the left column and the
+#   on-demand ones (SSH off by default, HA, VPN, MurOS feature daemons) on
+#   the right.
 _SERVICE_CATALOG = [
     # 1. Always-on stack.
-    {"unit": "muros-backend", "display": "MurOS Backend", "page": "/system", "category": "muros"},
-    {"unit": "nginx", "display": "Nginx (UI)", "page": "/tls", "binary": "nginx", "category": "core"},
-    {"unit": "ssh", "alt_units": ["sshd"], "display": "SSH", "page": "/ssh", "binary": "sshd", "category": "core"},
-    {"unit": "fail2ban", "display": "Fail2ban", "page": "/logs", "binary": "fail2ban-server", "category": "core"},
-    {"unit": "snmpd", "display": "SNMP", "page": "/snmp", "binary": "snmpd", "category": "core"},
+    {"unit": "muros-backend", "display": "MurOS Backend", "page": "/system", "category": "muros", "default_on": True},
+    {"unit": "nginx", "display": "Nginx (UI)", "page": "/tls", "binary": "nginx", "category": "core", "default_on": True},
+    {"unit": "ssh", "alt_units": ["sshd"], "display": "SSH", "page": "/ssh", "binary": "sshd", "category": "core", "default_on": False},
+    {"unit": "fail2ban", "display": "Fail2ban", "page": "/logs", "binary": "fail2ban-server", "category": "core", "default_on": True},
+    {"unit": "snmpd", "display": "SNMP", "page": "/snmp", "binary": "snmpd", "category": "core", "default_on": True},
 
     # 2. MurOS optional daemons (start when a feature is configured).
-    {"unit": "muros-watcher", "display": "MurOS Watcher", "page": "/notifications", "category": "muros"},
-    {"unit": "muros-wan-monitor", "display": "MurOS Wan Monitor", "page": "/wan", "category": "muros"},
+    {"unit": "muros-watcher", "display": "MurOS Watcher", "page": "/notifications", "category": "muros", "default_on": False},
+    {"unit": "muros-wan-monitor", "display": "MurOS Wan Monitor", "page": "/wan", "category": "muros", "default_on": False},
 
-    # 3. LAN services published by the firewall.
+    # 3. LAN services published by the firewall (enabled by default).
+    {"unit": "chrony", "alt_units": ["chronyd"], "display": "NTP (chrony)", "page": "/services/ntp",
+     "binary": "chronyd", "category": "core", "default_on": True},
     {"unit": "kea-dhcp4-server", "display": "DHCP server (Kea)", "page": "/services/dhcp",
-     "binary": "kea-dhcp4", "category": "opt"},
+     "binary": "kea-dhcp4", "category": "opt", "default_on": True},
     {"unit": "unbound", "display": "DNS recursive (Unbound)", "page": "/services/dns",
-     "binary": "unbound", "category": "opt"},
+     "binary": "unbound", "category": "opt", "default_on": True},
 
     # 4. High availability.
-    {"unit": "keepalived", "display": "Keepalived (VRRP)", "page": "/ha", "binary": "keepalived", "category": "opt"},
-    {"unit": "conntrackd", "display": "Conntrackd (sync)", "page": "/ha", "binary": "conntrackd", "category": "opt"},
+    {"unit": "keepalived", "display": "Keepalived (VRRP)", "page": "/ha", "binary": "keepalived", "category": "opt", "default_on": False},
+    {"unit": "conntrackd", "display": "Conntrackd (sync)", "page": "/ha", "binary": "conntrackd", "category": "opt", "default_on": False},
 
     # 5. VPN.
     {"unit": "strongswan", "alt_units": ["strongswan-starter"], "display": "StrongSwan (IPsec)",
-     "page": "/vpn/ipsec", "binary": "swanctl", "category": "opt"},
+     "page": "/vpn/ipsec", "binary": "swanctl", "category": "opt", "default_on": False},
     {"unit": "wg-quick@wg0", "display": "WireGuard", "page": "/vpn/wireguard",
-     "binary": "wg", "category": "opt"},
+     "binary": "wg", "category": "opt", "default_on": False},
 ]
 
 
@@ -201,6 +208,7 @@ def list_services() -> list[dict]:
             "page": entry["page"],
             "category": entry["category"],
             "status": status,
+            "default_on": entry.get("default_on", False),
         })
     return result
 

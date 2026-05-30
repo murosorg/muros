@@ -1258,6 +1258,7 @@ export type SystemService = {
   page: string
   category: string  // muros / core / ha / vpn / obs
   status: string    // active / inactive / failed / activating / unknown
+  default_on: boolean  // enabled out of the box by the package postinst
 }
 
 export type SshStatus = {
