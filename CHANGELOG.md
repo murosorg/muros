@@ -2,7 +2,7 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [v0.9.0-rc26] - 2026-05-30
+## [v0.9.0-rc27] - 2026-05-30
 
 ### Added
 - IPv6 firewall filtering (lot 1 of IPv6 support). Address-based rules are
