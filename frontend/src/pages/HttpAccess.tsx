@@ -1,8 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import {
-  api, type User, type HttpConfig, type HttpConfigInput,
-  type TlsStatus, type TwoFASetup,
+  api, type HttpConfig, type HttpConfigInput, type TlsStatus,
 } from '../lib/api'
 import PageHeader from '../components/PageHeader'
 import { ServiceStatusInline, type ServiceState } from '../components/ServiceStatusLine'
@@ -11,7 +9,6 @@ import FormActions from '../components/FormActions'
 import { isDirty } from '../lib/dirty'
 import CardHeader from '../components/CardHeader'
 import { ErrorBlock, SuccessBlock } from '../components/Alerts'
-import { toast } from '../components/Toast'
 import { useConfirm } from '../components/ConfirmModal'
 import { fmt } from '../lib/format'
 import { Globe } from 'lucide-react'
@@ -43,7 +40,7 @@ export default function HttpAccess() {
       <PageHeader
         icon={<Globe size={16} />}
         title="HTTP Access"
-        description="Admin account, web listener and TLS."
+        description="Web listener and TLS. Account credentials live in System > Accounts."
         status={nginxStatus && (
           <ServiceStatusInline
             state={(nginxStatus.service_state || 'inactive') as ServiceState}
@@ -59,8 +56,6 @@ export default function HttpAccess() {
         }
       />
       <div className="px-6 py-4 space-y-6">
-        <AccountSection />
-        <TwoFactorSection />
         <ListenSection
           register={(api) => { listenApplyRef.current = api; forceRerender((x) => x + 1) }}
         />
@@ -70,186 +65,7 @@ export default function HttpAccess() {
   )
 }
 
-// --- Administrator account ---
-
-function AccountSection() {
-  const nav = useNavigate()
-  const [me, setMe] = useState<User | null>(null)
-  const [currentPwd, setCurrentPwd] = useState('')
-  const [newPwd, setNewPwd] = useState('')
-  const [confirmPwd, setConfirmPwd] = useState('')
-  const [error, setError] = useState<string | null>(null)
-  const [submitting, setSubmitting] = useState(false)
-
-  useEffect(() => { api.auth.me().then(setMe).catch(() => {}) }, [])
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError(null)
-    if (newPwd !== confirmPwd) { setError('Both passwords do not match'); return }
-    if (newPwd.length < 8) { setError('Password must be at least 8 characters'); return }
-    setSubmitting(true)
-    try {
-      const u = await api.auth.changePassword(currentPwd, newPwd)
-      setMe(u); setCurrentPwd(''); setNewPwd(''); setConfirmPwd('')
-      toast.success('Password updated')
-      if (u.must_change_password === false) { setTimeout(() => nav('/'), 1200) }
-    } catch (e) { setError(String(e)) } finally { setSubmitting(false) }
-  }
-
-  return (
-    <div className="card">
-      <h2 className="text-lg font-semibold mb-3">Administrator account</h2>
-
-      {me?.must_change_password && (
-        <div className="text-sm text-amber-800 bg-amber-50 border border-amber-200 px-3 py-2 rounded mb-3">
-          We recommend changing the default password.
-        </div>
-      )}
-      {error && <ErrorBlock message={error} />}
-
-      {/* Username : ligne dedicacee dans la card, plus orpheline en haut a
-          droite du titre. Lecture seule (le changement de username n'est
-          pas expose ici). */}
-      <div className="mb-3">
-        <div className="text-xs font-medium text-gray-600 mb-1">Username</div>
-        <div className="font-mono text-sm text-gray-900">{me?.username || '-'}</div>
-      </div>
-
-      <form onSubmit={submit} className="grid grid-cols-1 md:grid-cols-4 gap-2 items-end">
-        <label className="block">
-          <div className="text-xs font-medium text-gray-600 mb-1">Current password</div>
-          <input type="password" className="input" autoComplete="current-password"
-            value={currentPwd} onChange={(e) => setCurrentPwd(e.target.value)} />
-        </label>
-        <label className="block">
-          <div className="text-xs font-medium text-gray-600 mb-1">New</div>
-          <input type="password" className="input" autoComplete="new-password"
-            value={newPwd} onChange={(e) => setNewPwd(e.target.value)} />
-        </label>
-        <label className="block">
-          <div className="text-xs font-medium text-gray-600 mb-1">Confirm</div>
-          <input type="password" className="input" autoComplete="new-password"
-            value={confirmPwd} onChange={(e) => setConfirmPwd(e.target.value)} />
-        </label>
-        <button type="submit" className="btn-primary" disabled={submitting || !currentPwd || !newPwd}>
-          {submitting ? 'Updating...' : 'Change password'}
-        </button>
-      </form>
-    </div>
-  )
-}
-
-// --- Two-factor authentication (TOTP) ---
-
-function TwoFactorSection() {
-  const [enabled, setEnabled] = useState<boolean | null>(null)
-  const [setup, setSetup] = useState<TwoFASetup | null>(null)
-  const [code, setCode] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  const load = () => api.auth.twofa.status().then((s) => setEnabled(s.enabled)).catch(() => {})
-  useEffect(() => { load() }, [])
-
-  const startSetup = async () => {
-    setBusy(true); setError(null)
-    try { setSetup(await api.auth.twofa.setup()); setCode('') }
-    catch (e) { setError(String(e)) } finally { setBusy(false) }
-  }
-  const confirmEnable = async () => {
-    setBusy(true); setError(null)
-    try {
-      await api.auth.twofa.enable(code)
-      setSetup(null); setCode(''); setEnabled(true)
-      toast.success('Two-factor authentication enabled')
-    } catch (e) { setError(String(e)) } finally { setBusy(false) }
-  }
-  const disable = async () => {
-    setBusy(true); setError(null)
-    try {
-      await api.auth.twofa.disable(code)
-      setCode(''); setEnabled(false)
-      toast.success('Two-factor authentication disabled')
-    } catch (e) { setError(String(e)) } finally { setBusy(false) }
-  }
-
-  const codeInput = (
-    <input
-      className="input tracking-widest text-center font-mono max-w-[10rem]"
-      value={code}
-      onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-      inputMode="numeric"
-      autoComplete="one-time-code"
-      placeholder="000000"
-    />
-  )
-
-  return (
-    <div className="card">
-      <h2 className="text-lg font-semibold mb-1">Two-factor authentication</h2>
-      <p className="text-sm text-gray-600 mb-3">
-        Time-based one-time password (TOTP). Adds a 6-digit code from an
-        authenticator app on top of your password at login.
-      </p>
-      {error && <ErrorBlock message={error} />}
-
-      {enabled === null ? (
-        <div className="text-sm text-gray-500">Loading...</div>
-      ) : enabled ? (
-        <div>
-          <div className="text-sm text-green-700 mb-3">
-            Two-factor authentication is <strong>enabled</strong> on your account.
-          </div>
-          <div className="flex items-end gap-2">
-            <label className="block">
-              <div className="text-xs font-medium text-gray-600 mb-1">Current code to disable</div>
-              {codeInput}
-            </label>
-            <button className="btn-danger" onClick={disable} disabled={busy || code.length < 6}>
-              {busy ? 'Working...' : 'Disable 2FA'}
-            </button>
-          </div>
-        </div>
-      ) : !setup ? (
-        <button className="btn-primary" onClick={startSetup} disabled={busy}>
-          {busy ? 'Working...' : 'Enable 2FA'}
-        </button>
-      ) : (
-        <div className="space-y-3">
-          <p className="text-sm text-gray-700">
-            Scan this QR code with your authenticator app, then enter the
-            generated code to confirm.
-          </p>
-          <div className="flex flex-wrap items-start gap-6">
-            <div
-              className="w-40 h-40 [&>svg]:w-full [&>svg]:h-full border border-gray-200 rounded p-2 bg-white"
-              dangerouslySetInnerHTML={{ __html: setup.qr_svg }}
-            />
-            <div className="text-xs text-gray-600">
-              <div className="mb-1">Or enter this secret manually:</div>
-              <code className="font-mono break-all text-gray-900">{setup.secret}</code>
-            </div>
-          </div>
-          <div className="flex items-end gap-2">
-            <label className="block">
-              <div className="text-xs font-medium text-gray-600 mb-1">Verification code</div>
-              {codeInput}
-            </label>
-            <button className="btn-primary" onClick={confirmEnable} disabled={busy || code.length < 6}>
-              {busy ? 'Working...' : 'Confirm and enable'}
-            </button>
-            <button className="btn-secondary" onClick={() => { setSetup(null); setCode('') }} disabled={busy}>
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// --- Listen interface HTTP / HTTPS ---
+// --- Web listener (HTTP / HTTPS) ---
 
 type ListenApplyApi = { apply: () => void; busy: boolean; dirty: boolean }
 

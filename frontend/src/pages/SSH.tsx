@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import {
   api, type SshStatus, type SshConfig, type SshConfigInput,
-  type SshAuthorizedKey, type ListenAddress,
+  type SshAuthorizedKey,
 } from '../lib/api'
 import PageHeader from '../components/PageHeader'
 import { KeyRound, Terminal } from 'lucide-react'
@@ -23,7 +23,10 @@ import { ServiceStatusInline } from '../components/ServiceStatusLine'
 function formFromCfg(c: SshConfig): SshConfigInput {
   return {
     port: c.port,
-    listen_address: c.listen_address || '0.0.0.0',
+    // MurOS always binds sshd on every interface (0.0.0.0). Restricting
+    // who can reach it is done with firewall rules, the OPNsense way, so
+    // there is no per-interface selector on this page.
+    listen_address: '0.0.0.0',
     permit_root_login: c.permit_root_login,
     password_authentication: c.password_authentication,
     pubkey_authentication: c.pubkey_authentication,
@@ -46,17 +49,15 @@ export default function SSH() {
   const [err, setErr] = useState<string | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
   const [preview, setPreview] = useState<string | null>(null)
-  const [addresses, setAddresses] = useState<ListenAddress[]>([])
   const { confirm, ConfirmHost } = useConfirm()
 
   const reload = async () => {
     try {
-      const [s, c, ad] = await Promise.all([
+      const [s, c] = await Promise.all([
         api.ssh.status(),
         api.ssh.getConfig(),
-        api.systemActions.listenAddresses(),
       ])
-      setStatus(s); setCfg(c); setAddresses(ad)
+      setStatus(s); setCfg(c)
       if (!form) setForm(formFromCfg(c))
     } catch (e) { setErr((e as Error).message) }
   }
@@ -197,16 +198,12 @@ export default function SSH() {
         <div className="card">
           <CardHeader title="Server settings" />
 
+          <div className="text-xs text-gray-600 mb-3">
+            sshd listens on every interface. Restrict who can reach it with
+            firewall rules (input chain), the same way you control any other
+            service.
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <F label="Listen interface" hint="IP on which sshd accepts connections. 'All' = bind on 0.0.0.0.">
-              <select className="input" value={form.listen_address}
-                onChange={(e) => setForm({ ...form, listen_address: e.target.value })}>
-                {addresses.length === 0 && <option value={form.listen_address}>{form.listen_address}</option>}
-                {addresses.map((a) => (
-                  <option key={a.address} value={a.address}>{a.label}</option>
-                ))}
-              </select>
-            </F>
             <F label="SSH port" hint="The firewall must allow this port in input.">
               <input type="number" className="input" value={form.port}
                 onChange={(e) => setForm({ ...form, port: parseInt(e.target.value) || 22 })} />
@@ -272,21 +269,6 @@ export default function SSH() {
             </div>
           )}
 
-          {(form.listen_address.startsWith('127.') || form.listen_address === '::1') && (
-            <div className="mt-3 border border-amber-300 bg-amber-50 rounded p-3 text-sm flex items-start gap-3">
-              <input type="checkbox"
-                className="mt-0.5"
-                checked={!!form.confirm_loopback}
-                onChange={(e) => setForm({ ...form, confirm_loopback: e.target.checked })} />
-              <div>
-                <div className="font-medium text-amber-900">Confirm loopback bind</div>
-                <div className="text-xs text-amber-800 mt-0.5">
-                  sshd will only be reachable from the machine itself.
-                  Any SSH access from your LAN will be lost. Check to confirm.
-                </div>
-              </div>
-            </div>
-          )}
           <div className="mt-3 border border-slate-200 rounded p-3 text-sm flex items-start gap-3">
             <input type="checkbox"
               className="mt-0.5"
@@ -310,66 +292,7 @@ export default function SSH() {
           )}
         </div>
 
-        <RootPasswordPanel />
         <SshKeysPanel />
-      </div>
-    </div>
-  )
-}
-
-function RootPasswordPanel() {
-  const [pwd, setPwd] = useState('')
-  const [pwd2, setPwd2] = useState('')
-  const [currentUiPwd, setCurrentUiPwd] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [err, setErr] = useState<string | null>(null)
-  const [msg, setMsg] = useState<string | null>(null)
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setErr(null); setMsg(null)
-    if (pwd !== pwd2) { setErr('Both new passwords do not match.'); return }
-    if (!currentUiPwd) { setErr('Enter your MurOS UI password to confirm.'); return }
-    setBusy(true)
-    try {
-      const r = await api.ssh.setRootPassword(pwd, currentUiPwd)
-      setMsg(r.message); setPwd(''); setPwd2(''); setCurrentUiPwd('')
-    } catch (e) { setErr((e as Error).message) } finally { setBusy(false) }
-  }
-
-  return (
-    <div className="card">
-      <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
-        <h2 className="text-lg font-semibold">Linux password for the root account</h2>
-        <div className="text-xs text-gray-600">
-          For local console / recovery only. SSH and the web UI use the
-          shared <code>admin</code> account, not root.
-        </div>
-      </div>
-      {err && <div className="mb-3"><ErrorBlock message={err} /></div>}
-      {msg && <SuccessBlock message={msg} onDismiss={() => setMsg(null)} />}
-      <form onSubmit={submit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2 items-end">
-        <label className="block">
-          <div className="text-xs font-medium text-gray-600 mb-1">Your MurOS password</div>
-          <input type="password" className="input" autoComplete="current-password"
-            value={currentUiPwd} onChange={(e) => setCurrentUiPwd(e.target.value)} />
-        </label>
-        <label className="block">
-          <div className="text-xs font-medium text-gray-600 mb-1">New root password</div>
-          <input type="password" className="input" autoComplete="new-password"
-            value={pwd} onChange={(e) => setPwd(e.target.value)} />
-        </label>
-        <label className="block">
-          <div className="text-xs font-medium text-gray-600 mb-1">Confirm</div>
-          <input type="password" className="input" autoComplete="new-password"
-            value={pwd2} onChange={(e) => setPwd2(e.target.value)} />
-        </label>
-        <button type="submit" className="btn-primary" disabled={busy || !pwd || !currentUiPwd}>
-          {busy ? 'Updating...' : 'Change root password'}
-        </button>
-      </form>
-      <div className="text-xs text-gray-600 mt-2">
-        Security lock: we ask for your current MurOS UI password to prevent an open session from being used to change the root password.
       </div>
     </div>
   )

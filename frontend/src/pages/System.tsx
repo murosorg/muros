@@ -4,6 +4,7 @@ import TableSkeleton from '../components/TableSkeleton'
 import {
   api, Health, SystemInfo, Backup,
   DnsConfig, UpdateStatus, MurosUpdateStatus, BackupRemoteConfig, SshKey,
+  type User, type TwoFASetup,
 } from '../lib/api'
 import PageHeader from '../components/PageHeader'
 import EmptyState from '../components/EmptyState'
@@ -17,19 +18,21 @@ import { toast } from '../components/Toast'
 import { fmt } from '../lib/format'
 import { Archive, Settings } from 'lucide-react'
 
-type TabKey = 'general' | 'backups' | 'dns' | 'updates'
+type TabKey = 'general' | 'accounts' | 'backups' | 'dns' | 'updates'
 
 // Mapping URL segment <-> internal tab key. Keeps internal code stable while
 // exposing clean, intent-revealing URLs that survive bookmarks and back-button.
 // Note: NTP lives in its own Services page (/services/ntp), not here.
 const URL_TO_KEY: Record<string, TabKey> = {
   maintenance: 'general',
+  accounts: 'accounts',
   backups: 'backups',
   dns: 'dns',
   updates: 'updates',
 }
 const KEY_TO_URL: Record<TabKey, string> = {
   general: 'maintenance',
+  accounts: 'accounts',
   backups: 'backups',
   dns: 'dns',
   updates: 'updates',
@@ -51,12 +54,13 @@ export default function System() {
         icon={<Settings size={16} />}
        
         title="System"
-        description="Backups, sync and updates."
+        description="Accounts, backups, sync and updates."
       />
       <div className="px-6 py-4">
         <Tabs tab={tab} onChange={setTab} />
         <div className="mt-4">
           {tab === 'general' && <GeneralTab />}
+          {tab === 'accounts' && <AccountsTab />}
           {tab === 'backups' && <BackupsTab />}
           {tab === 'dns' && <DnsTab />}
           {tab === 'updates' && <UpdatesTab />}
@@ -68,6 +72,7 @@ export default function System() {
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'general', label: 'Maintenance' },
+  { key: 'accounts', label: 'Accounts' },
   { key: 'backups', label: 'Backups' },
   { key: 'dns', label: 'DNS' },
   { key: 'updates', label: 'Updates' },
@@ -117,6 +122,198 @@ const formatBytes = (n: number): string => fmt.bytes(n)
 function formatDateFR(iso: string | null | undefined): string {
   if (!iso) return 'never'
   try { return fmt.datetime(iso) } catch { return iso }
+}
+
+/* --- Accounts tab --- */
+// The web UI and SSH share the same Linux account (PAM), so account
+// credentials are managed in a single place here instead of being
+// duplicated on the HTTP Access and SSH pages. Granting UI access to
+// other Linux accounts stays on the dedicated Users page.
+function AccountsTab() {
+  return (
+    <>
+      <ChangePasswordSection />
+      <TwoFactorSection />
+    </>
+  )
+}
+
+function ChangePasswordSection() {
+  const nav = useNavigate()
+  const [me, setMe] = useState<User | null>(null)
+  const [currentPwd, setCurrentPwd] = useState('')
+  const [newPwd, setNewPwd] = useState('')
+  const [confirmPwd, setConfirmPwd] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+
+  useEffect(() => { api.auth.me().then(setMe).catch(() => {}) }, [])
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError(null)
+    if (newPwd !== confirmPwd) { setError('Both passwords do not match'); return }
+    if (newPwd.length < 8) { setError('Password must be at least 8 characters'); return }
+    setSubmitting(true)
+    try {
+      const u = await api.auth.changePassword(currentPwd, newPwd)
+      setMe(u); setCurrentPwd(''); setNewPwd(''); setConfirmPwd('')
+      toast.success('Password updated')
+      if (u.must_change_password === false) { setTimeout(() => nav('/'), 1200) }
+    } catch (e) { setError(String(e)) } finally { setSubmitting(false) }
+  }
+
+  return (
+    <Section title="Account password">
+      <div className="border border-gray-200 rounded-md p-4">
+        <p className="text-sm text-gray-700 mb-3">
+          This password is shared by the web UI and SSH. Changing it here
+          updates the Linux account password used by both.
+        </p>
+
+        {me?.must_change_password && (
+          <div className="text-sm text-amber-800 bg-amber-50 border border-amber-200 px-3 py-2 rounded mb-3">
+            We recommend changing the default password.
+          </div>
+        )}
+        {error && <ErrorBlock message={error} />}
+
+        <div className="mb-3">
+          <div className="text-xs font-medium text-gray-600 mb-1">Username</div>
+          <div className="font-mono text-sm text-gray-900">{me?.username || '-'}</div>
+        </div>
+
+        <form onSubmit={submit} className="grid grid-cols-1 md:grid-cols-4 gap-2 items-end">
+          <label className="block">
+            <div className="text-xs font-medium text-gray-600 mb-1">Current password</div>
+            <input type="password" className="input" autoComplete="current-password"
+              value={currentPwd} onChange={(e) => setCurrentPwd(e.target.value)} />
+          </label>
+          <label className="block">
+            <div className="text-xs font-medium text-gray-600 mb-1">New</div>
+            <input type="password" className="input" autoComplete="new-password"
+              value={newPwd} onChange={(e) => setNewPwd(e.target.value)} />
+          </label>
+          <label className="block">
+            <div className="text-xs font-medium text-gray-600 mb-1">Confirm</div>
+            <input type="password" className="input" autoComplete="new-password"
+              value={confirmPwd} onChange={(e) => setConfirmPwd(e.target.value)} />
+          </label>
+          <button type="submit" className="btn-primary" disabled={submitting || !currentPwd || !newPwd}>
+            {submitting ? 'Updating...' : 'Change password'}
+          </button>
+        </form>
+      </div>
+    </Section>
+  )
+}
+
+function TwoFactorSection() {
+  const [enabled, setEnabled] = useState<boolean | null>(null)
+  const [setup, setSetup] = useState<TwoFASetup | null>(null)
+  const [code, setCode] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const load = () => api.auth.twofa.status().then((s) => setEnabled(s.enabled)).catch(() => {})
+  useEffect(() => { load() }, [])
+
+  const startSetup = async () => {
+    setBusy(true); setError(null)
+    try { setSetup(await api.auth.twofa.setup()); setCode('') }
+    catch (e) { setError(String(e)) } finally { setBusy(false) }
+  }
+  const confirmEnable = async () => {
+    setBusy(true); setError(null)
+    try {
+      await api.auth.twofa.enable(code)
+      setSetup(null); setCode(''); setEnabled(true)
+      toast.success('Two-factor authentication enabled')
+    } catch (e) { setError(String(e)) } finally { setBusy(false) }
+  }
+  const disable = async () => {
+    setBusy(true); setError(null)
+    try {
+      await api.auth.twofa.disable(code)
+      setCode(''); setEnabled(false)
+      toast.success('Two-factor authentication disabled')
+    } catch (e) { setError(String(e)) } finally { setBusy(false) }
+  }
+
+  const codeInput = (
+    <input
+      className="input tracking-widest text-center font-mono max-w-[10rem]"
+      value={code}
+      onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+      inputMode="numeric"
+      autoComplete="one-time-code"
+      placeholder="000000"
+    />
+  )
+
+  return (
+    <Section title="Two-factor authentication">
+      <div className="border border-gray-200 rounded-md p-4">
+        <p className="text-sm text-gray-600 mb-3">
+          Time-based one-time password (TOTP). Adds a 6-digit code from an
+          authenticator app on top of your password at login.
+        </p>
+        {error && <ErrorBlock message={error} />}
+
+        {enabled === null ? (
+          <div className="text-sm text-gray-500">Loading...</div>
+        ) : enabled ? (
+          <div>
+            <div className="text-sm text-green-700 mb-3">
+              Two-factor authentication is <strong>enabled</strong> on your account.
+            </div>
+            <div className="flex items-end gap-2">
+              <label className="block">
+                <div className="text-xs font-medium text-gray-600 mb-1">Current code to disable</div>
+                {codeInput}
+              </label>
+              <button className="btn-danger" onClick={disable} disabled={busy || code.length < 6}>
+                {busy ? 'Working...' : 'Disable 2FA'}
+              </button>
+            </div>
+          </div>
+        ) : !setup ? (
+          <button className="btn-primary" onClick={startSetup} disabled={busy}>
+            {busy ? 'Working...' : 'Enable 2FA'}
+          </button>
+        ) : (
+          <div className="space-y-3">
+            <p className="text-sm text-gray-700">
+              Scan this QR code with your authenticator app, then enter the
+              generated code to confirm.
+            </p>
+            <div className="flex flex-wrap items-start gap-6">
+              <div
+                className="w-40 h-40 [&>svg]:w-full [&>svg]:h-full border border-gray-200 rounded p-2 bg-white"
+                dangerouslySetInnerHTML={{ __html: setup.qr_svg }}
+              />
+              <div className="text-xs text-gray-600">
+                <div className="mb-1">Or enter this secret manually:</div>
+                <code className="font-mono break-all text-gray-900">{setup.secret}</code>
+              </div>
+            </div>
+            <div className="flex items-end gap-2">
+              <label className="block">
+                <div className="text-xs font-medium text-gray-600 mb-1">Verification code</div>
+                {codeInput}
+              </label>
+              <button className="btn-primary" onClick={confirmEnable} disabled={busy || code.length < 6}>
+                {busy ? 'Working...' : 'Confirm and enable'}
+              </button>
+              <button className="btn-secondary" onClick={() => { setSetup(null); setCode('') }} disabled={busy}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </Section>
+  )
 }
 
 /* --- Onglet General --- */
