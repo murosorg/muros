@@ -2,6 +2,20 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [v0.9.0-rc24] - 2026-05-30
+
+### Added
+- NTP (chrony) now appears on the dashboard service list, and can be
+  turned on or off from a master enable toggle on the NTP page (like the
+  other service pages). Disabling stops chrony and keeps it down across
+  reboots, after a confirmation prompt.
+
+### Changed
+- Dashboard service list is now split by install state: services enabled
+  out of the box (backend, nginx, fail2ban, SNMP, NTP, DHCP, DNS) sit in
+  the left column, on-demand ones (SSH, HA, VPN, MurOS feature daemons)
+  on the right, instead of an arbitrary half/half split.
+
 ## [v0.9.0-rc22] - 2026-05-30
 
 ### Added
