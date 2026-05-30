@@ -454,10 +454,6 @@ function serviceLabel(status: string): { dot: string; badge: string; label: stri
     case 'inactive':
     case 'deactivating':
       return { dot: 'bg-slate-500', badge: 'bg-slate-200 text-slate-700', label: 'inactive' }
-    case 'disabled_by_admin':
-      // Operator explicitly turned the daemon off from the UI. Not an
-      // error condition, render it as a neutral muted state.
-      return { dot: 'bg-slate-400', badge: 'bg-slate-100 text-slate-700', label: 'disabled by admin' }
     case 'failed':
     case 'unknown':
     default:

@@ -1236,8 +1236,7 @@ export type SystemService = {
   display_name: string
   page: string
   category: string  // muros / core / ha / vpn / obs
-  status: string    // active / inactive / failed / activating / unknown / disabled_by_admin
-  admin_disabled?: boolean
+  status: string    // active / inactive / failed / activating / unknown
 }
 
 export type SshStatus = {
