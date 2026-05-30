@@ -393,6 +393,25 @@ def _restore_ra(db) -> None:
         log.warning("RA reconcile failed: %r", exc)
 
 
+def _restore_qos(db) -> None:
+    """Replay the QoS qdisc tree (tc HTB/fq_codel) after a reboot.
+
+    tc state is volatile: it is wiped on every boot. Like the nftables
+    ruleset, we rebuild it from the single source of truth (the DB) so
+    shaped interfaces come back up exactly as configured. Runs after the
+    network restore so the shaped interfaces already exist.
+    """
+    from app import qos, service_dirty
+    try:
+        summary = qos.apply_all(db)
+        if summary["applied"]:
+            log.info("QoS restored on %s", ", ".join(summary["applied"]))
+        # The kernel now matches the DB, clear any stale pending flag.
+        service_dirty.mark_clean(db, "qos", summary="muros-boot restore")
+    except Exception as exc:  # noqa: BLE001
+        log.warning("QoS reconcile failed: %r", exc)
+
+
 def main() -> int:
     from app.db import SessionLocal, init_db
     from app import adoption
@@ -437,6 +456,7 @@ def main() -> int:
             _restore_watcher(db)
             _restore_ntp(db)
             _restore_ra(db)
+            _restore_qos(db)
         except Exception:
             log.exception("Echec lors de la restauration")
             return 1

@@ -369,10 +369,3 @@ def restore_pending_on_startup() -> int:
             )
             restored += 1
     return restored
-
-
-# Backwards compatibility: the legacy watcher entry-point used to be
-# called from main.py at startup. Forward it to the new function so
-# existing imports keep working until those are updated.
-def ensure_watcher_started() -> None:
-    restore_pending_on_startup()

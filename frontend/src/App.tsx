@@ -19,6 +19,7 @@ const Zones = lazy(() => import('./pages/Zones'))
 const Network = lazy(() => import('./pages/Network'))
 const RoutesPage = lazy(() => import('./pages/Routes'))
 const WanPage = lazy(() => import('./pages/Wan'))
+const Qos = lazy(() => import('./pages/Qos'))
 const Logs = lazy(() => import('./pages/Logs'))
 const Monitoring = lazy(() => import('./pages/Monitoring'))
 const System = lazy(() => import('./pages/System'))
@@ -93,6 +94,7 @@ export default function App() {
           <Route path="/network" element={<Network />} />
           <Route path="/routes" element={<RoutesPage />} />
           <Route path="/wan" element={<WanPage />} />
+          <Route path="/qos" element={<Qos />} />
           <Route path="/logs" element={<Logs />} />
           <Route path="/monitoring" element={<Navigate to="/" replace />} />
           <Route path="/zones" element={<Zones />} />

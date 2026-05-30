@@ -45,6 +45,7 @@ KNOWN_SERVICES: tuple[str, ...] = (
     "ssh",
     "http",
     "notifications",
+    "qos",
 )
 
 

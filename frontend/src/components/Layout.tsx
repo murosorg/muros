@@ -17,6 +17,7 @@ const navItems: { to: string; label: string; section: string | null; service?: s
   { to: '/network', label: 'Interfaces', section: 'Network' },
   { to: '/routes', label: 'Routing', section: 'Network' },
   { to: '/wan', label: 'WAN gateways', section: 'Network' },
+  { to: '/qos', label: 'QoS / Shaping', section: 'Network', service: 'qos' },
   { to: '/zones', label: 'Zones', section: 'Firewall' },
   { to: '/firewall/rules', label: 'Filter rules', section: 'Firewall' },
   { to: '/firewall/services', label: 'Services', section: 'Firewall' },

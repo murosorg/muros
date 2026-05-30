@@ -995,3 +995,101 @@ class SystemSetting(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False,
     )
+
+
+class QosShaper(Base):
+    """Per-interface egress traffic shaper (HTB + fq_codel via tc).
+
+    One row = one interface whose outbound (egress) bandwidth is capped
+    and divided into priority classes. Shaping is egress-only: this is
+    where the kernel actually queues, so prioritising the uplink of a
+    saturated WAN (VoIP over bulk downloads, etc.) is what brings value
+    on the modest links most SMBs run.
+
+    `bandwidth_kbit` is the real usable uplink capacity of the link in
+    kbit/s. It must be set slightly BELOW the line rate (e.g. 95%) so the
+    queue forms inside MurOS and not in the ISP modem, otherwise the
+    shaper has nothing to prioritise.
+    """
+
+    __tablename__ = "qos_shapers"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    interface_id: Mapped[int] = mapped_column(
+        ForeignKey("interfaces.id", ondelete="CASCADE"), unique=True, nullable=False,
+    )
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # Total egress capacity of the link in kbit/s (set ~95% of line rate).
+    bandwidth_kbit: Mapped[int] = mapped_column(Integer, nullable=False)
+    comment: Mapped[str | None] = mapped_column(String(255))
+    # See Zone.dirty. Set on every create/update/delete, cleared by the
+    # QoS apply once `tc` has reloaded the qdisc tree on this interface.
+    dirty: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    interface: Mapped["Interface"] = relationship()
+    classes: Mapped[list["QosClass"]] = relationship(
+        back_populates="shaper", cascade="all, delete-orphan",
+    )
+
+
+class QosClass(Base):
+    """One priority class under a shaper (an HTB class + fq_codel leaf).
+
+    `rate_kbit` is the guaranteed minimum the class always gets when it
+    has traffic; `ceil_kbit` is the maximum it may borrow up to when the
+    link is idle (defaults to the shaper bandwidth when null). `priority`
+    drives HTB borrowing order: 0 is served first (use it for VoIP /
+    interactive), higher numbers yield under contention.
+
+    Exactly one class per shaper carries `is_default=True`: it is the
+    catch-all that receives every packet not matched by a QosRule.
+    """
+
+    __tablename__ = "qos_classes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    shaper_id: Mapped[int] = mapped_column(
+        ForeignKey("qos_shapers.id", ondelete="CASCADE"), nullable=False,
+    )
+    name: Mapped[str] = mapped_column(String(64), nullable=False)
+    # HTB minor id (1:<minor>), 10..99. Assigned by the API on create.
+    minor: Mapped[int] = mapped_column(Integer, nullable=False)
+    priority: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
+    rate_kbit: Mapped[int] = mapped_column(Integer, nullable=False)
+    ceil_kbit: Mapped[int | None] = mapped_column(Integer)
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    comment: Mapped[str | None] = mapped_column(String(255))
+
+    shaper: Mapped["QosShaper"] = relationship(back_populates="classes")
+    rules: Mapped[list["QosRule"]] = relationship(
+        back_populates="qos_class", cascade="all, delete-orphan",
+    )
+
+
+class QosRule(Base):
+    """Classifier mapping matched traffic to a QoS class (a tc filter).
+
+    A packet is steered into `qos_class` when it matches the (optional)
+    protocol / destination port / source / destination / DSCP criteria.
+    Empty fields are wildcards. Rules are compiled to `tc filter` u32
+    matches in `position` order; the first match wins, anything unmatched
+    falls into the shaper's default class.
+    """
+
+    __tablename__ = "qos_rules"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    class_id: Mapped[int] = mapped_column(
+        ForeignKey("qos_classes.id", ondelete="CASCADE"), nullable=False,
+    )
+    position: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    protocol: Mapped[str | None] = mapped_column(String(8))   # tcp, udp
+    dst_port: Mapped[int | None] = mapped_column(Integer)     # single port (u32 limitation)
+    src_address: Mapped[str | None] = mapped_column(String(64))  # IPv4 or CIDR
+    dst_address: Mapped[str | None] = mapped_column(String(64))
+    dscp: Mapped[int | None] = mapped_column(Integer)         # 0..63 (DSCP class, e.g. 46 = EF)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    comment: Mapped[str | None] = mapped_column(String(255))
+
+    qos_class: Mapped["QosClass"] = relationship(back_populates="rules")

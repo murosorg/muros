@@ -454,6 +454,76 @@ export type ServiceApplyLogEntry = {
   at: string | null
 }
 
+export type QosRule = {
+  id: number
+  class_id: number
+  protocol: 'tcp' | 'udp' | null
+  dst_port: number | null
+  src_address: string | null
+  dst_address: string | null
+  dscp: number | null
+  enabled: boolean
+  position: number
+  comment: string | null
+}
+
+export type QosRuleInput = {
+  protocol?: 'tcp' | 'udp' | null
+  dst_port?: number | null
+  src_address?: string | null
+  dst_address?: string | null
+  dscp?: number | null
+  enabled?: boolean
+  position?: number
+  comment?: string | null
+}
+
+export type QosClass = {
+  id: number
+  shaper_id: number
+  name: string
+  minor: number
+  priority: number
+  rate_kbit: number
+  ceil_kbit: number | null
+  is_default: boolean
+  comment: string | null
+  rules: QosRule[]
+}
+
+export type QosClassInput = {
+  name: string
+  priority: number
+  rate_kbit: number
+  ceil_kbit?: number | null
+  is_default?: boolean
+  comment?: string | null
+}
+
+export type QosShaper = {
+  id: number
+  interface_id: number
+  interface_name: string | null
+  enabled: boolean
+  bandwidth_kbit: number
+  comment: string | null
+  dirty: boolean
+  created_at: string
+  classes: QosClass[]
+}
+
+export type QosShaperInput = {
+  interface_id: number
+  enabled: boolean
+  bandwidth_kbit: number
+  comment?: string | null
+}
+
+export type QosApplyResult = {
+  applied: string[]
+  cleared: string[]
+}
+
 export const api = {
   health: () => request<Health>('GET', '/api/health'),
   systemInfo: () => request<SystemInfo>('GET', '/api/system/info'),
@@ -613,6 +683,30 @@ export const api = {
       request<{ service_state: string; version: string | null }>(
         'GET', '/api/wan/status',
       ),
+  },
+
+  qos: {
+    listShapers: () => request<QosShaper[]>('GET', '/api/qos/shapers'),
+    createShaper: (data: QosShaperInput) =>
+      request<QosShaper>('POST', '/api/qos/shapers', data),
+    updateShaper: (id: number, data: QosShaperInput) =>
+      request<QosShaper>('PUT', `/api/qos/shapers/${id}`, data),
+    removeShaper: (id: number) =>
+      request<void>('DELETE', `/api/qos/shapers/${id}`),
+    createClass: (shaperId: number, data: QosClassInput) =>
+      request<QosClass>('POST', `/api/qos/shapers/${shaperId}/classes`, data),
+    updateClass: (id: number, data: QosClassInput) =>
+      request<QosClass>('PUT', `/api/qos/classes/${id}`, data),
+    removeClass: (id: number) =>
+      request<void>('DELETE', `/api/qos/classes/${id}`),
+    createRule: (classId: number, data: QosRuleInput) =>
+      request<QosRule>('POST', `/api/qos/classes/${classId}/rules`, data),
+    updateRule: (id: number, data: QosRuleInput) =>
+      request<QosRule>('PUT', `/api/qos/rules/${id}`, data),
+    removeRule: (id: number) =>
+      request<void>('DELETE', `/api/qos/rules/${id}`),
+    pending: () => request<ServicePending>('GET', '/api/qos/pending'),
+    apply: () => request<QosApplyResult>('POST', '/api/qos/apply'),
   },
 
   setup: {

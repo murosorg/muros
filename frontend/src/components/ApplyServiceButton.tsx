@@ -15,7 +15,7 @@ import { api, type ServicePending } from '../lib/api'
  * - Clicking the button hits /api/<service>/apply which restarts /
  *   reloads the daemon and clears the dirty flag.
  */
-type ServiceName = 'dhcp' | 'dns' | 'snmp' | 'wireguard' | 'ipsec'
+type ServiceName = 'dhcp' | 'dns' | 'snmp' | 'wireguard' | 'ipsec' | 'qos'
 
 type Endpoints = {
   pending: () => Promise<ServicePending>
@@ -28,6 +28,7 @@ const ENDPOINTS: Record<ServiceName, Endpoints> = {
   snmp:      { pending: () => api.snmp.pending(),       apply: () => api.snmp.apply() },
   wireguard: { pending: () => api.wireguard.pending(),  apply: () => api.wireguard.apply() },
   ipsec:     { pending: () => api.ipsec.pending(),      apply: () => api.ipsec.apply() },
+  qos:       { pending: () => api.qos.pending(),        apply: () => api.qos.apply() },
 }
 
 type Props = {
