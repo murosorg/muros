@@ -435,7 +435,10 @@ function IdentitySettings() {
         <div className="text-sm text-gray-700">
           Basic identity and locale, applied live and kept across reboots.
           The console keymap matters when logging in at the physical
-          console: a wrong layout makes the password hard to type.
+          console: a wrong layout makes the password hard to type. Changing
+          the hostname also refreshes the self-signed UI certificate, so
+          your browser may warn once about the new fingerprint (this does
+          not apply when a custom certificate is installed).
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <label className="block">

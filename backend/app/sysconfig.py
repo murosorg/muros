@@ -21,11 +21,17 @@ strings when the tools are unavailable.
 """
 from __future__ import annotations
 
+import logging
 import os
 import re
 import subprocess
+from pathlib import Path
+
+log = logging.getLogger("muros.sysconfig")
 
 _APPLY = os.environ.get("MUROS_APPLY", "false").lower() in ("1", "true", "yes")
+
+ETC_HOSTS = Path("/etc/hosts")
 
 # RFC 1123 host label: letters/digits/hyphen, no leading/trailing hyphen,
 # 1-63 chars. We keep the management hostname to a single label (no dots).
@@ -126,6 +132,56 @@ def list_keymaps() -> list[str]:
 
 # --- Writes (validated) --------------------------------------------------
 
+def _rewrite_hosts_127_0_1_1(content: str, name: str) -> str:
+    """Return /etc/hosts content with the 127.0.1.1 line set to ``name``.
+
+    Pure helper (no I/O) so it is unit-testable. Mirrors the Debian
+    convention where the box's own hostname resolves through a
+    ``127.0.1.1 <hostname>`` entry. An existing 127.0.1.1 line is
+    replaced in place; otherwise the entry is appended.
+    """
+    lines = content.splitlines()
+    out: list[str] = []
+    replaced = False
+    for line in lines:
+        if line.strip().startswith("127.0.1.1"):
+            out.append(f"127.0.1.1\t{name}")
+            replaced = True
+        else:
+            out.append(line)
+    if not replaced:
+        out.append(f"127.0.1.1\t{name}")
+    return "\n".join(out) + "\n"
+
+
+def _propagate_hostname(name: str) -> None:
+    """Keep /etc/hosts and the self-signed TLS cert consistent with the name.
+
+    hostnamectl does not edit /etc/hosts (a stale entry makes sudo warn
+    about an unresolved host), and the auto-generated snakeoil certificate
+    embeds the hostname as its Common Name. Both are reconciled here so the
+    box resolves its own name and the UI certificate matches it. A custom
+    (uploaded) certificate is never touched. Best-effort: a failure here
+    must not undo the hostname change itself.
+    """
+    if not _APPLY:
+        return
+    try:
+        if ETC_HOSTS.exists():
+            ETC_HOSTS.write_text(_rewrite_hosts_127_0_1_1(ETC_HOSTS.read_text(), name))
+    except OSError as exc:
+        log.warning("Could not update /etc/hosts for hostname %s: %r", name, exc)
+    try:
+        from app import tls
+
+        if tls.get_status().get("is_self_signed"):
+            tls.regenerate_snakeoil()
+            log.info("Regenerated self-signed TLS cert for hostname %s", name)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Could not regenerate self-signed cert after hostname "
+                    "change: %r", exc)
+
+
 def set_hostname(name: str) -> None:
     name = (name or "").strip()
     if not _HOSTNAME_RE.match(name):
@@ -134,6 +190,7 @@ def set_hostname(name: str) -> None:
             "hyphens; no leading/trailing hyphen; max 63 chars)"
         )
     _set(["hostnamectl", "set-hostname", name])
+    _propagate_hostname(name)
 
 
 def set_timezone(tz: str) -> None:
