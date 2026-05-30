@@ -2,6 +2,21 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [v0.9.0-rc12] - 2026-05-30
+
+### Fixed
+- Login broken after a reinstall/upgrade ("python-pam is not available").
+  The postinst only installed the Python requirements when the venv had
+  no uvicorn, so a reused venv from an older release never received newly
+  added dependencies (here python-pam, required for PAM auth). The
+  postinst now always runs `pip install -r requirements.txt`, keeping the
+  venv in sync with the shipped requirements on every install and upgrade.
+- Uninstall now leaves a clean box: it flushes the live nftables ruleset
+  (the kernel keeps the rules loaded by muros-boot otherwise, leaving the
+  box firewalled by an unmanaged ruleset) and removes the kernel hardening
+  sysctl drop-in then reloads sysctl, so forwarding / rp_filter revert to
+  the Debian defaults.
+
 ## [v0.9.0-rc11] - 2026-05-30
 
 ### Fixed

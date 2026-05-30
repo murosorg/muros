@@ -225,6 +225,26 @@ rmdir /etc/nginx/ssl 2>/dev/null || true
 rm -f /etc/fail2ban/jail.d/muros.conf
 rm -f /etc/nftables.conf.muros-bak 2>/dev/null || true
 
+# Flush the live nftables ruleset. nftables is stateful in the kernel:
+# removing the muros package does NOT clear the rules that muros-boot
+# loaded, so without this the box stays firewalled by a ruleset nobody
+# manages anymore (and can drop traffic in confusing ways). Uninstalling
+# the firewall must leave an open box.
+if command -v nft >/dev/null 2>&1; then
+  nft flush ruleset 2>/dev/null || true
+fi
+
+# Kernel hardening drop-in shipped by MurOS (rp_filter strict, IP
+# forwarding, no ICMP redirects, ...). It is NOT a package conffile, so
+# apt purge leaves it behind and the box stays in a firewall-tuned state
+# after removal. Drop it and reload sysctl so the kernel reverts to the
+# Debian defaults (no forwarding, loose rp_filter, etc.).
+rm -f /etc/sysctl.d/99-muros-hardening.conf
+rm -f /etc/sysctl.d/99-muros.conf 2>/dev/null || true
+if command -v sysctl >/dev/null 2>&1; then
+  sysctl --system >/dev/null 2>&1 || true
+fi
+
 # SSH drop-in : livre par le .deb donc supprime par apt purge muros.
 # Au cas ou MurOS l'aurait re-ecrit apres purge (race avec l'apply UI) :
 rm -f /etc/ssh/sshd_config.d/muros.conf

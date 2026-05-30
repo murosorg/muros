@@ -37,12 +37,20 @@ case "$1" in
     # Construction du venv directement sur la cible. C'est plus fiable
     # que de shipper un venv pre-rempli depuis le runner CI (shebang
     # casse, paths du builder, etc.).
-    if [ ! -x /opt/muros/backend/venv/bin/uvicorn ]; then
+    if [ ! -x /opt/muros/backend/venv/bin/python3 ]; then
       echo "  -> creation du venv Python (peut prendre une minute)"
       python3 -m venv /opt/muros/backend/venv
-      /opt/muros/backend/venv/bin/pip install --quiet --upgrade pip wheel
-      /opt/muros/backend/venv/bin/pip install --quiet -r /opt/muros/backend/requirements.txt
     fi
+    # Always (re)install the requirements, even when a venv is already
+    # present. On a reinstall or an upgrade the old venv can still have
+    # uvicorn while LACKING a dependency added in a newer release (this is
+    # exactly how python-pam went missing and broke login: the venv was
+    # reused and the new dependency never got installed). pip is a no-op
+    # when everything is already satisfied, so running it every time is
+    # cheap and keeps the venv in sync with requirements.txt.
+    echo "  -> sync des dependances Python"
+    /opt/muros/backend/venv/bin/pip install --quiet --upgrade pip wheel || true
+    /opt/muros/backend/venv/bin/pip install --quiet -r /opt/muros/backend/requirements.txt
 
     # Capacites reseau pour python (netlink, raw sockets)
     PYBIN=$(readlink -f /opt/muros/backend/venv/bin/python3)
