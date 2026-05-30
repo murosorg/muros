@@ -65,9 +65,9 @@ export default function RulesetModal({ onClose }: { onClose: () => void }) {
   }
 
   const doApply = async () => {
-    // Pas de window.confirm : la modal de rollback 10s (RollbackModal) gere
-    // deja la confirmation. Si l'utilisateur ne confirme pas, le ruleset
-    // est restaure automatically.
+    // No window.confirm: the rollback modal (RollbackModal) already handles
+    // the confirmation. If the user does not confirm, the ruleset is
+    // restored automatically.
     setApplying(true)
     try {
       // Timeout omitted: the backend uses the configured apply_confirm_timeout.

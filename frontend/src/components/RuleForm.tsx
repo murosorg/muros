@@ -519,8 +519,8 @@ function buildRateLimit(rate: string, unit: Unit, burst: string): string | null 
 function RateLimitField({ value, onChange }: { value: string | null; onChange: (v: string | null) => void }) {
   const enabled = value !== null && value !== ''
   const initial = parseRateLimit(value)
-  // On garde les champs en buffer local quand on coupe la limite, comme ca on
-  // peut la rallumer sans tout retaper.
+  // Keep the fields in a local buffer when the limit is turned off, so it
+  // can be turned back on without retyping everything.
   const [rate, setRate] = useState(initial.rate || '5')
   const [unit, setUnit] = useState<Unit>(initial.unit)
   const [burst, setBurst] = useState(initial.burst)
@@ -539,7 +539,7 @@ function RateLimitField({ value, onChange }: { value: string | null; onChange: (
 
   const toggle = (on: boolean) => {
     if (on) {
-      // On (re)active : on construit avec les valeurs en buffer
+      // Turning (re)on: build from the buffered values
       onChange(buildRateLimit(rate || '5', unit, burst))
     } else {
       onChange(null)

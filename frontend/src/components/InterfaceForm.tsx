@@ -13,9 +13,9 @@ type Props = {
 
 export default function InterfaceForm({ iface, defaultName, onSubmit, onCancel }: Props) {
   // This form only handles physical interfaces.
-  // Les VLAN ont leur propre formulaire (VlanForm.tsx).
-  // Le rattachement a une zone se fait depuis la page Zones (cote filtrage
-  // nftables), pas depuis ici.
+  // VLANs have their own form (VlanForm.tsx).
+  // Attaching to a zone is done from the Zones page (nftables filtering
+  // side), not here.
   const [name, setName] = useState(iface?.name || defaultName || '')
   const [description, setDescription] = useState(iface?.description || '')
   const [ipMode, setIpMode] = useState<Interface['ip_mode']>(iface?.ip_mode || 'none')
@@ -41,7 +41,7 @@ export default function InterfaceForm({ iface, defaultName, onSubmit, onCancel }
   const handleSubmit = async () => {
     setSubmitting(true)
     setError(null)
-    // Validation cote client : refuser une IP sans prefix (sinon /32 = lockout)
+    // Client-side validation: reject an IP without a prefix (otherwise /32 = lockout)
     if (ipMode === 'static' && ipAddress.trim()) {
       const v = ipAddress.trim()
       if (!v.includes('/')) {

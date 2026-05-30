@@ -10,8 +10,8 @@ type Props = {
 }
 
 export default function VlanForm({ vlan, interfaces, onSubmit, onCancel }: Props) {
-  // Attachment to a zone is done from the Zones page (filtering side
-  // nftables), pas depuis ici.
+  // Attaching to a zone is done from the Zones page (nftables filtering
+  // side), not here.
   const [parentInterface, setParentInterface] = useState(vlan?.parent_interface || '')
   const [vlanId, setVlanId] = useState<string>(vlan?.vlan_id ? String(vlan.vlan_id) : '')
   const [description, setDescription] = useState(vlan?.description || '')

@@ -12,12 +12,12 @@ import { api, ApplyStatus, PendingChange } from '../lib/api'
  *  - api.pending.list()        -> safe_apply (in-memory : interface/route/vlan)
  *  - api.pendingApply.list()   -> pending_apply (DB : http/ssh/tls/interface/route)
  *
- * Timer 10s harmonise par defaut (DEFAULT_TIMEOUT_SECONDS = 10 cote
- * backend dans safe_apply / pending_apply / apply.py). La duree TOTALE
- * de chaque source est lue depuis son champ `timeout_seconds` rsent
- * par l'API : la barre de progression et la zone de danger se calent
- * sur cette valeur, ce qui permet a un admin d'avoir un timeout custom
- * sans que l'UI le represente mal.
+ * Default timer = the configurable `apply_confirm_timeout` setting (60s
+ * by default; DEFAULT_TIMEOUT_SECONDS = 60 in the backend rollback
+ * manager). The TOTAL duration of each source is read from its
+ * `timeout_seconds` field returned by the API: the progress bar and the
+ * danger zone are based on that value, so a custom timeout is always
+ * represented correctly by the UI.
  */
 
 type Source =
@@ -64,12 +64,12 @@ export default function RollbackModal() {
   if (status && status.state === 'pending' && status.expires_at) {
     // Chaque source porte son propre timeout_seconds : c'est la duree totale
     // de la fenetre de confirmation. Le pct est calcule par rapport a ce
-    // total-LA, pas une constante front, sinon le ruleset (10s) et un
-    // safe_apply hypothetique (30s) auraient des barres incoherentes.
+    // total-LA, pas une constante front, sinon le ruleset et une autre
+    // source avec un timeout different auraient des barres incoherentes.
     sources.push({
       kind: 'nft', key: 'nft',
       expires_at: status.expires_at as string,
-      total: status.timeout_seconds || 10,
+      total: status.timeout_seconds || 60,
       dryRun: !!status.dry_run,
     })
   }

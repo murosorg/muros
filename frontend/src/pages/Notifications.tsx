@@ -304,7 +304,7 @@ function SmtpPanel({ cfg, form, setForm, onTest, busy }: {
           <input type="number" className="input" value={form.smtp_port}
             onChange={(e) => {
               const p = parseInt(e.target.value) || 587
-              // Auto-deduce TLS depuis le port : 25 = clair, 465/587 = TLS
+              // Auto-deduce TLS from the port: 25 = plain, 465/587 = TLS
               setForm({ ...form, smtp_port: p, use_tls: p === 465 || p === 587 })
             }} />
         </Field>
