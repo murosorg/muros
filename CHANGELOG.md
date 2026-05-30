@@ -2,7 +2,7 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [v0.9.0-rc14] - 2026-05-30
+## [v0.9.0-rc15] - 2026-05-30
 
 ### Added
 - NTP server mode (chrony) for the LAN, enabled by default. chrony now
