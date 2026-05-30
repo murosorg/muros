@@ -105,9 +105,9 @@ def render(db: Session) -> str:
     for domain in SYSTEM_ALLOWLIST:
         lines.append(f'  local-zone: "{domain}." transparent')
 
-    # Records locaux : zone authoritative `local-zone` + `local-data`.
-    # Un local-zone par hostname to avoid d'inonder le cache avec
-    # NXDOMAIN sur les sous-noms.
+    # Local records: authoritative zone via `local-zone` + `local-data`.
+    # One local-zone per hostname to avoid flooding the cache with
+    # NXDOMAIN on subnames.
     records = db.query(DnsLocalRecord).all()
     for r in records:
         zone = r.name if r.name.endswith(".") else r.name + "."
@@ -379,10 +379,10 @@ def reload(db: Session) -> None:
             except (FileNotFoundError, subprocess.TimeoutExpired):
                 pass
 
-        # Verifie first que la conf est valide before de poker Unbound :
-        # une conf cassee mettrait le service en failed et tuerait la
-        # resolution pour tout le LAN. Best-effort : si unbound-checkconf
-        # is not dispo, on continue.
+        # Verify the config is valid before poking Unbound: a broken
+        # config would put the service in failed state and kill name
+        # resolution for the whole LAN. Best-effort: if unbound-checkconf
+        # is not available, we proceed.
         try:
             check = subprocess.run(
                 ["unbound-checkconf"], capture_output=True, timeout=10,

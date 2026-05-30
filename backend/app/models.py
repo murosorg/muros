@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (c) 2026 MurOS contributors.
-"""Modeles de donnees MurOS.
+"""MurOS data models.
 
-Concepts :
-- Zone : groupe logique d'interfaces (wan, lan, dmz, ...)
-- Interface : interface reseau physique ou virtuelle, rattachee a une zone
-- FirewallRule : regle de filtrage (chain input/forward/output)
-- NatRule : regle de translation (masquerade, snat, dnat)
+Concepts:
+- Zone: logical group of interfaces (wan, lan, dmz, ...)
+- Interface: physical or virtual network interface, attached to a zone
+- FirewallRule: filtering rule (input/forward/output chain)
+- NatRule: translation rule (masquerade, snat, dnat)
 """
 from datetime import datetime, timezone
 from sqlalchemy import String, Integer, Boolean, DateTime, ForeignKey, Text
@@ -68,24 +68,24 @@ class Interface(Base):
     description: Mapped[str | None] = mapped_column(String(255))
     zone_id: Mapped[int | None] = mapped_column(ForeignKey("zones.id", ondelete="SET NULL"))
 
-    # Type d'interface :
-    # - 'physical' : carte reelle (eth0, ens3...), MurOS ne la cree pas
-    # - 'vlan'     : interface VLAN 802.1q, MurOS la cree via `ip link add ... type vlan`
+    # Interface type:
+    # - 'physical': real NIC (eth0, ens3...), MurOS does not create it
+    # - 'vlan'    : 802.1q VLAN interface, MurOS creates it via `ip link add ... type vlan`
     type: Mapped[str] = mapped_column(String(16), nullable=False, default="physical")
-    parent_interface: Mapped[str | None] = mapped_column(String(32))  # eth0 pour un VLAN eth0.100
+    parent_interface: Mapped[str | None] = mapped_column(String(32))  # eth0 for a VLAN eth0.100
     vlan_id: Mapped[int | None] = mapped_column(Integer)              # 1-4094
 
-    # Configuration IP : 'static', 'dhcp' ou 'none' (ne pas configurer)
+    # IP configuration: 'static', 'dhcp' or 'none' (do not configure)
     ip_mode: Mapped[str] = mapped_column(String(16), nullable=False, default="none")
-    ip_address: Mapped[str | None] = mapped_column(String(64))    # CIDR si static
+    ip_address: Mapped[str | None] = mapped_column(String(64))    # CIDR if static
     gateway: Mapped[str | None] = mapped_column(String(64))
-    dns_servers: Mapped[str | None] = mapped_column(String(255))  # liste separee par virgules
+    dns_servers: Mapped[str | None] = mapped_column(String(255))  # comma-separated list
     mtu: Mapped[int | None] = mapped_column(Integer)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
-    # dirty=True : modif en DB pas encore appliquee au noyau (cf POST /api/network/apply)
+    # dirty=True: change in DB not yet applied to the kernel (cf POST /api/network/apply)
     dirty: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, server_default="1")
-    # pending_delete=True : VLAN marquee pour suppression, finalisee a l'apply
-    # (symetrie avec add VLAN qui est aussi differe a l'apply).
+    # pending_delete=True: VLAN marked for deletion, finalized on apply
+    # (symmetric with VLAN add, which is also deferred to apply).
     pending_delete: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="0")
 
     zone: Mapped[Zone | None] = relationship(back_populates="interfaces")
@@ -97,9 +97,9 @@ class FirewallRule(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
-    # forward = trafic traverse le firewall (lan -> wan, dmz -> lan, ...)
-    # input = trafic destine au firewall lui-meme
-    # output = trafic emis par le firewall
+    # forward = traffic crossing the firewall (lan -> wan, dmz -> lan, ...)
+    # input = traffic destined to the firewall itself
+    # output = traffic emitted by the firewall
     chain: Mapped[str] = mapped_column(String(16), nullable=False, default="forward")
 
     action: Mapped[str] = mapped_column(String(16), nullable=False)  # accept, drop, reject
@@ -122,14 +122,14 @@ class FirewallRule(Base):
     # by POST /api/firewall/apply once nft is reloaded successfully.
     dirty: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
-    # Rate limit nftables : ex "5/minute" ou "100/second burst 200".
-    # Si renseigne, le compilateur ajoute `limit rate <valeur>` avant l'action.
-    # Utile pour anti-bruteforce SSH, anti-flood ICMP, throttling DNS.
+    # nftables rate limit: e.g. "5/minute" or "100/second burst 200".
+    # If set, the compiler adds `limit rate <value>` before the action.
+    # Useful for SSH anti-bruteforce, ICMP anti-flood, DNS throttling.
     rate_limit: Mapped[str | None] = mapped_column(String(64))
 
-    # Groupes (optionnels). Si renseignes, ils priment sur les champs
-    # str equivalents (src_address, dst_address, dst_port/protocol).
-    # Le compilateur expand le groupe en set inline nftables.
+    # Groups (optional). If set, they take precedence over the equivalent
+    # string fields (src_address, dst_address, dst_port/protocol).
+    # The compiler expands the group into an inline nftables set.
     service_group_id: Mapped[int | None] = mapped_column(
         ForeignKey("service_groups.id", ondelete="SET NULL"))
     src_address_group_id: Mapped[int | None] = mapped_column(
@@ -150,9 +150,9 @@ class FirewallRule(Base):
 
 
 class ServiceGroup(Base):
-    """Groupe de services (ports + protocole) reutilisable dans les regles.
+    """Service group (ports + protocol) reusable across rules.
 
-    Exemple : 'LDAP' = tcp/389 + tcp/636, 'AD' = tcp/389 + tcp/636 +
+    Example: 'LDAP' = tcp/389 + tcp/636, 'AD' = tcp/389 + tcp/636 +
     tcp/3268 + tcp/3269 + tcp/88 + udp/88 + tcp/445.
     """
     __tablename__ = "service_groups"
@@ -168,22 +168,22 @@ class ServiceGroup(Base):
 
 
 class ServiceGroupPort(Base):
-    """Un port (ou range) appartenant a un groupe de services."""
+    """A port (or range) belonging to a service group."""
     __tablename__ = "service_group_ports"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     group_id: Mapped[int] = mapped_column(
         ForeignKey("service_groups.id", ondelete="CASCADE"), nullable=False)
     protocol: Mapped[str] = mapped_column(String(8), nullable=False)  # tcp, udp
-    port: Mapped[str] = mapped_column(String(32), nullable=False)  # '80' ou '1024-2048'
+    port: Mapped[str] = mapped_column(String(32), nullable=False)  # '80' or '1024-2048'
 
     group: Mapped[ServiceGroup] = relationship(back_populates="ports")
 
 
 class AddressGroup(Base):
-    """Groupe d'adresses (IP, CIDR) reutilisable dans les regles.
+    """Address group (IP, CIDR) reusable across rules.
 
-    Exemple : 'LAN admin' = 192.168.10.0/24, 10.0.0.0/8.
+    Example: 'LAN admin' = 192.168.10.0/24, 10.0.0.0/8.
     """
     __tablename__ = "address_groups"
 
@@ -198,13 +198,13 @@ class AddressGroup(Base):
 
 
 class AddressGroupEntry(Base):
-    """Une adresse (IP ou CIDR) appartenant a un groupe d'adresses."""
+    """An address (IP or CIDR) belonging to an address group."""
     __tablename__ = "address_group_entries"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     group_id: Mapped[int] = mapped_column(
         ForeignKey("address_groups.id", ondelete="CASCADE"), nullable=False)
-    value: Mapped[str] = mapped_column(String(64), nullable=False)  # CIDR ou IP
+    value: Mapped[str] = mapped_column(String(64), nullable=False)  # CIDR or IP
 
     group: Mapped[AddressGroup] = relationship(back_populates="entries")
 
@@ -213,7 +213,7 @@ class StaticRoute(Base):
     __tablename__ = "static_routes"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    destination: Mapped[str] = mapped_column(String(64), nullable=False)  # CIDR ou "default"
+    destination: Mapped[str] = mapped_column(String(64), nullable=False)  # CIDR or "default"
     gateway: Mapped[str | None] = mapped_column(String(64))
     interface_id: Mapped[int | None] = mapped_column(ForeignKey("interfaces.id", ondelete="SET NULL"))
     metric: Mapped[int] = mapped_column(Integer, default=0)
@@ -226,17 +226,17 @@ class StaticRoute(Base):
 
 
 class WanGateway(Base):
-    """Multi-WAN failover : un WAN gateway = une sortie internet.
+    """Multi-WAN failover: one WAN gateway = one internet uplink.
 
-    Le daemon muros-wan-monitor probe `monitoring_target` toutes les
-    `interval_s` via l'interface (option `-I`) et compte les echecs
-    consecutifs. Au-dela de `failures_threshold`, le WAN passe `down`
-    et le monitor reecrit la default route via le prochain WAN UP
-    (priority la plus basse). Le retour a UP est confirme par
-    `failures_threshold` probes consecutives reussies (anti-flap).
+    The muros-wan-monitor daemon probes `monitoring_target` every
+    `interval_s` through the interface (`-I` option) and counts
+    consecutive failures. Beyond `failures_threshold`, the WAN goes
+    `down` and the monitor rewrites the default route via the next WAN
+    that is UP (lowest priority). The return to UP is confirmed by
+    `failures_threshold` consecutive successful probes (anti-flap).
 
-    On stocke le status runtime directement sur la row pour eviter une
-    table secondaire et pouvoir le servir a l'UI via le meme GET REST.
+    Runtime status is stored directly on the row to avoid a secondary
+    table and to serve it to the UI through the same REST GET.
     """
 
     __tablename__ = "wan_gateways"
@@ -257,7 +257,7 @@ class WanGateway(Base):
     )
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     comment: Mapped[str | None] = mapped_column(String(255))
-    # Runtime status, mis a jour par le monitor. Pas indexe, lecture rare.
+    # Runtime status, updated by the monitor. Not indexed, rarely read.
     status: Mapped[str] = mapped_column(
         String(16), default="unknown", nullable=False, server_default="unknown"
     )
@@ -441,21 +441,21 @@ class NatRule(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
-    # masquerade = SNAT auto vers l'IP de l'interface sortante (LAN -> WAN typiquement)
-    # snat       = SNAT explicite vers une IP donnee
-    # dnat       = redirection (port forwarding) vers une IP/port interne
+    # masquerade = auto SNAT to the outgoing interface IP (typically LAN -> WAN)
+    # snat       = explicit SNAT to a given IP
+    # dnat       = redirection (port forwarding) to an internal IP/port
     type: Mapped[str] = mapped_column(String(16), nullable=False)
 
-    # Interface concernee (sortie pour SNAT/masquerade, entree pour DNAT)
+    # Interface involved (egress for SNAT/masquerade, ingress for DNAT)
     interface_id: Mapped[int | None] = mapped_column(ForeignKey("interfaces.id", ondelete="SET NULL"))
 
     src_address: Mapped[str | None] = mapped_column(String(64))
-    dst_address: Mapped[str | None] = mapped_column(String(64))  # IP publique pour DNAT
+    dst_address: Mapped[str | None] = mapped_column(String(64))  # public IP for DNAT
     protocol: Mapped[str | None] = mapped_column(String(8))
-    dst_port: Mapped[str | None] = mapped_column(String(64))     # port externe pour DNAT
+    dst_port: Mapped[str | None] = mapped_column(String(64))     # external port for DNAT
 
-    # Pour SNAT : IP source remplacante
-    # Pour DNAT : IP cible interne
+    # For SNAT: replacement source IP
+    # For DNAT: internal target IP
     redirect_to_ip: Mapped[str | None] = mapped_column(String(64))
     redirect_to_port: Mapped[str | None] = mapped_column(String(64))
 
@@ -471,26 +471,26 @@ class NatRule(Base):
 
 
 class HaConfig(Base):
-    """Config singleton de la haute dispo.
+    """High-availability singleton config.
 
-    On stocke 1 seule ligne (id=1). L'UI lit/ecrit ce singleton.
+    A single row is stored (id=1). The UI reads/writes this singleton.
     """
     __tablename__ = "ha_config"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
     enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    # 'primary' ou 'secondary' : determine la priorite VRRP de base
+    # 'primary' or 'secondary': sets the base VRRP priority
     role: Mapped[str] = mapped_column(String(16), default="primary", nullable=False)
-    # IP de l'autre noeud (utilise par conntrackd)
+    # IP of the other node (used by conntrackd)
     peer_address: Mapped[str] = mapped_column(String(64), default="", nullable=False)
-    # Interface dediee a la sync conntrackd (cross-link recommande)
+    # Interface dedicated to conntrackd sync (cross-link recommended)
     sync_interface: Mapped[str] = mapped_column(String(32), default="", nullable=False)
-    # Sync conntrack toujours active : sans synchro, un failover casse
-    # toutes les connexions TCP existantes ce qui defait l'interet du HA.
-    # Le champ reste en DB pour ne pas casser la migration mais l'UI ne
-    # l'expose plus et Pydantic force True a l'ecriture.
+    # conntrack sync is always on: without it, a failover breaks every
+    # existing TCP connection, which defeats the purpose of HA. The field
+    # stays in the DB so the migration does not break, but the UI no
+    # longer exposes it and Pydantic forces True on write.
     conntrack_sync: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    # preempt = le primary reprend la main des qu'il revient (recommande)
+    # preempt = the primary takes back over as soon as it returns (recommended)
     preempt: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
@@ -499,19 +499,18 @@ class HaConfig(Base):
 
 
 class FirewallApplyState(Base):
-    """Singleton qui pilote la pastille "Apply" du firewall.
+    """Singleton driving the firewall "Apply" badge.
 
-    Le compteur de pending est calcule en sommant les `dirty=True` sur
-    firewall_rules / nat_rules / zones. Probleme : quand on SUPPRIME la
-    derniere regle d'une chaine (ou la derniere zone, ou la derniere
-    regle NAT), il n'y a plus aucune ligne a flagger dirty. Le noyau
-    contient pourtant encore l'ancienne ruleset, donc l'admin doit
-    quand meme cliquer Apply.
+    The pending counter is computed by summing `dirty=True` across
+    firewall_rules / nat_rules / zones. Problem: when the LAST rule of a
+    chain (or the last zone, or the last NAT rule) is DELETED, there is
+    no row left to flag dirty. The kernel still holds the old ruleset,
+    though, so the admin must still click Apply.
 
-    Ce singleton recoit le `dirty=True` global dans ce cas-la, et plus
-    generalement chaque fois que la mutation est destructive (delete /
-    cascade). Le compteur `total` du /pending ajoute 1 si ce singleton
-    est dirty, et POST /apply clear le tout en bloc.
+    This singleton receives the global `dirty=True` in that case, and
+    more generally whenever the mutation is destructive (delete /
+    cascade). The `total` counter of /pending adds 1 if this singleton
+    is dirty, and POST /apply clears everything in one go.
     """
     __tablename__ = "firewall_apply_state"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
@@ -520,27 +519,27 @@ class FirewallApplyState(Base):
 
 
 class WireGuardConfig(Base):
-    """Config singleton de l'interface WireGuard `wg0`.
+    """Singleton config for the WireGuard interface `wg0`.
 
-    On gere une seule interface par defaut, c'est suffisant pour 90% des
-    cas. Si plus tard on a besoin de plusieurs interfaces, on transformera
-    en collection.
+    A single interface is managed by default, which covers 90% of cases.
+    If multiple interfaces are needed later, this will be turned into a
+    collection.
     """
     __tablename__ = "wireguard_config"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
     enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    # Nom de l'interface WG (defaut wg0). Doit etre <= 15 chars.
+    # WG interface name (default wg0). Must be <= 15 chars.
     interface_name: Mapped[str] = mapped_column(String(15), default="wg0", nullable=False)
-    # IP du firewall sur le tunnel WG, format CIDR (ex: 10.10.0.1/24).
+    # Firewall IP on the WG tunnel, CIDR format (e.g. 10.10.0.1/24).
     address_cidr: Mapped[str] = mapped_column(String(64), default="", nullable=False)
-    # Port UDP d'ecoute (defaut 51820).
+    # UDP listen port (default 51820).
     listen_port: Mapped[int] = mapped_column(Integer, default=51820, nullable=False)
-    # Cle privee du serveur (base64). Generee depuis l'UI.
+    # Server private key (base64). Generated from the UI.
     private_key: Mapped[str] = mapped_column(String(64), default="", nullable=False)
-    # Cle publique derivee (rendue par l'UI mais stockee pour eviter recalcul).
+    # Derived public key (rendered by the UI but stored to avoid recompute).
     public_key: Mapped[str] = mapped_column(String(64), default="", nullable=False)
-    # MTU optionnel (defaut WG = 1420).
+    # Optional MTU (WG default = 1420).
     mtu: Mapped[int | None] = mapped_column(Integer)
     # Public endpoint advertised to clients (FQDN or public IP, no port).
     # Used to fill the Endpoint = host:port line in exported client configs.
@@ -551,27 +550,27 @@ class WireGuardConfig(Base):
 
 
 class WireGuardPeer(Base):
-    """Peer WireGuard : un client road-warrior ou un site distant."""
+    """WireGuard peer: a road-warrior client or a remote site."""
     __tablename__ = "wireguard_peers"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(64), nullable=False)
-    # Cle publique du peer (base64, 44 chars exactement).
+    # Peer public key (base64, exactly 44 chars).
     public_key: Mapped[str] = mapped_column(String(64), nullable=False)
-    # Cle pre-partagee (PSK) optionnelle, ajoute une couche de securite.
+    # Optional pre-shared key (PSK), adds an extra security layer.
     preshared_key: Mapped[str | None] = mapped_column(String(64))
-    # AllowedIPs cote serveur : reseaux atteignables via ce peer.
-    # Ex pour un road-warrior : 10.10.0.2/32. Pour un site : 10.10.0.2/32, 192.168.42.0/24.
+    # Server-side AllowedIPs: networks reachable through this peer.
+    # E.g. road-warrior: 10.10.0.2/32. Site: 10.10.0.2/32, 192.168.42.0/24.
     allowed_ips: Mapped[str] = mapped_column(String(255), nullable=False)
-    # AllowedIPs cote CLIENT : reseaux que le client routera dans le tunnel.
-    # C'est ce qui apparait dans la section [Peer] de la conf exportee au
-    # client (et donc ce a quoi le client a acces). Defaut "0.0.0.0/0, ::/0"
-    # = full tunnel. Pour un split tunnel, mettre par ex. "10.10.0.0/24,
-    # 192.168.1.0/24". Champ vide -> on retombe sur le defaut full tunnel.
+    # CLIENT-side AllowedIPs: networks the client will route into the tunnel.
+    # This is what appears in the [Peer] section of the config exported to
+    # the client (hence what the client can reach). Default "0.0.0.0/0, ::/0"
+    # = full tunnel. For a split tunnel, set e.g. "10.10.0.0/24,
+    # 192.168.1.0/24". Empty field -> falls back to the full-tunnel default.
     client_allowed_ips: Mapped[str] = mapped_column(String(255), default="", nullable=False)
-    # Endpoint distant (host:port), optionnel pour les road-warriors.
+    # Remote endpoint (host:port), optional for road-warriors.
     endpoint: Mapped[str | None] = mapped_column(String(128))
-    # Persistent keepalive en secondes (recommande 25 derriere du NAT).
+    # Persistent keepalive in seconds (25 recommended behind NAT).
     persistent_keepalive: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     description: Mapped[str | None] = mapped_column(String(255))
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
@@ -596,46 +595,46 @@ class IpsecGlobalConfig(Base):
 
 
 class IpsecConnection(Base):
-    """Connexion IPsec/IKEv2 site-a-site (strongSwan/swanctl).
+    """Site-to-site IPsec/IKEv2 connection (strongSwan/swanctl).
 
-    Supporte 2 modes d'authentification :
-      - psk : pre-shared key (champ psk renseigne)
-      - cert : authentification par certificats X.509 (local_cert_id +
-        eventuellement remote_cert_id pour valider l'identite du peer)
+    Supports 2 authentication modes:
+      - psk: pre-shared key (psk field set)
+      - cert: X.509 certificate authentication (local_cert_id +
+        optionally remote_cert_id to validate the peer identity)
     """
     __tablename__ = "ipsec_connections"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    # Nom unique de la connexion (sera la cle dans swanctl.conf).
+    # Unique connection name (becomes the key in swanctl.conf).
     name: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
-    # Mode d'auth : "psk" ou "cert"
+    # Auth mode: "psk" or "cert"
     auth_mode: Mapped[str] = mapped_column(String(8), default="psk", nullable=False)
-    # IP/host local (ou %any pour ecouter sur toutes les IPs).
+    # Local IP/host (or %any to listen on every IP).
     local_addrs: Mapped[str] = mapped_column(String(128), default="%any", nullable=False)
-    # IP/host distant (FQDN ou IP, ou %any pour acces clients).
+    # Remote IP/host (FQDN or IP, or %any for client access).
     remote_addrs: Mapped[str] = mapped_column(String(128), nullable=False)
-    # Identifiants IKE (defaut = adresses).
+    # IKE identities (default = addresses).
     local_id: Mapped[str | None] = mapped_column(String(128))
     remote_id: Mapped[str | None] = mapped_column(String(128))
-    # Pre-shared key (utilisee uniquement si auth_mode=psk).
+    # Pre-shared key (used only if auth_mode=psk).
     psk: Mapped[str] = mapped_column(String(255), default="", nullable=False)
-    # FK vers IpsecCert : certificat local (mode cert) ou null (mode psk).
+    # FK to IpsecCert: local cert (cert mode) or null (psk mode).
     local_cert_id: Mapped[int | None] = mapped_column(Integer)
-    # FK vers IpsecCert : certificat distant attendu (mode cert).
-    # Si null en mode cert, on valide juste contre la CA (sans cert pinne).
+    # FK to IpsecCert: expected remote cert (cert mode).
+    # If null in cert mode, we only validate against the CA (no pinned cert).
     remote_cert_id: Mapped[int | None] = mapped_column(Integer)
-    # Traffic selectors enfants : reseaux locaux/distants couverts par le tunnel.
-    # Format CIDR separe par virgules : 192.168.1.0/24,192.168.2.0/24
+    # Child traffic selectors: local/remote networks covered by the tunnel.
+    # Comma-separated CIDR format: 192.168.1.0/24,192.168.2.0/24
     local_ts: Mapped[str] = mapped_column(String(255), default="0.0.0.0/0", nullable=False)
     remote_ts: Mapped[str] = mapped_column(String(255), default="0.0.0.0/0", nullable=False)
-    # Propositions de chiffrement IKE et ESP. Defauts modernes.
+    # IKE and ESP cipher proposals. Modern defaults.
     ike_proposals: Mapped[str] = mapped_column(
         String(255), default="aes256-sha256-modp2048", nullable=False,
     )
     esp_proposals: Mapped[str] = mapped_column(
         String(255), default="aes256-sha256", nullable=False,
     )
-    # Mode de demarrage : "start" (initie), "trap" (sur trafic), "passive" (attend).
+    # Start mode: "start" (initiate), "trap" (on traffic), "passive" (wait).
     start_action: Mapped[str] = mapped_column(String(16), default="start", nullable=False)
     description: Mapped[str | None] = mapped_column(String(255))
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
@@ -644,10 +643,10 @@ class IpsecConnection(Base):
 
 
 class IpsecCa(Base):
-    """Autorite de certification racine integree.
+    """Built-in root certificate authority.
 
-    Singleton (id=1). Genere lors du premier passage en mode cert depuis
-    l'UI. Cle privee stockee en clair dans la DB (DB elle-meme en 0600).
+    Singleton (id=1). Generated on the first switch to cert mode from the
+    UI. Private key stored in clear in the DB (the DB itself is 0600).
     """
     __tablename__ = "ipsec_ca"
 
@@ -662,23 +661,23 @@ class IpsecCa(Base):
 
 
 class IpsecCert(Base):
-    """Certificat X.509 pour IPsec.
+    """X.509 certificate for IPsec.
 
-    Deux usages :
-      - is_local=True : cert + cle privee generes par MurOS pour ce firewall
-        (utilise comme local.certs dans swanctl)
-      - is_local=False : cert importe d'un peer distant pour validation
-        (utilise comme remote.cacerts ou identite pinne)
+    Two uses:
+      - is_local=True: cert + private key generated by MurOS for this firewall
+        (used as local.certs in swanctl)
+      - is_local=False: cert imported from a remote peer for validation
+        (used as remote.cacerts or pinned identity)
     """
     __tablename__ = "ipsec_certs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     subject_cn: Mapped[str] = mapped_column(String(128), nullable=False)
-    # Subject Alternative Names (ex: "DNS:fw.exemple.fr,IP:203.0.113.5").
+    # Subject Alternative Names (e.g. "DNS:fw.example.com,IP:203.0.113.5").
     san: Mapped[str | None] = mapped_column(String(512))
     cert_pem: Mapped[str] = mapped_column(String(4096), nullable=False)
-    # Cle privee (PEM) si MurOS a genere la paire. None pour les certs importes.
+    # Private key (PEM) if MurOS generated the pair. None for imported certs.
     key_pem: Mapped[str | None] = mapped_column(String(8192))
     is_local: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     validity_days: Mapped[int] = mapped_column(Integer, default=825, nullable=False)
@@ -690,7 +689,7 @@ class IpsecCert(Base):
 
 
 class NotificationConfig(Base):
-    """Config singleton SMTP pour les alertes par mail."""
+    """Singleton SMTP config for email alerts."""
     __tablename__ = "notification_config"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
@@ -707,20 +706,20 @@ class NotificationConfig(Base):
 
 
 class NotificationRule(Base):
-    """Regle d'alerte : un type d'evenement + throttle."""
+    """Alert rule: an event type + throttle."""
     __tablename__ = "notification_rules"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    # Identifiant logique du type d'evenement (cle stable).
+    # Logical identifier of the event type (stable key).
     event_type: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    # Throttle minimal entre 2 alertes du meme type, en minutes.
+    # Minimum throttle between 2 alerts of the same type, in minutes.
     throttle_minutes: Mapped[int] = mapped_column(Integer, default=30, nullable=False)
     description: Mapped[str | None] = mapped_column(String(255))
 
 
 class NotificationLog(Base):
-    """Historique des alertes envoyees (50 derniers gardes, rotation)."""
+    """History of sent alerts (last 50 kept, rotation)."""
     __tablename__ = "notification_log"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -733,12 +732,11 @@ class NotificationLog(Base):
 
 
 class SshConfig(Base):
-    """Config singleton du serveur SSH (drop-in `/etc/ssh/sshd_config.d/muros.conf`).
+    """Singleton SSH server config (drop-in `/etc/ssh/sshd_config.d/muros.conf`).
 
-    Le drop-in MurOS pose des defauts secures (root no, password no).
-    Ici l'admin peut les ajuster depuis l'UI, en gardant la garde-fou
-    de la session SSH active (on log un warning si on coupe son propre
-    acces).
+    The MurOS drop-in sets secure defaults (root no, password no). The
+    admin can adjust them from the UI, keeping the active-SSH-session
+    safeguard (a warning is logged if you cut off your own access).
     """
     __tablename__ = "ssh_config"
 
@@ -756,13 +754,13 @@ class SshConfig(Base):
     max_auth_tries: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
     client_alive_interval: Mapped[int] = mapped_column(Integer, default=300, nullable=False)
     client_alive_count_max: Mapped[int] = mapped_column(Integer, default=2, nullable=False)
-    # Adresse d'ecoute (vide ou 0.0.0.0 = toutes les interfaces)
+    # Listen address (empty or 0.0.0.0 = every interface)
     listen_address: Mapped[str] = mapped_column(String(64), default="0.0.0.0", nullable=False)
-    # Listes separees par virgule (vide = pas de restriction)
+    # Comma-separated lists (empty = no restriction)
     allow_users: Mapped[str] = mapped_column(String(512), default="", nullable=False)
     allow_groups: Mapped[str] = mapped_column(String(512), default="", nullable=False)
     deny_users: Mapped[str] = mapped_column(String(512), default="", nullable=False)
-    # Si false : on supprime le drop-in (retour aux defauts Debian)
+    # If false: the drop-in is removed (back to Debian defaults)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     # admin_disabled : the operator explicitly stopped sshd from the UI.
     # Distinct from "service inactive by accident" so the Monitoring page
@@ -774,11 +772,11 @@ class SshConfig(Base):
 
 
 class HttpConfig(Base):
-    """Config singleton de l'interface web (nginx) : ecoute HTTP/HTTPS.
+    """Singleton config for the web interface (nginx): HTTP/HTTPS listen.
 
-    nginx ecoute sur listen_address:port_https en HTTPS (cert TLS) et,
-    si redirect_http_to_https est true, sur listen_address:port_http en
-    HTTP avec redirect 301 vers HTTPS.
+    nginx listens on listen_address:port_https in HTTPS (TLS cert) and,
+    if redirect_http_to_https is true, on listen_address:port_http in
+    HTTP with a 301 redirect to HTTPS.
     """
     __tablename__ = "http_config"
 
@@ -791,17 +789,18 @@ class HttpConfig(Base):
 
 
 class SnmpConfig(Base):
-    """Config singleton pour snmpd (lecture seule, community v2c)."""
+    """Singleton config for snmpd (read-only, v2c community)."""
     __tablename__ = "snmp_config"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
-    # SNMP active par defaut : c'est attendu sur une appliance firewall (monitoring,
-    # supervision). Ecoute restreinte aux LAN prives via allowed_networks ci-dessous,
-    # community 'public' en lecture seule. L'admin peut desactiver ou durcir depuis l'UI.
+    # SNMP enabled by default: expected on a firewall appliance (monitoring,
+    # supervision). Listening restricted to private LANs via allowed_networks
+    # below, read-only 'public' community. The admin can disable or harden it
+    # from the UI.
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     port: Mapped[int] = mapped_column(Integer, default=161, nullable=False)
     community: Mapped[str] = mapped_column(String(64), default="public", nullable=False)
-    # Reseaux autorises (CIDR separes par virgule). Defaut : LAN prives.
+    # Allowed networks (comma-separated CIDR). Default: private LANs.
     allowed_networks: Mapped[str] = mapped_column(
         String(512), default="10.0.0.0/8,172.16.0.0/12,192.168.0.0/16", nullable=False,
     )
