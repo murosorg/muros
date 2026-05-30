@@ -42,7 +42,7 @@ SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 
 @event.listens_for(engine, "connect")
 def _sqlite_pragmas(dbapi_conn, _connection_record):
-    """Pose les PRAGMA WAL/synchronous/foreign_keys a chaque connexion."""
+    """Set the WAL/synchronous/foreign_keys PRAGMAs on each connection."""
     cur = dbapi_conn.cursor()
     try:
         cur.execute("PRAGMA journal_mode=WAL")
@@ -66,7 +66,7 @@ def get_db():
 
 
 def init_db():
-    # L'import enregistre les modeles dans Base.metadata avant create_all.
+    # The import registers the models in Base.metadata before create_all.
     from app import models  # noqa: F401
     Base.metadata.create_all(bind=engine)
     _migrate_schema()

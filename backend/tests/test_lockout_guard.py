@@ -5,6 +5,7 @@ connection from the operator's source to the web UI and SSH ports, so
 the apply flow can warn before a ruleset that only the live (conntrack-
 kept) session can still reach is committed.
 """
+import pytest
 
 
 def _reset(s):
@@ -13,6 +14,22 @@ def _reset(s):
         for row in s.query(m).all():
             s.delete(row)
     s.commit()
+
+
+@pytest.fixture(autouse=True)
+def _clean_scenario_tables(tmp_db):
+    """Keep the session-scoped DB clean for the next test file.
+
+    The test DB is shared across the whole session, so the rows these
+    tests create (zones, interfaces, rules) would otherwise leak into
+    later files. Interfaces default to dirty=True, which would inflate
+    the network "pending" counter asserted in test_network.py. Reset the
+    affected tables after every test so each file starts from a clean
+    slate.
+    """
+    yield
+    with tmp_db() as s:
+        _reset(s)
 
 
 def _scenario(s):
