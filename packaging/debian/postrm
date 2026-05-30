@@ -7,9 +7,14 @@ case "$1" in
     rm -f /etc/nginx/sites-enabled/muros
     rm -f /etc/systemd/system/apt-daily-upgrade.timer.d/muros-schedule.conf 2>/dev/null || true
     rmdir /etc/systemd/system/apt-daily-upgrade.timer.d 2>/dev/null || true
-    # Restaure /etc/resolv.conf depuis la sauvegarde si presente.
+    # Restaure /etc/resolv.conf depuis la sauvegarde si presente. On
+    # reecrit le contenu en place plutot que mv : mv echoue quand
+    # /etc/resolv.conf est un bind mount (conteneur) ou immuable, ce qui
+    # avec set -e ferait planter la purge. La purge ne doit jamais
+    # echouer la-dessus.
     if [ -f /etc/resolv.conf.muros-bak ]; then
-      mv /etc/resolv.conf.muros-bak /etc/resolv.conf
+      cat /etc/resolv.conf.muros-bak > /etc/resolv.conf 2>/dev/null || true
+      rm -f /etc/resolv.conf.muros-bak 2>/dev/null || true
     fi
     rm -f /etc/systemd/resolved.conf.d/muros.conf 2>/dev/null || true
     # Restaure les services reseau natifs

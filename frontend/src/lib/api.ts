@@ -149,33 +149,6 @@ export type MetricsSummary = {
   conntrack: { current: number; max: number; used_percent: number }
 }
 
-export type MetricSamplePoint = {
-  timestamp: string
-  cpu_usage_percent: number
-  memory_used_percent: number
-  memory_used_bytes: number
-  conntrack_current: number
-  conntrack_used_percent: number
-  load_1: number
-  load_5: number
-  load_15: number
-}
-
-export type InterfaceSamplePoint = {
-  timestamp: string
-  interface_name: string
-  rx_bytes: number
-  tx_bytes: number
-  rx_packets: number
-  tx_packets: number
-}
-
-export type MetricsHistory = {
-  samples: MetricSamplePoint[]
-  interfaces: Record<string, InterfaceSamplePoint[]>
-  retention_hours: number
-}
-
 export type SystemLogEntry = {
   timestamp: string
   unit: string
@@ -535,7 +508,6 @@ export const api = {
 
   metrics: {
     summary: () => request<MetricsSummary>('GET', '/api/metrics/summary'),
-    history: (hours = 24) => request<MetricsHistory>('GET', `/api/metrics/history?hours=${hours}`),
   },
 
   logs: {
@@ -591,7 +563,6 @@ export const api = {
     create: (data: Partial<StaticRoute>) => request<StaticRoute>('POST', '/api/routes', data),
     update: (id: number, data: Partial<StaticRoute>) => request<StaticRoute>('PUT', `/api/routes/${id}`, data),
     remove: (id: number) => request<void>('DELETE', `/api/routes/${id}`),
-    reapply: () => request<void>('POST', '/api/routes/reapply'),
   },
 
   wan: {
@@ -747,8 +718,6 @@ export const api = {
     listPeers: () => request<WireGuardPeer[]>('GET', '/api/wireguard/peers'),
     createPeer: (data: WireGuardPeerInput) =>
       request<WireGuardPeer>('POST', '/api/wireguard/peers', data),
-    quickCreatePeer: (data: { name: string; description?: string | null }) =>
-      request<WireGuardPeerExport>('POST', '/api/wireguard/peers/quick', data),
     updatePeer: (id: number, data: WireGuardPeerInput) =>
       request<WireGuardPeer>('PUT', `/api/wireguard/peers/${id}`, data),
     deletePeer: (id: number) => request<void>('DELETE', `/api/wireguard/peers/${id}`),
@@ -772,8 +741,6 @@ export const api = {
     deleteConnection: (id: number) => request<void>('DELETE', `/api/ipsec/connections/${id}`),
     apply: () => request<IpsecApplyResult>('POST', '/api/ipsec/apply'),
     pending: () => request<ServicePending>('GET', '/api/ipsec/pending'),
-    startService: () => request<{ service: string; message: string }>('POST', '/api/ipsec/service/start'),
-    stopService: () => request<{ service: string; message: string }>('POST', '/api/ipsec/service/stop'),
     getCa: () => request<IpsecCa | null>('GET', '/api/ipsec/ca'),
     generateCa: (data: IpsecCaGenerate) => request<IpsecCa>('POST', '/api/ipsec/ca', data),
     listCerts: () => request<IpsecCert[]>('GET', '/api/ipsec/certs'),
@@ -803,10 +770,6 @@ export const api = {
       request<ApplyWithRollback>('POST', '/api/tls/upload', data),
     regenerate: () =>
       request<ApplyWithRollback>('POST', '/api/tls/regenerate-self-signed', {}),
-    confirmApply: (pending_id: number) =>
-      request<{ status: string; id: number }>('POST', `/api/tls/confirm-apply/${pending_id}`),
-    rollbackApply: (pending_id: number) =>
-      request<{ status: string; id: number; error?: string | null }>('POST', `/api/tls/rollback-apply/${pending_id}`),
   },
 
   ssh: {
@@ -817,10 +780,6 @@ export const api = {
       request<SshConfig>('PUT', '/api/ssh/config', data),
     apply: (opts?: { skip_rollback?: boolean }) =>
       request<ApplyWithRollback>('POST', `/api/ssh/apply${opts?.skip_rollback ? '?skip_rollback=true' : ''}`),
-    confirmApply: (pending_id: number) =>
-      request<{ status: string; id: number }>('POST', `/api/ssh/confirm-apply/${pending_id}`),
-    rollbackApply: (pending_id: number) =>
-      request<{ status: string; id: number; error?: string | null }>('POST', `/api/ssh/rollback-apply/${pending_id}`),
     listKeys: () => request<SshAuthorizedKey[]>('GET', '/api/ssh/keys'),
     addKey: (key_text: string) =>
       request<{ added: boolean; fingerprint?: string | null; message?: string | null }>('POST', '/api/ssh/keys', { key_text }),
@@ -858,17 +817,12 @@ export const api = {
       request<HttpConfig>('PUT', '/api/http/config', data),
     apply: (opts?: { skip_rollback?: boolean }) =>
       request<ApplyWithRollback>('POST', `/api/http/apply${opts?.skip_rollback ? '?skip_rollback=true' : ''}`),
-    confirmApply: (pending_id: number) =>
-      request<{ status: string; id: number }>('POST', `/api/http/confirm-apply/${pending_id}`),
-    rollbackApply: (pending_id: number) =>
-      request<{ status: string; id: number; error?: string | null }>('POST', `/api/http/rollback-apply/${pending_id}`),
   },
 
   systemActions: {
     reboot: () => request<{ scheduled: boolean; message: string }>('POST', '/api/system/reboot'),
     shutdown: () => request<{ scheduled: boolean; message: string }>('POST', '/api/system/shutdown'),
     listServices: () => request<SystemService[]>('GET', '/api/system/services'),
-    listenAddresses: () => request<ListenAddress[]>('GET', '/api/system/listen-addresses'),
     publicIp: () => request<{ ip: string; source: string }>('GET', '/api/system/public-ip'),
   },
 
@@ -1250,13 +1204,6 @@ export type SshAuthorizedKey = {
   comment: string
   fingerprint: string
   line: number
-}
-
-export type ListenAddress = {
-  label: string
-  address: string
-  interface: string
-  loopback: boolean
 }
 
 export type HttpConfigInput = {
