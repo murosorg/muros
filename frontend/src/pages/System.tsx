@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import TableSkeleton from '../components/TableSkeleton'
 import {
-  api, Health, SystemInfo, Backup, NtpStatus, NtpServers,
+  api, Health, SystemInfo, Backup,
   DnsConfig, UpdateStatus, MurosUpdateStatus, BackupRemoteConfig, SshKey,
 } from '../lib/api'
 import PageHeader from '../components/PageHeader'
@@ -17,21 +17,20 @@ import { toast } from '../components/Toast'
 import { fmt } from '../lib/format'
 import { Archive, Settings } from 'lucide-react'
 
-type TabKey = 'general' | 'backups' | 'ntp' | 'dns' | 'updates'
+type TabKey = 'general' | 'backups' | 'dns' | 'updates'
 
 // Mapping URL segment <-> internal tab key. Keeps internal code stable while
 // exposing clean, intent-revealing URLs that survive bookmarks and back-button.
+// Note: NTP lives in its own Services page (/services/ntp), not here.
 const URL_TO_KEY: Record<string, TabKey> = {
   maintenance: 'general',
   backups: 'backups',
-  time: 'ntp',
   dns: 'dns',
   updates: 'updates',
 }
 const KEY_TO_URL: Record<TabKey, string> = {
   general: 'maintenance',
   backups: 'backups',
-  ntp: 'time',
   dns: 'dns',
   updates: 'updates',
 }
@@ -59,7 +58,6 @@ export default function System() {
         <div className="mt-4">
           {tab === 'general' && <GeneralTab />}
           {tab === 'backups' && <BackupsTab />}
-          {tab === 'ntp' && <NtpTab />}
           {tab === 'dns' && <DnsTab />}
           {tab === 'updates' && <UpdatesTab />}
         </div>
@@ -71,7 +69,6 @@ export default function System() {
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'general', label: 'Maintenance' },
   { key: 'backups', label: 'Backups' },
-  { key: 'ntp', label: 'Time' },
   { key: 'dns', label: 'DNS' },
   { key: 'updates', label: 'Updates' },
 ]
@@ -791,87 +788,6 @@ cat ${key?.key_path || keyPath}.pub`}</pre>
 }
 
 
-
-/* --- Onglet NTP --- */
-function NtpTab() {
-  // Minimal block : MurOS relies on chrony, enabled by default at
-  // install. It reads the state via `timedatectl show` + `chronyc
-  // tracking` and drops /etc/chrony/conf.d/muros.conf with the server
-  // list. No source table here; for that detail run `chronyc sources`
-  // over SSH.
-  const [status, setStatus] = useState<NtpStatus | null>(null)
-  const [config, setConfig] = useState<NtpServers | null>(null)
-  const [serversText, setServersText] = useState<string>('')
-  const [error, setError] = useState<string | null>(null)
-  const [working, setWorking] = useState(false)
-
-  const reload = useCallback(() => {
-    Promise.all([api.ntp.status(), api.ntp.servers()])
-      .then(([s, c]) => {
-        setStatus(s); setConfig(c); setServersText(c.servers.join(' ')); setError(null)
-      })
-      .catch((e) => setError(e.message))
-  }, [])
-
-  useEffect(() => { reload() }, [reload])
-
-  const save = async () => {
-    setWorking(true)
-    try {
-      const list = serversText.split(/\s+/).map((s) => s.trim()).filter(Boolean)
-      const c = await api.ntp.setServers(list)
-      setConfig(c); setServersText(c.servers.join(' '))
-    } catch (e) { setError((e as Error).message) } finally { setWorking(false) }
-  }
-
-  return (
-    <div>
-      {error && <div className="mb-4"><ErrorBlock message={error} /></div>}
-      <Section
-        title="chrony synchronization"
-        actions={<button className="btn-secondary" onClick={reload}>Refresh</button>}
-      >
-        {status === null && <LoadingState variant="inline" />}
-        {status?.available === false && (
-          <div className="text-sm text-gray-800 border border-amber-300 bg-amber-50 rounded p-3">
-            chrony unavailable. Check that the package is installed and the service is active.
-          </div>
-        )}
-        {status?.available && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <Stat label="Synchronized" value={status.ntp_synchronized ? 'yes' : 'no'} />
-            <Stat label="Service active" value={status.ntp_active ? 'yes' : 'no'} />
-            <Stat label="Current source" value={status.ref_name || '(none)'} mono />
-            <Stat label="Timezone" value={status.timezone || '-'} />
-          </div>
-        )}
-      </Section>
-
-      <Section
-        title="Serveurs NTP"
-        actions={
-          <FormActions
-            onApply={save}
-            busy={working}
-            dirty={!!config && serversText.trim() !== config.servers.join(' ').trim()}
-            title="Save the server list and restart chrony."
-          />
-        }
-      >
-        <p className="text-xs text-gray-700 mb-2">
-          Space-separated server list. Written to <code className="font-mono">{config?.config_path || '/etc/chrony/conf.d/muros.conf'}</code>.
-          The service is restarted after each save.
-        </p>
-        <input
-          className="input w-full font-mono text-xs"
-          value={serversText}
-          onChange={(e) => setServersText(e.target.value)}
-          placeholder="0.debian.pool.ntp.org 1.debian.pool.ntp.org 2.debian.pool.ntp.org"
-        />
-      </Section>
-    </div>
-  )
-}
 
 function Stat({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (

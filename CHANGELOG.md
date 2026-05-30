@@ -2,6 +2,21 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [v0.9.0-rc10] - 2026-05-30
+
+### Changed
+- The root administrator now keeps its existing system password. MurOS
+  no longer resets it to `muros` at install and no longer forces a change
+  on first login: you log into the web UI with the password root already
+  has for the shell / console. (The dev-only fallback stays root/muros
+  when MUROS_APPLY is off.)
+- NTP moved to its own Services page (`/services/ntp`, "NTP server" in the
+  sidebar) instead of a tab under System. `/system/time` redirects there.
+
+### Fixed
+- Documentation (README, FAQ, quickstart, packaging, site) updated for the
+  root account, Kea, chrony and the per-account web UI access model.
+
 ## [v0.9.0-rc9] - 2026-05-30
 
 ### Changed

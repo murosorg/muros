@@ -12,10 +12,10 @@ case "$1" in
     # account, and that same account is used for SSH: one set of
     # credentials covers both the UI and the shell. The default
     # administrator is the system 'root' account directly, so there is
-    # no separate 'admin' user to create here. Every other Linux account
-    # is refused entry to the web UI until root grants it access from the
-    # Access > Users page (ui_access gate in the backend).
-    MUROS_ADMIN_USER=root
+    # no separate 'admin' user to create here, and root keeps its
+    # existing password (MurOS never resets it). Every other Linux
+    # account is refused entry to the web UI until root grants it access
+    # from the Access > Users page (ui_access gate in the backend).
 
     install -d -m 750 -o muros -g muros /etc/muros
     install -d -m 750 -o muros -g muros /var/lib/muros
@@ -243,12 +243,10 @@ EOF
     # update" in the UI, exactly the services they need to stay up.
     # Gate the reset on $2 being empty (no previous version installed).
     if [ -z "$2" ]; then
-      # Default password for the root administrator on a FRESH install
-      # only. 'muros', flagged must_change_password=True in the DB so the
-      # web UI forces a change at first login. We deliberately do NOT run
-      # `chage -d 0`: an expired Unix password would make PAM refuse the
-      # very login the operator needs to change it from the web UI.
-      echo "$MUROS_ADMIN_USER:muros" | chpasswd 2>/dev/null || true
+      # The administrator account is the system 'root' account and MurOS
+      # keeps its existing password untouched: the operator logs into the
+      # web UI with the same root password they already use for the shell
+      # / console. We deliberately do NOT reset it nor force a change.
 
       # SSH closed by default. openssh-server is a hard dependency so the
       # binaries are present, but the daemon does not run until the admin

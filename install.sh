@@ -189,7 +189,7 @@ cat <<EOF
 MurOS ${VER} installed.
 
   UI     : https://${IP:-<ip-vm>}/  (self-signed snakeoil cert, accept the browser warning)
-  Login  : root / muros  (the UI forces a password change on first login)
+  Login  : root  (use the existing root password; MurOS does not change it)
   Log    : ${LOG}
 
 Checks:

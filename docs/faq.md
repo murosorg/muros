@@ -81,29 +81,18 @@ If you were blocked in the meantime:
 or the default gateway and lose access, you need serial console / IPMI /
 hypervisor access to revert manually. V1 plans auto-rollback on these too.
 
-## I forgot the UI admin password
+## I forgot the UI password
 
-SSH on the firewall (as root), reset from Python:
+The web UI authenticates through PAM against the system `root` account,
+so the UI password **is** the Linux root password. Reset it from the
+console (or serial / IPMI / hypervisor) as root:
 
 ```bash
-sudo -i
-cd /opt/muros/backend
-source .venv/bin/activate
-python -c "
-from app.db import SessionLocal
-from app import models
-from app.auth import hash_password
-with SessionLocal() as db:
-    user = db.query(models.User).filter_by(username='admin').first()
-    user.password_hash = hash_password('new_temporary_password_AAbb12!!')
-    user.must_change_password = True
-    db.commit()
-    print('Password reset.')
-"
+passwd root
 ```
 
-The new password must satisfy the policy (12+ chars, complexity), otherwise
-the mandatory change on the next login will refuse to accept it.
+Then log into the UI with the new password. There is no separate UI
+password store to reset.
 
 ## The firewall does not forward LAN -> WAN traffic
 
@@ -154,15 +143,16 @@ If you want to keep your config across reinstalls, export a backup first
 Starting from the first stable release, in-place upgrades will be supported and the
 schema will evolve via versioned migrations.
 
-## How to change the Linux root account password?
+## How to change the root password?
 
 Two ways:
-* **Via the UI**: SSH Access > "Linux root account password" section
-* **Via SSH**: `sudo passwd root`
+* **Via the UI**: change it from the UI password form (it writes the
+  system password through chpasswd)
+* **Via the shell**: `passwd root`
 
-The Linux root account password is **different** from the MurOS UI
-password. The first is for password-based SSH login, the second is for
-logging into the web interface.
+Since the web UI and SSH share the system `root` account through PAM,
+this is a single password: changing it updates both the UI login and
+the SSH / console login at once.
 
 ## How to add an SSH key for root?
 

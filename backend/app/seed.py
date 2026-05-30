@@ -14,10 +14,10 @@ def seed_root_user(db: Session) -> None:
 
     Authentication is delegated to the system PAM stack: the web UI and
     SSH share the same Linux accounts. The default administrator is the
-    system 'root' account, whose password is set by the package postinst
-    on a fresh install ('muros', flagged must_change_password). This DB
-    row carries no real password hash, only the JWT subject, the admin
-    flag, the ui_access grant and the must_change_password hint.
+    system 'root' account, and MurOS uses its existing password as-is
+    (the package never resets it, so there is no forced password change).
+    This DB row carries no real password hash, only the JWT subject, the
+    admin flag and the ui_access grant.
 
     root is the only account granted ui_access by default; every other
     Linux account stays locked out of the web UI until root enables it
@@ -26,24 +26,16 @@ def seed_root_user(db: Session) -> None:
     """
     root = db.query(models.User).filter(models.User.username == "root").first()
     if root is None:
-        # Fresh install: no row yet. Force a password change at first
-        # login only when this is the very first account in the DB (a
-        # brand new appliance). On an upgrade the row is materialized
-        # without the must-change flag (the password is already managed).
-        first_account = db.query(models.User).count() == 0
         root = models.User(
             username="root",
             password_hash="!",  # PAM is the source of truth, not this column
             is_admin=True,
             ui_access=True,
-            must_change_password=first_account,
+            must_change_password=False,
         )
         db.add(root)
         db.commit()
-        log.warning(
-            "Mirror root row created (system account 'root', default "
-            "password 'muros' set at install, must be changed on first login)"
-        )
+        log.info("Mirror root row created (system account 'root', admin + UI access)")
         return
     # Existing row: make sure root keeps admin rights and UI access.
     if not root.is_admin or not root.ui_access:

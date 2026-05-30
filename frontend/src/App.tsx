@@ -25,6 +25,7 @@ import HttpAccess from './pages/HttpAccess'
 import Diagnostic from './pages/Diagnostic'
 import DhcpPage from './pages/Dhcp'
 import DnsPage from './pages/Dns'
+import NtpPage from './pages/Ntp'
 import UsersPage from './pages/Users'
 import Login from './pages/Login'
 import { auth, setUnauthorizedHandler } from './lib/api'
@@ -89,6 +90,8 @@ export default function App() {
           <Route path="/diagnostic" element={<Diagnostic />} />
           <Route path="/services/dhcp" element={<DhcpPage />} />
           <Route path="/services/dns" element={<DnsPage />} />
+          <Route path="/services/ntp" element={<NtpPage />} />
+          <Route path="/system/time" element={<Navigate to="/services/ntp" replace />} />
           {/* DNS sub-routes for bookmarks: server, records. */}
           <Route path="/services/dns/:tab" element={<DnsPage />} />
           <Route path="/access/http" element={<HttpAccess />} />

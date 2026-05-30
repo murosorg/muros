@@ -67,7 +67,7 @@ sudo apt install muros
 Open `https://<firewall-ip>` in a browser. Default credentials:
 
 - Login: `root`
-- Password: `muros` (the UI forces a password change on first login)
+- Password: the existing system root password (MurOS does not change it)
 
 To pin a specific version: `MUROS_VERSION=0.9.0-rcXX sudo bash` (the repo
 keeps only the latest version, so pinning works for the current release).
@@ -113,6 +113,7 @@ of learning FreeBSD-specific paths.
 | Multi-WAN | Multiple WAN gateways, ICMP probes, automatic failover with default-route swap |
 | DHCP server | Kea (kea-dhcp4-server) backend, per-interface pools, static leases by MAC, active lease view |
 | DNS recursive | Unbound resolver, DNSSEC, forwarders, local A / AAAA records, optional system resolver |
+| NTP | chrony, enabled by default, custom server list, live sync status |
 | WireGuard | Config + peers, install via UI, reboot persistence |
 | IPsec | PSK or cert connections, integrated PKI (CA + certs + CRL), 3-tab UI (connections / certificates / users) |
 | HA | VRRP, conntrackd, VIPs, inter-node DB sync, automatic takeover |
@@ -121,12 +122,12 @@ of learning FreeBSD-specific paths.
 | Backups | Local DB snapshot, restore, remote (rclone, ftp, ssh) |
 | Diagnostic | ping, traceroute, dig, tcpdump, conntrack from the UI |
 | Logs | Firewall logs (journalctl -k) + audit log of all UI actions |
-| System | Hostname, DNS, NTP, apt updates, reboot / shutdown |
+| System | Hostname, DNS, apt updates, reboot / shutdown |
 | TLS UI | Certificate upload or RSA 4096 self-signed generation |
 | SSH | Install, listen address, port, authorized keys, Linux root password |
 | HTTP nginx | Listen interface + ports + HTTP -> HTTPS redirect |
 | Hardening | sysctl, sshd, fail2ban, journald (clean drop-ins) |
-| Admin account | Login + password + policy (12+ chars, complexity, anti-leaks), TOTP MFA |
+| Accounts | PAM auth (the web UI and SSH share the Linux accounts), root is the default administrator, grant / revoke web UI access per account, promote to admin |
 
 ## Architecture: source of truth in SQLite
 
@@ -200,10 +201,11 @@ Delivered features move to [`CHANGELOG.md`](CHANGELOG.md). Current state:
 - **V1.0** (beta, current rc cycle): Stateful filtering, NAT, routing, VLAN,
   WireGuard + IPsec, HA, logs, monitoring, backups, SNMP, notifications,
   hardening, apt updates, multi-WAN failover, built-in DHCP (Kea) and
-  recursive DNS (Unbound), GitHub Actions CI. Pending before stable: appliance
+  recursive DNS (Unbound), NTP (chrony), PAM accounts with per-account
+  web UI access, GitHub Actions CI. Pending before stable: appliance
   ISO, signed apt repository.
 - **V2.0** (planned): IPS / IDS Suricata, captive portal, LDAP / AD
-  integration, multi-user with roles, WireGuard self-service via LDAP, NTP, 2FA, OpenVPN, Kea
+  integration, WireGuard self-service via LDAP, 2FA, OpenVPN
 
 ### Out of scope, by design
 

@@ -161,9 +161,9 @@ sudo systemctl enable --now muros-backend.service
 ### 4. Acceder a l'UI
 
 Ouvrir `https://<ip-du-boitier>/` (accepter le cert self-signed la
-premiere fois). Le login par defaut est `root` / `muros`. MurOS force
-un changement de mot de passe au premier login (`must_change_password=true`
-en base).
+premiere fois). On se connecte en `root` avec le mot de passe root
+existant du systeme : MurOS ne le change pas et ne force aucun
+changement.
 
 > **ATTENTION SSH** : le drop-in `/etc/ssh/sshd_config.d/muros.conf`
 > desactive l'authentification par mot de passe (`PasswordAuthentication
