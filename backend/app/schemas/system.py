@@ -278,8 +278,7 @@ class SystemServiceOut(BaseModel):
     display_name: str
     page: str
     category: str
-    status: str  # active / inactive / failed / activating / unknown / disabled_by_admin
-    admin_disabled: bool = False
+    status: str  # active / inactive / failed / activating / unknown
 
 
 class AuditLogOut(BaseModel):

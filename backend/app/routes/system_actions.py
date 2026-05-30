@@ -3,11 +3,9 @@
 """Routes HTTP de l'API MurOS (sous-module)."""
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
 
 from app import schemas
 from app.auth import current_user
-from app.db import get_db
 
 _auth_dep = [Depends(current_user)]
 
@@ -28,20 +26,10 @@ def sys_reboot():
 
 
 @system_actions_router.get("/services", response_model=list[schemas.SystemServiceOut])
-def sys_services(db: Session = Depends(get_db)):
+def sys_services():
     """Liste les services MurOS-geres effectivement installes, avec leur statut."""
-    from app import models, system_actions
-    services = system_actions.list_services()
-    # Surface "disabled by admin" for sshd so the dashboard does not
-    # raise a red alert on an explicit operator choice.
-    ssh_cfg = db.get(models.SshConfig, 1)
-    if ssh_cfg and getattr(ssh_cfg, "admin_disabled", False):
-        for s in services:
-            if s.get("unit") in ("ssh", "ssh.service", "sshd", "sshd.service"):
-                s["admin_disabled"] = True
-                if s.get("status") in ("inactive", "deactivating", "unknown", "failed"):
-                    s["status"] = "disabled_by_admin"
-    return services
+    from app import system_actions
+    return system_actions.list_services()
 
 
 @system_actions_router.get("/listen-addresses", response_model=list[schemas.ListenAddressOut])
