@@ -2,7 +2,7 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [v0.9.0-rc28] - 2026-05-30
+## [v0.9.0-rc30] - 2026-05-30
 
 ### Added
 - IPv6 Router Advertisements / SLAAC (lot 2 of IPv6 support). MurOS can now
