@@ -340,14 +340,14 @@ function SshKeysPanel() {
 
   return (
     <div className="card">
-      <h2 className="text-lg font-semibold mb-3">Authorized SSH keys for the admin account</h2>
+      <h2 className="text-lg font-semibold mb-3">Authorized SSH keys for the root account</h2>
       {err && <div className="mb-3"><ErrorBlock message={err} /></div>}
       {msg && <SuccessBlock message={msg} onDismiss={() => setMsg(null)} />}
 
       <div className="text-xs text-gray-600 mb-3">
         Public keys placed in <code>/root/.ssh/authorized_keys</code>. Paste
         the full line: <code className="font-mono">ssh-ed25519 AAAA... comment</code>.
-        SSH and the web UI share the same <code>admin</code> account.
+        SSH and the web UI share the same <code>root</code> account.
       </div>
 
       <div className="space-y-2">
