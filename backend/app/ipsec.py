@@ -134,7 +134,7 @@ def get_status() -> dict:
     # If no unit is active, we still look for the installed unit
     # (strongswan-starter on Debian 12+, strongswan on Debian 11) to report
     # a clean "inactive" state instead of an "unknown" that yields
-    # "Service strongswan inconnu" cote UI.
+    # "Unknown strongswan service" on the UI side.
     if service_name is None:
         service_name = _ipsec_service_installed()
     return {
@@ -231,7 +231,7 @@ def install_packages() -> dict:
     }
 
 
-# --- Rendu de la conf swanctl ---
+# --- swanctl config rendering ---
 
 def render_swanctl_conf(connections: list, certs_by_id: dict | None = None) -> str:
     """Render the connections { ... } block of the swanctl.conf file.

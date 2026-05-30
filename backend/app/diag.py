@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (c) 2026 MurOS contributors.
-"""Outils de diagnostic reseau exposes via l'UI.
+"""Network diagnostic tools exposed through the UI.
 
 Wrappers safe autour de ping / traceroute / dig / tcpdump avec validation
 stricte des entrees (anti-injection) et timeout court.

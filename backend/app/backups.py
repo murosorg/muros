@@ -100,9 +100,9 @@ def create_backup(label: str | None = None) -> dict:
     }
 
     with tarfile.open(path, "w:gz") as tar:
-        # DB SQLite : copie consistante via l'API backup (snapshot
-        # transactionnel) plutot qu'un cp brut, sinon en mode WAL on
-        # risque d'archiver un .db et un .db-wal incoherents.
+        # SQLite DB: consistent copy via the backup API (transactional
+        # snapshot) rather than a raw cp, otherwise in WAL mode we risk
+        # archiving an inconsistent .db and .db-wal.
         db_path = Path(DB_PATH)
         if db_path.is_file():
             with tempfile.NamedTemporaryFile(

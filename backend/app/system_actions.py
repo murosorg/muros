@@ -120,8 +120,8 @@ def list_services() -> list[dict]:
     """
     result = []
     for entry in _SERVICE_CATALOG:
-        # Verif installation : on accepte si le binary CLI existe OU si une
-        # des units systemd est connue.
+        # Install check: we accept if the CLI binary exists OR if one of the
+        # systemd units is known.
         installed = False
         if entry.get("binary") and _which(entry["binary"]):
             installed = True

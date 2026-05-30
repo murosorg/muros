@@ -71,11 +71,11 @@ def pkg_version(package: str, label: str | None = None) -> str | None:
 
 
 def service_state(unit: str) -> ServiceState:
-    """Retourne l'etat actuel d'un unit systemd.
+    """Return the current state of a systemd unit.
 
-    On normalise les sorties exotiques (`activating`, `deactivating`,
-    `reloading`) vers `active` parce que pour l'admin c'est en cours
-    d'etre OK. `not-found` et erreurs runtime -> `unknown`.
+    We normalize the exotic outputs (`activating`, `deactivating`,
+    `reloading`) to `active` because for the admin it is on its way to being
+    OK. `not-found` and runtime errors -> `unknown`.
     """
     if not shutil.which("systemctl"):
         return "unknown"

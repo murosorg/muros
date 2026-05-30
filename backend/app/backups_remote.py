@@ -274,7 +274,7 @@ def generate_ssh_key(force: bool = False) -> dict:
     if res.returncode != 0:
         raise RuntimeError(res.stderr.strip() or f"ssh-keygen exit {res.returncode}")
 
-    # Lecture cle publique pour la renvoyer a l'UI
+    # Read the public key to return it to the UI
     try:
         pub = pub_path.read_text(encoding="utf-8").strip()
     except OSError as exc:
@@ -311,7 +311,7 @@ def test_connection(override: dict | None = None) -> dict:
     """
     cfg = get_config()
     if override:
-        # Merge surface : on n'ecrit pas la config, on teste juste les nouvelles valeurs
+        # Surface merge: we do not write the config, we just test the new values
         for k in ("host", "user", "port", "path", "ssh_key_path"):
             if k in override and override[k] is not None and override[k] != "":
                 cfg[k] = override[k]

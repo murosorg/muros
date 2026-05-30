@@ -195,7 +195,7 @@ def render_conf(cfg) -> str:
     """
     networks = [n.strip() for n in cfg.allowed_networks.split(",") if n.strip()]
     if not networks:
-        # Garde-fou : sans CIDR autorise, on bind 127.0.0.1 uniquement.
+        # Guard: without an allowed CIDR, we bind 127.0.0.1 only.
         networks = ["127.0.0.1/32"]
 
     lines = [

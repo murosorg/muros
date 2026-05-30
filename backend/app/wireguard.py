@@ -199,7 +199,7 @@ def _pubkey_from_priv(priv_b64: str) -> str:
 
 
 def generate_keypair() -> dict:
-    """API : genere une nouvelle paire de cles WG."""
+    """API: generate a new WG key pair."""
     priv, pub = _curve25519_keys()
     return {"private_key": priv, "public_key": pub}
 

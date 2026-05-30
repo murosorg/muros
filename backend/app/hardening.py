@@ -37,7 +37,7 @@ RECOMMENDED: dict[str, str] = {
     # vrai trafic. On monte a 262144.
     "net.netfilter.nf_conntrack_max": "262144",
 
-    # SYN backlog : Debian par defaut 1024-2048, on lisse les pics a 4096.
+    # SYN backlog: Debian default 1024-2048, we smooth the peaks to 4096.
     "net.ipv4.tcp_max_syn_backlog": "4096",
 
     # Anti IP spoofing : systemd 50-default.conf met rp_filter=2 (loose).
@@ -75,8 +75,8 @@ def _category_of(key: str) -> str:
 
 ALLOWED_KEYS = frozenset(RECOMMENDED.keys())
 
-# Description courte de chaque cle, affichee en tooltip dans l'UI.
-# Reste factuel : ce que la cle fait + pourquoi on la veut a la valeur reco.
+# Short description of each key, shown as a tooltip in the UI.
+# Stay factual: what the key does + why we want it at the recommended value.
 DESCRIPTIONS: dict[str, str] = {
     "net.ipv4.ip_forward": (
         "Active le forwarding IPv4 : autorise le noyau a router les paquets "
