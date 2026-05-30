@@ -4,6 +4,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [v0.9.0-rc90] - 2026-05-30
+
+### Changed
+- TLS module: replaced an inline `__import__("...hashes").SHA256()` hack
+  with a normal top-level `from cryptography.hazmat.primitives import
+  hashes` import when computing a certificate fingerprint. No behavior
+  change, just readable code.
+- DNS host-list builder: the two best-effort blocks that read static
+  reservations (DB) and active leases (Kea file) no longer swallow
+  exceptions silently. They now log at debug level and carry a
+  `# noqa: BLE001` annotation, matching the codebase convention, so a DB
+  or lease-file error leaves a trace instead of vanishing.
+
 ## [v0.9.0-rc89] - 2026-05-30
 
 ### Removed

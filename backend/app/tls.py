@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from cryptography import x509
-from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.x509.oid import NameOID
 
 from app.apply import APPLY_ENABLED
@@ -91,7 +91,7 @@ def get_status() -> dict:
     not_after = cert.not_valid_after_utc.replace(tzinfo=None)
     days_rem = (cert.not_valid_after_utc - datetime.now(timezone.utc)).days
 
-    fp = cert.fingerprint(__import__("cryptography.hazmat.primitives.hashes", fromlist=["SHA256"]).SHA256())
+    fp = cert.fingerprint(hashes.SHA256())
     fp_hex = ":".join(f"{b:02X}" for b in fp)
 
     return {

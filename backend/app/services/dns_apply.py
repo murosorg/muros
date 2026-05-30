@@ -183,8 +183,10 @@ def _dhcp_lease_records(db: Session, domain: str) -> list[tuple[str, str]]:
             if host and lease.ip and host not in seen:
                 seen.add(host)
                 out.append((host, lease.ip))
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001
+        # Best-effort: a DB read failure must not break rendering, but
+        # leave a trace so it does not vanish silently in the field.
+        log.debug("Skipping static lease hosts (DB read failed): %s", exc)
     try:
         from app.services import dhcp_apply
 
@@ -194,8 +196,10 @@ def _dhcp_lease_records(db: Session, domain: str) -> list[tuple[str, str]]:
             if host and ip and host not in seen:
                 seen.add(host)
                 out.append((host, ip))
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001
+        # Best-effort: Kea may be absent (dev box) or the lease file
+        # unreadable; never fail rendering, but keep a debug trace.
+        log.debug("Skipping dynamic lease hosts (lease read failed): %s", exc)
     return out
 
 
