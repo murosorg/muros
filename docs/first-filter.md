@@ -76,12 +76,17 @@ are accepted.
 
 ## Step 8: Restrict MurOS UI to LAN
 
-In **HTTP Access** > "Web listen interface", pick IP `192.168.1.1`
-(LAN interface). Click **Apply in nginx**.
+The web UI always listens on every interface; you decide who can reach it
+at the firewall, the same way you expose any other service. In
+**Firewall > Rules**, make sure the `wan` zone has no rule allowing the UI
+ports (`80`/`443`) to the firewall, and keep an explicit rule allowing the
+`lan` zone to reach the firewall on those ports. The default ruleset
+already permits `lan -> firewall`, so the UI is reachable from the LAN and
+denied from the WAN out of the box.
 
-A modal opens with a 60s countdown. Click **Confirm** after checking the UI
-is still reachable. If you lose access, automatic rollback restores the
-previous listen address after 60s.
+Click **Apply** and confirm within the countdown after checking the UI is
+still reachable. If you lose access, automatic rollback restores the
+previous ruleset.
 
 ## Step 9: Backup before going to production
 

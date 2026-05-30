@@ -20,7 +20,7 @@ the UI propagates down to the kernel.
 Generated configuration files (rewritten on every Apply):
 
 ```
-/etc/nftables.conf                           full ruleset (filter + NAT)
+/etc/muros/nftables.conf                     full ruleset (filter + NAT)
 /etc/keepalived/keepalived.conf              VRRP
 /etc/conntrackd/conntrackd.conf              state replication
 /etc/wireguard/wg0.conf                      WireGuard
@@ -89,7 +89,7 @@ systemd-boot
   -> systemd
      -> muros-boot.service (oneshot)
         - reads DB, brings interfaces / VLANs / routes up
-        - generates /etc/nftables.conf, loads it
+        - generates /etc/muros/nftables.conf, loads it
      -> network-online.target
      -> muros-backend.service, nginx, keepalived, conntrackd,
         kea-dhcp4-server, unbound, strongswan, wg-quick@wg0 (if enabled)

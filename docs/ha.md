@@ -92,7 +92,7 @@ one page: local role, peer role, last failover, sync state.
   Each MurOS VIP picks 10..19 by default; change them if you
   already run keepalived elsewhere.
 - **Asymmetric ruleset** : the DB sync prevents this in normal use,
-  but if you ever edit `/etc/nftables.conf` by hand on the backup,
+  but if you ever edit `/etc/muros/nftables.conf` by hand on the backup,
   the next failover will surprise you. Trust the UI.
 - **Anti-spoof filters upstream** : some carriers drop a packet
   sourced from the VIP if it arrives from the backup right after a
