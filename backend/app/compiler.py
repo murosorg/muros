@@ -4,10 +4,31 @@ The output is a complete and standalone nftables script, applied with:
     nft -f <file>
 """
 import ipaddress
+import re
 
 from sqlalchemy.orm import Session, joinedload
 
 from app import models
+
+# nftables accepts a bare interface name only when it is made of plain
+# word characters. Names carrying a dot (VLAN sub-interface, e.g.
+# eth0.100), a dash (bridge/bond, e.g. br-lan) or a wildcard must be
+# quoted, otherwise `nft -f` fails to parse the ruleset and the whole
+# apply is rejected. Quoting is always valid, but we keep simple names
+# bare to stay readable (and to match the existing test fixtures).
+_BARE_IFNAME = re.compile(r"^[A-Za-z0-9_]+$")
+
+
+def _ifname(name: str) -> str:
+    """Return an nft-safe interface token, quoting it when required."""
+    return name if _BARE_IFNAME.match(name or "") else f'"{name}"'
+
+
+def _ifname_match(keyword: str, names: list[str]) -> str:
+    """Build an `iifname`/`oifname` clause for one or several interfaces."""
+    if len(names) == 1:
+        return f"{keyword} {_ifname(names[0])}"
+    return f"{keyword} {{ " + ", ".join(_ifname(n) for n in names) + " }"
 
 
 def _zone_interfaces(zone: models.Zone | None) -> list[str]:
@@ -42,16 +63,10 @@ def _compile_addresses_zones(rule: models.FirewallRule) -> str:
     dst_ifs = _zone_interfaces(rule.dst_zone)
 
     if src_ifs:
-        if len(src_ifs) == 1:
-            parts.append(f"iifname {src_ifs[0]}")
-        else:
-            parts.append("iifname { " + ", ".join(src_ifs) + " }")
+        parts.append(_ifname_match("iifname", src_ifs))
 
     if dst_ifs:
-        if len(dst_ifs) == 1:
-            parts.append(f"oifname {dst_ifs[0]}")
-        else:
-            parts.append("oifname { " + ", ".join(dst_ifs) + " }")
+        parts.append(_ifname_match("oifname", dst_ifs))
 
     # Address selectors are emitted by _addr_variants() so they can be
     # family-aware (ip vs ip6): the filter table is `inet`, so an `ip
@@ -289,7 +304,7 @@ def _compile_nat(rule: models.NatRule, local_v4: list[str] | None = None) -> tup
     if rule.type == "masquerade":
         if not iface:
             return None
-        parts = [f"oifname {iface}"]
+        parts = [f"oifname {_ifname(iface)}"]
         if rule.src_address:
             parts.append(f"ip saddr {rule.src_address}")
         parts.append("counter")
@@ -301,7 +316,7 @@ def _compile_nat(rule: models.NatRule, local_v4: list[str] | None = None) -> tup
     if rule.type == "snat":
         if not iface or not rule.redirect_to_ip:
             return None
-        parts = [f"oifname {iface}"]
+        parts = [f"oifname {_ifname(iface)}"]
         if rule.src_address:
             parts.append(f"ip saddr {rule.src_address}")
         parts.append("counter")
@@ -315,7 +330,7 @@ def _compile_nat(rule: models.NatRule, local_v4: list[str] | None = None) -> tup
             return None
         parts = []
         if iface:
-            parts.append(f"iifname {iface}")
+            parts.append(f"iifname {_ifname(iface)}")
         if rule.dst_address:
             parts.append(f"ip daddr {rule.dst_address}")
         elif local_v4:
