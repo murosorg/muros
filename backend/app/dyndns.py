@@ -33,6 +33,7 @@ import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 
 log = logging.getLogger("muros.dyndns")
 
@@ -60,7 +61,15 @@ def _utcnow() -> datetime:
 
 
 def _http_get(url: str, headers: dict | None = None, timeout: int = 10) -> tuple[int, str]:
-    """GET a URL. Returns (status_code, body). Never raises on HTTP errors."""
+    """GET a URL. Returns (status_code, body). Never raises on HTTP errors.
+
+    Only http/https schemes are allowed. The custom-provider URL is
+    operator-supplied, so this stops urllib from honouring file:// (local
+    file disclosure) or other handlers (ftp://, gopher://, ...).
+    """
+    scheme = urlparse(url).scheme.lower()
+    if scheme not in ("http", "https"):
+        return 0, f"refused URL scheme '{scheme or 'none'}' (only http/https allowed)"
     req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT, **(headers or {})})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 (https only)
