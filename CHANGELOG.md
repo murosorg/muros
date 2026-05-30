@@ -2,6 +2,17 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [v0.9.0-rc13] - 2026-05-30
+
+### Fixed
+- Login still broken even with python-pam present: python-pam 2.0.2
+  imports `six` at import time but does not declare it as a dependency,
+  so `import pam` failed with "No module named 'six'" and PAM auth was
+  unusable on a deployed box. `six` is now pinned in requirements.txt.
+- The PAM loader no longer hides the underlying import error behind a
+  generic "python-pam is not available" message; it logs and reports the
+  real exception so a missing library or dependency is diagnosable.
+
 ## [v0.9.0-rc12] - 2026-05-30
 
 ### Fixed

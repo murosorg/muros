@@ -7,3 +7,8 @@ bcrypt==4.2.0
 cryptography==43.0.3
 qrcode==8.0
 python-pam==2.0.2
+# python-pam 2.0.2 imports 'six' at import time but does NOT declare it
+# as a dependency (packaging bug), so it must be pinned explicitly here.
+# Without it `import pam` fails with ModuleNotFoundError: No module named
+# 'six' and the whole PAM login is broken on a deployed appliance.
+six==1.16.0

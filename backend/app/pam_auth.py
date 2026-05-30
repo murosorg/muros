@@ -50,8 +50,15 @@ def _load_pam():
     try:
         import pam  # type: ignore
     except Exception as exc:  # noqa: BLE001
+        # Surface the real underlying error (missing libpam, missing
+        # transitive dependency such as 'six', API mismatch, ...) instead
+        # of a generic message. Hiding it once cost an hour of debugging a
+        # broken login on a deployed box (python-pam 2.0.2 imports 'six'
+        # without declaring it, so the import failed with a ModuleNotFound
+        # that the generic message masked).
+        log.error("python-pam import failed: %r", exc)
         raise RuntimeError(
-            "python-pam is not available; cannot authenticate against PAM."
+            f"python-pam is not usable ({exc}); cannot authenticate against PAM."
         ) from exc
     return pam.pam()
 
