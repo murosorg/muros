@@ -136,7 +136,6 @@ export default function RuleForm({ rule, zones, defaultChain, onSubmit, onCancel
     data.chain === 'input' && data.action === 'accept' && enabled &&
     !data.src_zone_id && !data.src_address && !data.src_address_group_id &&
     noService
-  const overlyPermissive = forwardWideOpen || inputWideOpen
 
   return (
     <div className="space-y-5">
