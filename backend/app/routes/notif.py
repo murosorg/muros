@@ -56,16 +56,15 @@ def notif_update_config(data: schemas.NotificationConfigIn, db: Session = Depend
     db.commit()
     db.refresh(cfg)
 
-    # Le watcher d'alertes (muros-watcher.service) suit le flag
-    # `cfg.enabled` qui est le switch utilisateur de la page. On a
-    # longtemps gate sur `smtp_host` uniquement (l'idee etait : pas de
-    # canal -> pas de wakeup), mais ca rendait le toggle "Enable
-    # notifications" silencieux pour l'admin : il flippait le toggle et
-    # le watcher restait down (smtp_host vide ou pas), sans feedback. Le
-    # watcher est leger et idempotent, il logge meme sans canal SMTP, donc
-    # on le fait piloter directement par `enabled`. La config SMTP
-    # incomplete fera juste echouer l'envoi, ce qui apparait dans le
-    # log et reste visible.
+    # The alert watcher (muros-watcher.service) follows the `cfg.enabled`
+    # flag, which is the user switch on the page. For a long time we gated
+    # on `smtp_host` only (the idea being: no channel -> no wakeup), but that
+    # made the "Enable notifications" toggle silent for the admin: they
+    # flipped the toggle and the watcher stayed down (smtp_host empty or not),
+    # with no feedback. The watcher is light and idempotent, it logs even
+    # without an SMTP channel, so we drive it directly from `enabled`. An
+    # incomplete SMTP config will just make sending fail, which appears in
+    # the log and stays visible.
     import subprocess
     import logging
     log = logging.getLogger(__name__)

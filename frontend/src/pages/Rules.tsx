@@ -279,7 +279,7 @@ export default function Rules() {
   }
   const syntheticCatchAll: FirewallRule | null = dbCatchAll.length > 0
     ? null
-    : ({
+    : {
         id: -1 * (chain === 'input' ? 1 : chain === 'forward' ? 2 : 3),
         position: 999,
         chain,
@@ -291,15 +291,17 @@ export default function Rules() {
         protocol: null,
         dst_port: null,
         src_port: null,
-        service_id: null,
         service_group_id: null,
+        src_address_group_id: null,
+        dst_address_group_id: null,
         log: false,
         rate_limit: null,
         enabled: true,
         comment: defaultPolicyByChain[chain] === 'accept'
           ? 'Default policy (accept).'
           : 'Default policy (drop).',
-      } as unknown as FirewallRule)
+        created_at: '',
+      }
   // The default-policy row is always-on context, not a search hit. While
   // a text filter is active, hide it so the list narrows down to the
   // matching rules only (and the empty state can show "No rule matches").

@@ -103,7 +103,7 @@ def update_gateway(gw_id: int, payload: WanGatewayIn, db: Session = Depends(get_
     iface = db.query(Interface).filter(Interface.id == payload.interface_id).first()
     if not iface:
         raise HTTPException(404, "Unknown interface")
-    # Le changement d'interface ou de gateway-ip invalide la table dediee.
+    # Changing the interface or gateway-ip invalidates the dedicated table.
     iface_changed = g.interface_id != payload.interface_id
     gw_changed = g.gateway != payload.gateway
     g.name = payload.name
@@ -131,10 +131,10 @@ def delete_gateway(gw_id: int, db: Session = Depends(get_db)):
     g = db.query(WanGateway).filter(WanGateway.id == gw_id).first()
     if not g:
         raise HTTPException(404, "Unknown WAN gateway")
-    # On nettoie la table dediee avant le drop DB. Si ce WAN portait la
-    # default globale au moment du delete, le monitor recalculera au
-    # prochain tick (et basculera sur un autre WAN UP, ou supprimera la
-    # default si plus aucun WAN n'est UP).
+    # We clean up the dedicated table before the DB drop. If this WAN carried
+    # the global default at delete time, the monitor will recompute at the
+    # next tick (and switch to another WAN that is UP, or remove the default
+    # if no WAN is UP anymore).
     try:
         net.wan_clear_table(g.id)
     except Exception:

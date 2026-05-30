@@ -396,10 +396,10 @@ def _cert_to_out(c: models.IpsecCert) -> dict:
 
 @ipsec_router.get("/ca")
 def ipsec_get_ca(db: Session = Depends(get_db)):
-    """Retourne la CA si elle existe, sinon null.
+    """Return the CA if it exists, otherwise null.
 
-    On evite response_model=schemas.IpsecCaOut | None : selon la version
-    de FastAPI/Pydantic ca peut casser. On serialise a la main.
+    We avoid response_model=schemas.IpsecCaOut | None: depending on the
+    FastAPI/Pydantic version it can break. We serialize by hand.
     """
     ca = db.get(models.IpsecCa, 1)
     if ca is None or not ca.cert_pem:
@@ -417,7 +417,7 @@ def ipsec_get_ca(db: Session = Depends(get_db)):
 
 @ipsec_router.post("/ca", response_model=schemas.IpsecCaOut)
 def ipsec_generate_ca(data: schemas.IpsecCaGenerate, db: Session = Depends(get_db)):
-    """Genere une nouvelle CA racine. Remplace l'existante si presente."""
+    """Generate a new root CA. Replaces the existing one if present."""
     from app import ipsec_pki
     try:
         result = ipsec_pki.generate_ca(

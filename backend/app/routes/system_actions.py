@@ -42,4 +42,4 @@ def sys_shutdown():
 
 
 # Endpoints accessibles uniquement via token de sync (pas via JWT).
-# On les expose dans un router separe sans auth_dep, et on valide a la main.
+# We expose them in a separate router without auth_dep, and validate by hand.

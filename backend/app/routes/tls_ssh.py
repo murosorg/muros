@@ -27,7 +27,7 @@ def _snapshot_current_tls() -> dict:
     from app import tls as tls_mod
     try:
         cert_pem = tls_mod.CERT_PATH.read_text(encoding="utf-8") if tls_mod.CERT_PATH.exists() else ""
-        # La cle peut etre 0600, mais le backend tourne en root donc OK.
+        # The key may be 0600, but the backend runs as root so it is OK.
         key_pem = tls_mod.KEY_PATH.read_text(encoding="utf-8") if tls_mod.KEY_PATH.exists() else ""
         return {"cert_pem": cert_pem, "key_pem": key_pem}
     except OSError:

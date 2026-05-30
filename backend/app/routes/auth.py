@@ -171,7 +171,7 @@ def change_password(
     try:
         password_policy.validate(data.new_password, username=user.username)
     except password_policy.PasswordPolicyError as exc:
-        # On retourne les raisons separees pour affichage en liste cote UI.
+        # We return the reasons separately for list display on the UI side.
         raise HTTPException(400, "Password rejected: " + " ; ".join(exc.reasons))
     # Write the new password to the system account (chpasswd). Because the
     # web UI and SSH share the same Linux user, this also rotates the SSH

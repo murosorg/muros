@@ -43,7 +43,7 @@ def logs_audit(
     username: str | None = None,
     contains: str | None = None,
 ):
-    """Liste les dernieres actions UI tracees dans audit_log."""
+    """List the latest UI actions recorded in audit_log."""
     q = db.query(models.AuditLog).order_by(models.AuditLog.id.desc())
     if method:
         q = q.filter(models.AuditLog.method == method.upper())
@@ -72,7 +72,7 @@ def get_system_logs(
     search: str | None = None,
     priority: str | None = None,
 ):
-    """Lit le journald d'un service systemd (whitelist d'units)."""
+    """Read the journald of a systemd service (whitelisted units)."""
     from app.logs import read_system_logs
     try:
         return read_system_logs(unit, limit, since_minutes, search, priority)
@@ -163,10 +163,10 @@ def delete_nat(rule_id: int, db: Session = Depends(get_db)):
 
 @nat_router.post("/rules/reorder", response_model=list[schemas.NatRuleOut])
 def reorder_nat(payload: schemas.NatReorderIn, db: Session = Depends(get_db)):
-    """Renumerote les positions des regles NAT en multiples de 10.
+    """Renumber the NAT rule positions in multiples of 10.
 
-    Apres drag-and-drop dans l'UI, le front envoie l'ordre desire sous
-    forme d'une liste d'IDs. On reaffecte position = 10, 20, 30...
+    After drag-and-drop in the UI, the front sends the desired order as a
+    list of IDs. We reassign position = 10, 20, 30...
     L'ordre compte car nft applique en sequence et la premiere match
     gagne (DNAT/SNAT/MASQUERADE sont evalues dans l'ordre de la chaine).
     """
@@ -529,12 +529,12 @@ hardening_router = APIRouter(prefix="/api/hardening", tags=["hardening"], depend
 
 @hardening_router.get("", response_model=schemas.HardeningStatusOut)
 def hardening_status():
-    """Etat read-only des cles sysctl gerees par le drop-in MurOS.
+    """Read-only state of the sysctl keys managed by the MurOS drop-in.
 
-    Le drop-in /etc/sysctl.d/99-muros-hardening.conf est livre par le paquet
-    et applique au postinst (sysctl --system). L'admin ne peut pas le
-    modifier depuis l'UI : c'est une garantie structurelle de l'appliance.
-    Cet endpoint reste expose en lecture pour les checks de diagnostic.
+    The drop-in /etc/sysctl.d/99-muros-hardening.conf is shipped by the
+    package and applied at postinst (sysctl --system). The admin cannot
+    modify it from the UI: it is a structural guarantee of the appliance.
+    This endpoint stays exposed read-only for diagnostic checks.
     """
     from app import hardening
     return hardening.get_status()

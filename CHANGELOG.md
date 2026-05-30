@@ -4,6 +4,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [v0.9.0-rc79] - 2026-05-30
+
+### Removed
+- Dead `service_id` field on the synthetic "Default policy" row in the
+  rules list. `FirewallRule` has no such field (only `service_group_id`);
+  it was a leftover from a removed concept, silently allowed by an
+  `as unknown as FirewallRule` cast.
+
+### Changed
+- The synthetic "Default policy" row is now a fully type-checked
+  `FirewallRule` (the unsafe double cast is gone), so any future field
+  drift is caught at compile time instead of slipping through.
+
 ## [v0.9.0-rc78] - 2026-05-30
 
 ### Changed

@@ -26,7 +26,7 @@ def ha_sync_ping(request: Request, db: Session = Depends(get_db)):
     token = _read_sync_token_header(request)
     cfg = ha_sync.get_config(db)
     if not cfg.enabled:
-        raise HTTPException(503, "Sync HA desactivee sur ce noeud.")
+        raise HTTPException(503, "HA sync disabled on this node.")
     if not token or token != cfg.peer_token:
         raise HTTPException(401, "Invalid token.")
     from app import VERSION  # type: ignore
@@ -45,7 +45,7 @@ async def ha_sync_receive(request: Request, db: Session = Depends(get_db)):
     signature = request.headers.get("X-Muros-Sync-Signature", "")
     cfg = ha_sync.get_config(db)
     if not cfg.enabled:
-        raise HTTPException(503, "Sync HA desactivee sur ce noeud.")
+        raise HTTPException(503, "HA sync disabled on this node.")
     if not token or token != cfg.peer_token:
         raise HTTPException(401, "Invalid token.")
     body = await request.body()

@@ -84,7 +84,7 @@ def delete_service_group(group_id: int, db: Session = Depends(get_db)):
     g = db.get(models.ServiceGroup, group_id)
     if not g:
         raise HTTPException(404, "group not found")
-    # Verifier qu'aucune regle ne reference ce groupe avant de supprimer
+    # Check that no rule references this group before deleting
     used = db.query(models.FirewallRule).filter_by(service_group_id=group_id).count()
     if used:
         raise HTTPException(
@@ -159,3 +159,4 @@ def delete_address_group(group_id: int, db: Session = Depends(get_db)):
         )
     db.delete(g)
     db.commit()
+

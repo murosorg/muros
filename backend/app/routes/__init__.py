@@ -25,6 +25,7 @@ from .services import dhcp_router, dns_services_router
 from .service_apply import service_apply_router
 from .setup import setup_router
 from .ipv6 import ra_router
+from .qos import qos_router
 
 __all__ = [
     'auth_router',
@@ -48,4 +49,5 @@ __all__ = [
     'service_apply_router',
     'setup_router',
     'ra_router',
+    'qos_router',
 ]

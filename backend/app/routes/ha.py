@@ -62,8 +62,8 @@ def ha_create_vip(payload: schemas.HaVipIn, db: Session = Depends(get_db)):
         ha._validate_cidr(payload.vip_cidr)
     except ValueError as exc:
         raise HTTPException(400, str(exc))
-    # Unicite du VRID (au sein de l'instance, pas sur le segment L2 reseau
-    # qu'on ne peut pas controler).
+    # VRID uniqueness (within the instance, not on the L2 network segment
+    # which we cannot control).
     exists = db.query(models.HaVip).filter(models.HaVip.vrid == payload.vrid).first()
     if exists:
         raise HTTPException(400, f"VRID {payload.vrid} already in use")
@@ -129,7 +129,7 @@ def ha_apply(db: Session = Depends(get_db)):
         if not cfg.peer_address or not cfg.sync_interface:
             raise HTTPException(400, "peer_address et sync_interface obligatoires pour activer la HA")
         if not vips:
-            raise HTTPException(400, "Au moins une VIP est requise pour activer la HA")
+            raise HTTPException(400, "At least one VIP is required to enable HA")
     vips_dict = [
         {
             "vrid": v.vrid, "interface": v.interface, "vip_cidr": v.vip_cidr,
@@ -166,7 +166,7 @@ def ha_install():
 
 @ha_router.get("/role", response_model=schemas.HaSyncRole)
 def ha_get_role():
-    """Retourne le role VRRP actuel et si le noeud accepte les ecritures."""
+    """Return the current VRRP role and whether the node accepts writes."""
     from app import ha_sync
     role = ha_sync.get_vrrp_role()
     return {"role": role, "writable": role in ("MASTER", "STANDALONE")}

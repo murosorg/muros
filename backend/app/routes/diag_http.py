@@ -12,7 +12,7 @@ from app.db import get_db
 _auth_dep = [Depends(current_user)]
 
 
-# --- Diagnostic reseau ---
+# --- Network diagnostics ---
 diag_router = APIRouter(prefix="/api/diag", tags=["diag"], dependencies=_auth_dep)
 
 

@@ -107,7 +107,7 @@ interfaces_router = APIRouter(prefix="/api/interfaces", tags=["interfaces"], dep
 
 @interfaces_router.get("/system", response_model=list[schemas.SystemInterfaceOut])
 def list_system_ifaces():
-    """Liste les interfaces detectees sur le systeme (lecture seule, via ip -j)."""
+    """List the interfaces detected on the system (read-only, via ip -j)."""
     return list_system_interfaces()
 
 
@@ -190,10 +190,10 @@ def update_interface(
         if not db.get(models.Zone, payload["zone_id"]):
             raise HTTPException(400, "invalid zone_id")
 
-    # Si la conf IP/MTU/state/parent change REELLEMENT, on marque dirty pour
-    # apply manuel. Sinon (l'admin re-soumet le formulaire sans rien changer,
-    # ou revient a la valeur initiale), on laisse dirty tel quel pour ne pas
-    # gonfler artificiellement le compteur de pending.
+    # If the IP/MTU/state/parent config REALLY changes, we mark dirty for a
+    # manual apply. Otherwise (the admin re-submits the form without changing
+    # anything, or reverts to the initial value), we leave dirty as-is so as
+    # not to artificially inflate the pending counter.
     dirty_keys = ("ip_mode", "ip_address", "gateway", "mtu", "enabled", "parent_interface", "vlan_id")
     changed = False
     for k, v in payload.items():
@@ -250,9 +250,9 @@ def import_current_ip(iface_id: int, db: Session = Depends(get_db)):
     if live["mtu"] and not iface.mtu:
         iface.mtu = live["mtu"]
     iface.enabled = live["state"] != "DOWN"
-    # On ne marque PAS dirty : l'IP est deja appliquee au noyau, on ne fait
-    # qu'enregistrer l'etat en DB. Si l'admin veut la changer ensuite, le
-    # flux apply normal repartira de la.
+    # We do NOT mark dirty: the IP is already applied to the kernel, we only
+    # record the state in the DB. If the admin wants to change it later, the
+    # normal apply flow will pick up from there.
     iface.dirty = False
     db.commit()
     db.refresh(iface)
@@ -264,28 +264,27 @@ def delete_interface(iface_id: int, db: Session = Depends(get_db)):
     iface = db.get(models.Interface, iface_id)
     if not iface:
         raise HTTPException(404, "Interface not found")
-    # VLAN : suppression differee pour symetrie avec l'add (qui est
-    # applique au noyau seulement au POST /apply). On marque pending_delete
-    # + dirty pour que l'Apply attrape le change, et on garde la row en DB
-    # le temps que l'admin clique Apply (ou Cancel deletion).
+    # VLAN: deferred deletion for symmetry with the add (which is applied to
+    # the kernel only at POST /apply). We mark pending_delete + dirty so the
+    # Apply catches the change, and we keep the row in the DB until the admin
+    # clicks Apply (or Cancel deletion).
     if iface.type == "vlan":
         iface.pending_delete = True
         iface.dirty = True
         db.commit()
         return
-    # Interface physique : pas de delete kernel possible (ip link del refuse
-    # les NICs physiques), on retire juste le tracking MurOS. Avant de
-    # detacher, on nettoie les IPs que MurOS avait posees, sinon elles
-    # restent sur le noyau comme adresses fantomes jusqu'au prochain
-    # reboot, ce qui est trompeur pour l'admin (l'interface "deletee"
-    # continue de repondre).
-    #   - mode static : ip addr flush dev <iface> suffit.
-    #   - mode dhcp   : dhclient tourne en daemon ; un simple flush serait
-    #                   re-ecrase aussitot par le lease. On envoie d'abord
-    #                   dhclient -r pour release le bail et tuer le daemon,
-    #                   puis flush pour le reste.
-    # On ne touche pas l'etat link admin up/down : laisser le NIC up est
-    # coherent avec la realite physique du cable.
+    # Physical interface: no kernel delete possible (ip link del refuses
+    # physical NICs), we only remove the MurOS tracking. Before detaching, we
+    # clean up the IPs that MurOS had set, otherwise they stay on the kernel
+    # as ghost addresses until the next reboot, which is misleading for the
+    # admin (the "deleted" interface keeps responding).
+    #   - static mode: ip addr flush dev <iface> is enough.
+    #   - dhcp mode  : dhclient runs as a daemon; a plain flush would be
+    #                  overwritten immediately by the lease. We first send
+    #                  dhclient -r to release the lease and kill the daemon,
+    #                  then flush for the rest.
+    # We do not touch the admin link up/down state: leaving the NIC up is
+    # consistent with the physical reality of the cable.
     if iface.ip_mode in ("static", "dhcp") and iface.name:
         from app import network
         try:
@@ -293,7 +292,7 @@ def delete_interface(iface_id: int, db: Session = Depends(get_db)):
                 network.dhcp_release(iface.name)
             network.flush_addresses(iface.name)
         except ValueError:
-            # Nom d'interface invalide : on ne bloque pas le delete DB.
+            # Invalid interface name: we do not block the DB delete.
             pass
     db.delete(iface)
     db.commit()
@@ -325,12 +324,12 @@ network_router = APIRouter(prefix="/api/network", tags=["network"], dependencies
 
 @network_router.post("/adopt", response_model=schemas.NetworkAdoptResult)
 def network_adopt(db: Session = Depends(get_db)):
-    """Aspire la config reseau actuelle du kernel dans la DB MurOS.
+    """Capture the kernel's current network config into the MurOS DB.
 
-    Cas d'usage : appliance installee sur une machine deja en prod, ou
-    recovery apres erreur de manip. Idempotent via marker .adopted, mais
-    appele ici on force pour permettre une re-adoption volontaire de
-    l'admin (utile si le kernel a une nouvelle iface ajoutee a chaud).
+    Use case: appliance installed on a machine already in production, or
+    recovery after a mistake. Idempotent via the .adopted marker, but called
+    here we force it to allow a deliberate re-adoption by the admin (useful
+    if the kernel has a new hot-added iface).
     """
     from app import adoption
     result = adoption.adopt_kernel_state(db, force=True)
@@ -343,12 +342,12 @@ def network_adopt(db: Session = Depends(get_db)):
 
 @network_router.get("/environment", response_model=schemas.NetworkEnvironmentOut)
 def network_environment():
-    """Diagnostique l'environnement reseau pour avertir si un gestionnaire
-    concurrent tourne en parallele de MurOS.
+    """Diagnose the network environment to warn if a competing manager runs
+    in parallel with MurOS.
 
-    Si NetworkManager ou systemd-networkd est actif, toute modification IP
-    poussee par MurOS sera ecrasee quelques secondes plus tard. C'est le
-    cas typique sur une machine de developpement Ubuntu / Fedora.
+    If NetworkManager or systemd-networkd is active, any IP change pushed by
+    MurOS will be overwritten a few seconds later. This is the typical case
+    on an Ubuntu / Fedora development machine.
     """
     from app import network
     return {
@@ -359,9 +358,9 @@ def network_environment():
 
 @network_router.get("/pending", response_model=schemas.NetworkPendingOut)
 def network_pending(db: Session = Depends(get_db)):
-    """Liste les changements reseau non encore appliques au noyau.
+    """List the network changes not yet applied to the kernel.
 
-    Inclut interfaces et routes statiques avec dirty=True.
+    Includes interfaces and static routes with dirty=True.
     """
     ifaces = (
         db.query(models.Interface)
@@ -395,11 +394,11 @@ def network_pending(db: Session = Depends(get_db)):
 
 @network_router.post("/apply")
 def network_apply(db: Session = Depends(get_db)):
-    """Applique au noyau tous les changements interfaces/routes en attente.
+    """Apply all pending interface/route changes to the kernel.
 
-    Cree un seul safe_apply.manager.register pour rollback global si l'admin
-    ne confirme pas dans le timeout (60s par defaut). Le rollback restaure
-    l'etat du noyau pris en snapshot avant l'apply.
+    Creates a single safe_apply.manager.register for a global rollback if the
+    admin does not confirm within the timeout (60s by default). The rollback
+    restores the kernel state snapshotted before the apply.
     """
     from app import network, safe_apply
     from app.routing import apply_route as apply_route_kernel
@@ -418,15 +417,15 @@ def network_apply(db: Session = Depends(get_db)):
     if not dirty_ifaces and not dirty_routes:
         return {"applied": False, "message": "No pending network change.", "pending_id": None}
 
-    # Snapshot du noyau AVANT pour rollback
+    # Snapshot the kernel BEFORE, for rollback
     iface_snapshots: list[dict] = []
     for iface in dirty_ifaces:
         snap = network.snapshot_interface(iface.name)
         iface_snapshots.append({"name": iface.name, "snapshot": snap, "iface_id": iface.id})
 
-    # Pour les routes : on ne snapshot pas le noyau (trop complexe), on inverse
-    # juste les operations au rollback (del si on a add, et inversement). On
-    # garde l'etat avant DB pour pouvoir reverter.
+    # For routes: we do not snapshot the kernel (too complex), we just invert
+    # the operations on rollback (del if we added, and vice versa). We keep
+    # the pre-DB state to be able to revert.
     route_actions: list[dict] = []
 
     errors: list[str] = []
@@ -434,9 +433,9 @@ def network_apply(db: Session = Depends(get_db)):
     # Apply interfaces
     deleted_ifaces: list[str] = []
     for iface in dirty_ifaces:
-        # Pending delete : on retire du noyau (uniquement pour les VLAN,
-        # les physiques ne suivent pas ce chemin cf delete_interface) puis
-        # on drop la row DB. Skip toute la phase configuration IP.
+        # Pending delete: remove from the kernel (VLAN only, physical ones
+        # do not follow this path, cf delete_interface) then drop the DB row.
+        # Skip the whole IP configuration phase.
         if iface.pending_delete:
             if iface.type == "vlan":
                 rc, msg = network.delete_interface(iface.name)
@@ -447,7 +446,7 @@ def network_apply(db: Session = Depends(get_db)):
             deleted_ifaces.append(iface.name)
             db.delete(iface)
             continue
-        # VLAN : creer le link si pas deja la
+        # VLAN: create the link if not already there
         if iface.type == "vlan":
             rc, msg = network.create_vlan(iface.name, iface.parent_interface, iface.vlan_id)
             if rc != 0 and "exists" not in msg.lower():
@@ -488,23 +487,23 @@ def network_apply(db: Session = Depends(get_db)):
         descr_parts.append(f"{len(dirty_ifaces)} interface(s)")
     if dirty_routes:
         descr_parts.append(f"{len(dirty_routes)} route(s)")
-    description = f"Changes reseau appliques : {', '.join(descr_parts)}"
+    description = f"Network changes applied: {', '.join(descr_parts)}"
 
-    # Liste des ids appliques pour re-marquer dirty en cas de rollback :
-    # le rollback restaure le noyau mais la conf en DB reste la nouvelle,
-    # donc on remet dirty=True pour que le bouton Appliquer redevienne
-    # actif et l'admin puisse re-pousser ou ajuster sa modif.
+    # List of applied ids to re-mark dirty in case of rollback: the rollback
+    # restores the kernel but the DB config stays the new one, so we set
+    # dirty=True again so the Apply button becomes active again and the admin
+    # can re-push or adjust their change.
     applied_iface_ids = [iface.id for iface in dirty_ifaces]
     applied_route_ids = [r.id for r in dirty_routes]
 
     def _rollback() -> None:
-        # Restore noyau pour chaque interface
+        # Restore the kernel for each interface
         for snap_data in iface_snapshots:
             try:
                 network.restore_interface(snap_data["snapshot"])
             except Exception:  # noqa: BLE001
                 pass
-        # Pour les routes : retirer celles qu'on a posees
+        # For routes: remove the ones we added
         with SessionLocal() as db2:
             for action in route_actions:
                 row = db2.get(models.StaticRoute, action["id"])
@@ -524,15 +523,14 @@ def network_apply(db: Session = Depends(get_db)):
                     row.dirty = True
             db2.commit()
 
-    # Detail enrichi : on inclut les IPs (sans le prefix CIDR) appliquees
-    # sur chaque interface pour que la modale rollback puisse proposer une
-    # URL de reconnexion concrete ("ouvre https://NEW_IP:443 dans un autre
-    # onglet pour confirmer"). C'est cette info qui manque le plus souvent
-    # quand l'admin change l'IP de management.
+    # Enriched detail: we include the IPs (without the CIDR prefix) applied on
+    # each interface so the rollback modal can offer a concrete reconnection
+    # URL ("open https://NEW_IP:443 in another tab to confirm"). This is the
+    # info most often missing when the admin changes the management IP.
     iface_ips: list[str] = []
     for iface in dirty_ifaces:
         if iface.ip_mode == "static" and iface.ip_address:
-            # ip_address est sous forme "10.0.0.1/24", on garde juste l'IP
+            # ip_address is in the form "10.0.0.1/24", we keep just the IP
             iface_ips.append(iface.ip_address.split("/", 1)[0])
 
     change = safe_apply.manager.register(
@@ -624,14 +622,14 @@ def reorder_rules(
     payload: schemas.FirewallReorderIn,
     db: Session = Depends(get_db),
 ):
-    """Renumerote les positions d'une chaine en multiples de 10.
+    """Renumber a chain's positions in multiples of 10.
 
-    Apres drag-and-drop dans l'UI, le front envoie l'ordre desire sous
-    forme d'une liste d'IDs (rule_ids) pour une chaine donnee. On
-    reaffecte position = 10, 20, 30... pour chaque rule dans cet ordre.
+    After drag-and-drop in the UI, the front sends the desired order as a
+    list of IDs (rule_ids) for a given chain. We reassign position = 10, 20,
+    30... for each rule in that order.
 
-    Les "catch-all" (position >= 900) sont preserves a leur position
-    actuelle : on ne les renumerote pas, ils restent en fin de chaine.
+    The "catch-all" rules (position >= 900) are preserved at their current
+    position: we do not renumber them, they stay at the end of the chain.
     """
     chain = payload.chain
     if chain not in ("input", "forward", "output"):
@@ -659,7 +657,7 @@ def reorder_rules(
             by_id[rid].position = new_pos
             by_id[rid].dirty = True
     db.commit()
-    # Retour : la liste complete de la chaine (avec catch-all), triee.
+    # Return: the full list of the chain (with catch-all), sorted.
     out = (
         db.query(models.FirewallRule)
         .filter(models.FirewallRule.chain == chain)
@@ -675,22 +673,22 @@ def move_rule(
     direction: str,
     db: Session = Depends(get_db),
 ):
-    """Deplace une regle d'un cran vers le haut ou le bas dans sa chaine.
+    """Move a rule one notch up or down in its chain.
 
-    Convention firewall (FortiGate, Cisco, pfSense) : les regles sont
-    evaluees DANS L'ORDRE, donc l'admin doit pouvoir reordonner avec
-    deux boutons "Up" / "Down" simples sur chaque ligne. On echange
-    juste la position avec la regle adjacente DANS LA MEME CHAINE.
+    Firewall convention (FortiGate, Cisco, pfSense): rules are evaluated IN
+    ORDER, so the admin must be able to reorder with two simple "Up" / "Down"
+    buttons on each row. We just swap the position with the adjacent rule IN
+    THE SAME CHAIN.
 
-    direction = "up" diminue la position (remonte vers le haut), "down"
-    l'augmente. NOP si la regle est deja en bord de chaine.
+    direction = "up" decreases the position (moves up), "down" increases it.
+    NOP if the rule is already at the edge of the chain.
     """
     if direction not in ("up", "down"):
         raise HTTPException(400, "direction must be 'up' or 'down'")
     rule = db.get(models.FirewallRule, rule_id)
     if not rule:
         raise HTTPException(404, "Rule not found")
-    # Cherche la regle adjacente dans la meme chaine
+    # Find the adjacent rule in the same chain
     if direction == "up":
         neighbor = (
             db.query(models.FirewallRule)
@@ -727,7 +725,7 @@ def preview_ruleset(db: Session = Depends(get_db)):
 
 @firewall_router.post("/check", response_model=schemas.RulesetCheckOut)
 def check_ruleset(db: Session = Depends(get_db)):
-    """Compile + valide la syntaxe (nft -c -f -) sans toucher au noyau."""
+    """Compile + validate the syntax (nft -c -f -) without touching the kernel."""
     ruleset = compile_ruleset(db)
     ok, message = apply_manager.check(ruleset)
     return schemas.RulesetCheckOut(ok=ok, message=message, ruleset=ruleset)
@@ -931,8 +929,8 @@ def update_route(
     if "interface_id" in payload and payload["interface_id"] is not None:
         if not db.get(models.Interface, payload["interface_id"]):
             raise HTTPException(400, "invalid interface_id")
-    # On ne marque dirty que si une valeur change vraiment (sinon le compteur
-    # de pending gonfle sans raison quand l'admin re-soumet le formulaire).
+    # We mark dirty only if a value really changes (otherwise the pending
+    # counter inflates for no reason when the admin re-submits the form).
     dirty_keys = ("destination", "gateway", "interface_id", "metric", "enabled")
     changed = False
     for k, v in payload.items():
@@ -955,5 +953,4 @@ def delete_route(route_id: int, db: Session = Depends(get_db)):
         apply_route(route, "del")
     db.delete(route)
     db.commit()
-
 
