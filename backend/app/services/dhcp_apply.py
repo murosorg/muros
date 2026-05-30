@@ -309,10 +309,19 @@ def read_active_leases() -> list[dict]:
                 out[address] = entry
     except OSError:
         return []
-    # Drop released leases (valid_lifetime 0) and strip helper field.
+    # Drop released leases (valid_lifetime 0) and leases whose expiry is
+    # already in the past, then strip the helper field. Without the expiry
+    # check, stale rows kept in the memfile would be reported as active and
+    # inflate the dashboard lease count.
+    import time
+    now = int(time.time())
     result = []
     for e in out.values():
-        if e.pop("_vlt", 0) == 0:
+        vlt = e.pop("_vlt", 0)
+        if vlt == 0:
+            continue
+        expiry = e.get("expiry") or 0
+        if expiry and expiry < now:
             continue
         result.append(e)
     return result
