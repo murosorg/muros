@@ -545,6 +545,12 @@ class WireGuardConfig(Base):
     # Used to fill the Endpoint = host:port line in exported client configs.
     # Empty -> a <FIREWALL-PUBLIC-IP> placeholder is rendered instead.
     public_endpoint: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    # DNS server(s) pushed to road-warrior clients, rendered as the
+    # [Interface] DNS line in exported client configs (comma-separated).
+    # Empty -> no DNS line (the client keeps its own resolver). Typically set
+    # to the firewall's tunnel IP when it also runs a resolver, so clients
+    # resolve internal names over the tunnel.
+    client_dns: Mapped[str] = mapped_column(String(255), default="", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 

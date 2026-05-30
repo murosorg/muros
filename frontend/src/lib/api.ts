@@ -1233,6 +1233,7 @@ export type WireGuardConfigInput = {
   public_key: string
   mtu: number | null
   public_endpoint: string
+  client_dns: string
 }
 
 export type WireGuardConfig = WireGuardConfigInput & { id: number }

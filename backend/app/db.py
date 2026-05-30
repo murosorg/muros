@@ -126,6 +126,19 @@ def _migrate_schema() -> None:
             ))
             conn.commit()
 
+        # client_dns on wireguard_config: DNS server(s) pushed to
+        # road-warrior clients in their exported [Interface] DNS line.
+        try:
+            wgcols = {c["name"] for c in insp.get_columns("wireguard_config")}
+        except Exception:
+            wgcols = set()
+        if wgcols and "client_dns" not in wgcols:
+            conn.execute(text(
+                "ALTER TABLE wireguard_config ADD COLUMN client_dns "
+                "VARCHAR(255) NOT NULL DEFAULT ''"
+            ))
+            conn.commit()
+
         # rc119 : client_allowed_ips on wireguard_peers. Lets the admin
         # control what the *client* routes through the tunnel (the
         # [Peer] AllowedIPs in the exported client config). Empty value

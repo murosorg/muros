@@ -501,6 +501,16 @@ def render_peer_client_config(cfg, peer, peer_private_key: str | None = None) ->
         # responses (image, JS bundle, etc.) because the default 1420
         # gets dropped on some carriers.
         "MTU = 1280",
+    ]
+    # DNS pushed to the client so it can resolve names over the tunnel
+    # (internal hostnames, or all names when full-tunnel). Comma/space
+    # separated list, normalized to "a, b". Skipped when unset.
+    client_dns = (getattr(cfg, "client_dns", "") or "").strip()
+    if client_dns:
+        servers = [s.strip() for s in client_dns.replace(",", " ").split() if s.strip()]
+        if servers:
+            lines.append(f"DNS = {', '.join(servers)}")
+    lines += [
         "",
         "[Peer]",
         f"PublicKey = {cfg.public_key}",

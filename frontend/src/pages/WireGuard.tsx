@@ -149,6 +149,7 @@ export default function WireGuard() {
         public_key: cfg.public_key,
         mtu: cfg.mtu,
         public_endpoint: cfg.public_endpoint || '',
+        client_dns: cfg.client_dns || '',
       })
     }
   }, [cfg])
@@ -170,6 +171,7 @@ export default function WireGuard() {
     public_key: cfg.public_key,
     mtu: cfg.mtu,
     public_endpoint: cfg.public_endpoint || '',
+    client_dns: cfg.client_dns || '',
   })
 
   const saveConfig = async (data: WireGuardConfigInput) => {
@@ -210,6 +212,7 @@ export default function WireGuard() {
         public_key: cfg.public_key,
         mtu: cfg.mtu,
         public_endpoint: cfg.public_endpoint || '',
+        client_dns: cfg.client_dns || '',
       })
       const r = await api.wireguard.apply()
       toast.success(next ? `WireGuard enabled. ${r.message}` : 'WireGuard disabled and interface brought down.')
@@ -572,6 +575,20 @@ function ConfigPanel({ form, setForm, dirty, busy, onSave }: {
           />
           <div className="text-xs text-gray-600 mt-1">
             Hostname or IP clients use to reach this firewall. Inlined in every exported peer config.
+          </div>
+        </label>
+
+        <label className="block">
+          <div className="text-sm font-medium mb-1">Client DNS</div>
+          <input
+            className="input font-mono text-sm"
+            value={form.client_dns}
+            placeholder="10.10.0.1 or 10.10.0.1, 1.1.1.1"
+            onChange={(e) => setForm({ ...form, client_dns: e.target.value })}
+          />
+          <div className="text-xs text-gray-600 mt-1">
+            DNS server(s) pushed to clients (the DNS line in exported configs). Leave empty to keep
+            the client's own resolver. Often the firewall's tunnel IP so clients resolve internal names.
           </div>
         </label>
 

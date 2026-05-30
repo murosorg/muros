@@ -107,6 +107,8 @@ class WireGuardConfigIn(BaseModel):
     public_key: str = ""
     mtu: int | None = Field(default=None, ge=576, le=9000)
     public_endpoint: str = Field(default="", max_length=255)
+    # DNS server(s) pushed to clients (comma-separated). Empty -> no DNS line.
+    client_dns: str = Field(default="", max_length=255)
 
 
 class WireGuardConfigOut(WireGuardConfigIn):

@@ -54,3 +54,32 @@ def test_parse_wg_dump_empty_and_malformed_lines():
     # Truncated peer line (too few fields) is skipped, not crashing.
     short = "PRIV\tPUB\t51820\toff\nPEERpub\t(none)\t1.2.3.4:51820\n"
     assert wireguard._parse_wg_dump(short, "wg0") == {}
+
+
+from types import SimpleNamespace  # noqa: E402
+
+
+def _cfg(client_dns=""):
+    return SimpleNamespace(
+        public_key="SRVpub", listen_port=51820,
+        public_endpoint="vpn.example.com", client_dns=client_dns,
+    )
+
+
+def _peer():
+    return SimpleNamespace(
+        name="laptop", allowed_ips="10.10.0.2/32", preshared_key=None,
+        client_allowed_ips="", endpoint=None,
+    )
+
+
+def test_client_config_pushes_dns_when_set():
+    text = wireguard.render_peer_client_config(_cfg("10.10.0.1, 1.1.1.1"), _peer(), "PRIV")
+    assert "DNS = 10.10.0.1, 1.1.1.1" in text
+    # The DNS line belongs to the [Interface] section, before [Peer].
+    assert text.index("DNS = ") < text.index("[Peer]")
+
+
+def test_client_config_no_dns_line_when_unset():
+    text = wireguard.render_peer_client_config(_cfg(""), _peer(), "PRIV")
+    assert "DNS = " not in text
