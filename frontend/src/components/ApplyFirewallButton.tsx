@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api, type FirewallPending } from '../lib/api'
+import { api, type FirewallPending, type LockoutCheck } from '../lib/api'
 
 /**
  * Apply button shared by Filter rules / NAT / Zones / Services pages.
@@ -30,11 +30,24 @@ export default function ApplyFirewallButton({
   const [pending, setPending] = useState<FirewallPending>({
     rules: 0, nat: 0, zones: 0, total: 0,
   })
+  // Early management-lockout signal: when there are pending changes, we
+  // run the same static check the apply modal uses, so the operator is
+  // warned before clicking Apply (not only once the modal is open).
+  const [lockout, setLockout] = useState<LockoutCheck | null>(null)
 
   const reload = async () => {
     try {
       const r = await api.apply.pending()
       setPending(r)
+      if (r.total > 0) {
+        try {
+          setLockout(await api.apply.lockoutCheck())
+        } catch {
+          setLockout(null)
+        }
+      } else {
+        setLockout(null)
+      }
     } catch {
       // Silent fail. The button keeps its previous state; the global
       // error toast handles backend outages.
@@ -53,8 +66,19 @@ export default function ApplyFirewallButton({
     ? `${total} pending change(s):\n- ${rules} rule(s)\n- ${nat} NAT rule(s)\n- ${zones} zone(s)`
     : 'No pending changes (DB matches the kernel ruleset)'
 
+  const lockoutBlocked = dirty && !!lockout?.blocked
+
   return (
     <div className="flex items-center gap-2">
+      {lockoutBlocked && (
+        <span
+          className="flex items-center gap-1 text-xs font-medium text-red-700"
+          title={lockout?.message || 'This ruleset would block new management connections.'}
+        >
+          <span className="inline-block w-2 h-2 rounded-full bg-red-600" aria-hidden="true" />
+          Management lockout risk
+        </span>
+      )}
       {onView && (
         <button
           className="btn-secondary"

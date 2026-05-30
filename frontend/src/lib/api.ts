@@ -400,8 +400,18 @@ async function request<T>(method: string, path: string, body?: unknown, opts?: {
     throw new Error('Authentification requise')
   }
   if (!res.ok) {
+    // FastAPI puts the error under `detail`. It is usually a string, but
+    // some endpoints return a structured object (e.g. the firewall apply
+    // management-lockout guard returns { code, message, report }). Pull
+    // out a human-readable message instead of stringifying to
+    // "[object Object]".
     let detail = ''
-    try { detail = (await res.json()).detail } catch { /* */ }
+    try {
+      const body = await res.json()
+      const d = body?.detail
+      if (typeof d === 'string') detail = d
+      else if (d && typeof d === 'object') detail = d.message || JSON.stringify(d)
+    } catch { /* */ }
     throw new Error(detail || `${res.status} ${res.statusText}`)
   }
   // L'appel a reussi avec un token : on a une vraie session valide cote

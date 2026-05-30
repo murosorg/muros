@@ -50,18 +50,18 @@ logging.basicConfig(
     format="[%(levelname)s] %(name)s : %(message)s",
 )
 
-# Niveaux par module : certains sont verbeux par nature (poll wireguard
-# toutes les 5s, sync conntrack...), on les remonte a WARNING par defaut
-# pour garder journalctl lisible. L'admin peut redescendre tout en DEBUG
-# via MUROS_LOG=DEBUG. Pour overrider un module sans toucher au global,
-# editer ce dict et redemarrer le service.
+# Per-module levels: some are verbose by nature (wireguard poll every 5s,
+# conntrack sync...), so we raise them to WARNING by default to keep
+# journalctl readable. The admin can drop everything back to DEBUG via
+# MUROS_LOG=DEBUG. To override a single module without touching the global
+# level, edit this dict and restart the service.
 MODULE_LEVELS: dict[str, str] = {
-    # Verbeux : ne polluent pas journalctl par defaut.
+    # Verbose: do not pollute journalctl by default.
     "muros.wireguard.poll": "WARNING",
     "muros.apply": "INFO",
     "muros.routing": "INFO",
-    # Logger SQLAlchemy : silencieux par defaut (sinon il print toutes les
-    # requetes SQL au demarrage).
+    # SQLAlchemy logger: quiet by default (otherwise it prints every SQL
+    # query at startup).
     "sqlalchemy.engine": "WARNING",
     "uvicorn.access": "WARNING",
 }
@@ -78,17 +78,17 @@ async def lifespan(app: FastAPI):
     enable_ip_forwarding()
     with SessionLocal() as db:
         seed_root_user(db)
-        # Adoption automatique de la conf reseau au tout premier demarrage.
-        # Si la DB est vide ET le marker /var/lib/muros/.adopted est absent,
-        # on aspire les interfaces / IPs / routes actives du kernel. Permet
-        # a un backend lance sans muros-boot.service (cas dev, ou install
-        # via pip / git clone) de quand meme adopter l'etat existant.
-        # Idempotent : skip silencieux si deja fait.
+        # Automatic adoption of the network configuration on the very first
+        # startup. If the DB is empty AND the marker /var/lib/muros/.adopted
+        # is absent, we capture the kernel's active interfaces / IPs / routes.
+        # This lets a backend started without muros-boot.service (dev case, or
+        # install via pip / git clone) still adopt the existing state.
+        # Idempotent: silent skip if already done.
         from app import adoption
         try:
             adoption.adopt_kernel_state(db)
         except Exception:
-            log.exception("Adoption initiale a echoue (non bloquant)")
+            log.exception("Initial adoption failed (non blocking)")
         seed_if_empty(db)
         seed_snmp_if_missing(db)
         seed_ssh_disabled_by_default(db)
@@ -152,14 +152,14 @@ async def audit_actions(request, call_next):
 
 @app.middleware("http")
 async def lock_writes_on_backup(request, call_next):
-    """Refuse les ecritures sur un noeud en role BACKUP VRRP.
+    """Reject writes on a node in VRRP BACKUP role.
 
-    Exceptions :
-      - GET / HEAD : lecture toujours autorisee
-      - /api/auth/* : login/logout toujours autorise
-      - /api/ha/sync/* : push/pull HA toujours autorise (c'est ce qui
-        permet au MASTER de pousser ici)
-      - /api/health, /api/system/info : healthcheck
+    Exceptions:
+      - GET / HEAD: reads always allowed
+      - /api/auth/*: login/logout always allowed
+      - /api/ha/sync/*: HA push/pull always allowed (this is what lets the
+        MASTER push here)
+      - /api/health, /api/system/info: healthcheck
     """
     method = request.method.upper()
     if method in ("GET", "HEAD", "OPTIONS"):
@@ -174,8 +174,8 @@ async def lock_writes_on_backup(request, call_next):
     ):
         return await call_next(request)
 
-    # Verifie le role VRRP via le module ha_sync (lecture rapide d'un
-    # fichier /run, pas d'I/O DB).
+    # Check the VRRP role via the ha_sync module (fast read of a /run file,
+    # no DB I/O).
     try:
         from app import ha_sync
         if not ha_sync.is_writable_role():
@@ -183,20 +183,20 @@ async def lock_writes_on_backup(request, call_next):
             return JSONResponse(
                 status_code=423,
                 content={
-                    "detail": "Ce noeud est en BACKUP VRRP. Les modifications "
-                              "doivent etre faites sur le noeud MASTER, elles "
-                              "seront repliquees automatiquement.",
+                    "detail": "This node is VRRP BACKUP. Changes must be made "
+                              "on the MASTER node, they will be replicated "
+                              "automatically.",
                 },
             )
     except Exception:  # noqa: BLE001
-        # Si on n'arrive pas a determiner le role, on laisse passer
-        # (pas de regression sur les installs sans HA).
+        # If we cannot determine the role, let the request through
+        # (no regression on installs without HA).
         pass
     return await call_next(request)
 
 
 def _deb_version() -> str | None:
-    """Lit la version du paquet deb 'muros' via dpkg-query (None hors install)."""
+    """Read the version of the 'muros' deb package via dpkg-query (None outside install)."""
     import shutil
     import subprocess
     if not shutil.which("dpkg-query"):
@@ -219,13 +219,13 @@ _BOOT_TIME = time.monotonic()
 
 @app.get("/api/health")
 def health():
-    # Endpoint expose sans auth pour les checks externes (Prometheus,
-    # Centreon, balancer). On donne tout ce qu'il faut pour superviser sans
-    # avoir a se loguer :
-    #   - status : 'ok' tant que l'API repond
-    #   - version : version deb du paquet 'muros' si installe, sinon module
-    #   - apply_enabled : True si MUROS_APPLY=true (effets reels), False sinon
-    #   - uptime_seconds : seconde depuis le demarrage du process backend
+    # Endpoint exposed without auth for external checks (Prometheus,
+    # Centreon, load balancer). It gives everything needed to monitor
+    # without logging in:
+    #   - status: 'ok' as long as the API responds
+    #   - version: deb version of the 'muros' package if installed, else module
+    #   - apply_enabled: True if MUROS_APPLY=true (real effects), False otherwise
+    #   - uptime_seconds: seconds since the backend process started
     from app.apply import APPLY_ENABLED
     return {
         "status": "ok",

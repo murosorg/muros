@@ -13,8 +13,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   modal shows a blocking warning that must be acknowledged. New endpoint
   `GET /api/firewall/apply/lockout-check`; `POST /api/firewall/apply`
   refuses with 409 unless `acknowledge_lockout` is set.
+- Early "Management lockout risk" indicator next to the Apply button on
+  the firewall pages, shown as soon as there are pending changes that
+  would block new management connections (before opening the modal).
 
 ### Changed
+- Firewall apply now honors the configurable `apply_confirm_timeout`
+  setting (60s by default) instead of a hardcoded 10s countdown.
+- API client surfaces structured error details (`detail.message`)
+  instead of stringifying them to `[object Object]`.
 - Dashboard reorganized: KPIs (CPU, memory, conntrack, load) moved to a
   full-width top row; services and storage side by side below. The
   service list now groups essential (always-on) services and only shows

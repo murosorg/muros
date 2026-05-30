@@ -1,16 +1,16 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (c) 2026 MurOS contributors.
-"""Configuration de la base de donnees (SQLite + SQLAlchemy).
+"""Database configuration (SQLite + SQLAlchemy).
 
-PRAGMAs poses a chaque connexion :
-- journal_mode=WAL : lectures concurrentes pendant l'ecriture (l'API et
-  les jobs internes lisent en parallele de l'UI qui ecrit).
-- synchronous=NORMAL : bon compromis perf/durabilite en mode WAL
-  (recommandation officielle SQLite, FULL est overkill ici).
-- foreign_keys=ON : SQLite ne respecte pas les FK par defaut, ce qui est
-  un piege classique.
-- busy_timeout=5000 : evite les "database is locked" sur ecriture
-  concurrente furtive.
+PRAGMAs set on each connection:
+- journal_mode=WAL: concurrent reads during writes (the API and internal
+  jobs read in parallel with the UI writing).
+- synchronous=NORMAL: good perf/durability compromise in WAL mode
+  (official SQLite recommendation, FULL is overkill here).
+- foreign_keys=ON: SQLite does not enforce FKs by default, a classic
+  pitfall.
+- busy_timeout=5000: avoids "database is locked" on brief concurrent
+  writes.
 """
 import os
 from sqlalchemy import create_engine, event
