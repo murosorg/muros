@@ -2,6 +2,14 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [v0.9.0-rc18] - 2026-05-30
+
+### Changed
+- Internal: migrated the Pydantic schemas from the deprecated class-based
+  `Config` to `model_config = ConfigDict(...)` (removes the Pydantic V2
+  deprecation warnings and is ready for Pydantic V3) and cleaned up the
+  remaining lint findings. No functional change.
+
 ## [v0.9.0-rc17] - 2026-05-30
 
 ### Changed
