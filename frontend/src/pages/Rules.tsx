@@ -631,11 +631,18 @@ export default function Rules() {
             // derived chain so an operator can create a "to the firewall"
             // rule while standing on the "through firewall" tab.
             const targetChain = ((data.chain as Chain) || chain)
-            // Auto position = last non-catch-all position + 10 in that
-            // chain. The backend renumbers on drag-and-drop afterwards.
+            // A freshly created rule is inserted at the TOP of its chain
+            // (lowest position = evaluated first). Rules are first-match
+            // wins, so appending at the bottom would silently shadow the
+            // new rule behind any broader rule already above it (e.g. a
+            // "block SSH" landing under "allow LAN" never matches). Putting
+            // it first matches the intuition "the rule I just created takes
+            // effect"; the operator refines order with drag-and-drop and
+            // the backend renumbers afterwards.
             const sameChain = rules.filter((r) => r.chain === targetChain && !isCatchAll(r))
-            const maxPos = sameChain.reduce((m, r) => Math.max(m, r.position), 0)
-            await api.rules.create({ ...data, chain: targetChain, position: maxPos + 10 })
+            const minPos = sameChain.reduce((m, r) => Math.min(m, r.position), 0)
+            const newPos = sameChain.length ? minPos - 10 : 10
+            await api.rules.create({ ...data, chain: targetChain, position: newPos })
             setCreating(false)
             // Jump to the tab the new rule actually landed in.
             if (targetChain !== chain) setChain(targetChain)
