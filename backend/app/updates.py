@@ -24,13 +24,21 @@ from pathlib import Path
 STATE_DIR = Path(os.environ.get("MUROS_STATE_DIR", "/var/lib/muros"))
 STATE_FILE = STATE_DIR / "updates_state.json"
 
+# Changelog shipped with the package (see packaging/debian/rules). The
+# dashboard surfaces the notes for the latest version from it; overridable
+# for tests / dev via MUROS_CHANGELOG.
+CHANGELOG_PATH = Path(os.environ.get("MUROS_CHANGELOG", "/opt/muros/CHANGELOG.md"))
+
+# Keep a Changelog header: "## [version] - date" (date optional).
+_CHANGELOG_HEADER_RE = re.compile(r"^##\s+\[([^\]]+)\](?:\s*-\s*(.+?))?\s*$")
+
 _PKG_RE = re.compile(r"^([^/]+)/[^ ]+ ([^ ]+) [^ ]+ \[upgradable from: ([^\]]+)\]")
 
-# Prefixe des paquets MurOS. Le paquet muros est gere par un canal de MAJ
-# distinct (le depot apt signe apt.muros.org) qu'on exclut du flux MAJ
-# systeme, pour que l'admin distingue clairement les deux types de mises
-# a jour. Le candidat et l'upgrade passent par apt, exactement comme
-# l'installation initiale.
+# MurOS package prefix. The muros package is managed by a distinct update
+# channel (the signed apt repository apt.muros.org) which we exclude from
+# the system update stream, so the admin clearly distinguishes the two kinds
+# of updates. The candidate and the upgrade go through apt, exactly like the
+# initial installation.
 MUROS_PACKAGE_PREFIX = "muros"
 
 
@@ -50,6 +58,68 @@ def _save_state(state: dict) -> None:
 
 def _is_muros_pkg(name: str) -> bool:
     return name == MUROS_PACKAGE_PREFIX or name.startswith(MUROS_PACKAGE_PREFIX + "-")
+
+
+def _read_changelog_sections() -> list[dict]:
+    """Parse the shipped CHANGELOG.md into ordered sections.
+
+    Each section is {version, date, body}, where version is the bracketed
+    label ("Unreleased" or "v0.9.0-rcN"), date the optional trailing date,
+    and body the markdown notes up to the next header. Returns an empty
+    list when the changelog is missing or unreadable (dev boxes without
+    the package installed), so callers degrade to "no changelog".
+    """
+    try:
+        text = CHANGELOG_PATH.read_text(encoding="utf-8")
+    except OSError:
+        return []
+    sections: list[dict] = []
+    current: dict | None = None
+    for line in text.splitlines():
+        match = _CHANGELOG_HEADER_RE.match(line)
+        if match:
+            if current is not None:
+                sections.append(current)
+            current = {
+                "version": match.group(1).strip(),
+                "date": (match.group(2) or "").strip() or None,
+                "lines": [],
+            }
+        elif current is not None:
+            current["lines"].append(line)
+    if current is not None:
+        sections.append(current)
+    for section in sections:
+        section["body"] = "\n".join(section["lines"]).strip()
+        section.pop("lines", None)
+    return sections
+
+
+def _normalize_version(value: str) -> str:
+    return value.lstrip("vV").strip()
+
+
+def _changelog_for(version: str | None) -> tuple[str | None, str | None]:
+    """Return (notes, date) for the changelog entry matching `version`.
+
+    Matching ignores a leading "v". When there is no exact match (the
+    changelog is not kept per release candidate), fall back to the newest
+    released section, i.e. the first "## [vX...]" entry that is not the
+    Unreleased block. Returns (None, None) when no changelog is available.
+    """
+    sections = _read_changelog_sections()
+    if not sections:
+        return None, None
+    if version:
+        target = _normalize_version(version)
+        for section in sections:
+            if _normalize_version(section["version"]) == target:
+                return (section["body"] or None), section["date"]
+    for section in sections:
+        if section["version"].lower() != "unreleased":
+            return (section["body"] or None), section["date"]
+    first = sections[0]
+    return (first["body"] or None), first["date"]
 
 
 def get_status() -> dict:
@@ -136,12 +206,12 @@ def _apt_candidate_version(pkg: str) -> str | None:
 
 
 def get_muros_status() -> dict:
-    """Etat du paquet MurOS : version installee + version candidate apt.
+    """MurOS package state: installed version + apt candidate version.
 
-    La version installee est lue via dpkg-query, la version candidate via
-    `apt-cache policy muros` (donc depuis apt.muros.org, le meme canal que
-    l'installation). Plus aucun appel a GitHub : l'UI propose seulement un
-    lien "notes de release" vers la page GitHub du tag correspondant.
+    The installed version is read via dpkg-query, the candidate version via
+    `apt-cache policy muros` (so from apt.muros.org, the same channel as the
+    installation). No more calls to GitHub: the UI only offers a "release
+    notes" link to the GitHub page of the matching tag.
     """
     state = _load_state()
     pending = [p for p in state.get("packages", []) if _is_muros_pkg(p["name"])]
@@ -158,6 +228,11 @@ def get_muros_status() -> dict:
         and _parse_version_tuple(candidate) > _parse_version_tuple(installed)
     )
 
+    # Notes for the latest version, read from the shipped changelog. We
+    # describe the candidate when an upgrade is available, otherwise the
+    # installed version.
+    release_notes, release_published_at = _changelog_for(candidate or installed)
+
     return {
         "apt_available": _apt_available(),
         "installed": installed,
@@ -166,8 +241,8 @@ def get_muros_status() -> dict:
         "pending_packages": pending,
         "last_check_at": state.get("last_check_at"),
         "deb_url": None,
-        "release_notes": None,
-        "release_published_at": None,
+        "release_notes": release_notes,
+        "release_published_at": release_published_at,
     }
 
 
@@ -191,9 +266,9 @@ def check_all() -> dict:
     bouton "Verifier" et qu'elle puisse afficher un horodatage commun.
     """
     apt_result = check_updates()
-    # check_updates() vient de lancer `apt-get update`, donc la version
-    # candidate lue par get_muros_status (apt-cache policy) est fraiche.
-    # On synchronise last_check_at sur le meme stamp.
+    # check_updates() has just run `apt-get update`, so the candidate version
+    # read by get_muros_status (apt-cache policy) is fresh.
+    # We sync last_check_at on the same stamp.
     muros_result = get_muros_status()
     return {
         "apt": apt_result,
@@ -297,23 +372,23 @@ def install_updates() -> dict:
 
 
 def install_muros() -> dict:
-    """Met a jour le paquet `muros` depuis le depot apt signe (apt.muros.org).
+    """Update the `muros` package from the signed apt repository (apt.muros.org).
 
-    Etapes :
-      1. Snapshot pre-upgrade (DB + nftables.conf) via backups.create_backup
-      2. apt-get update (rafraichit la metadata apt.muros.org)
-      3. apt-get install --only-upgrade -y muros (apt gere deps + postinst)
+    Steps:
+      1. Pre-upgrade snapshot (DB + nftables.conf) via backups.create_backup
+      2. apt-get update (refreshes the apt.muros.org metadata)
+      3. apt-get install --only-upgrade -y muros (apt handles deps + postinst)
 
-    La verification d'integrite est assuree par la signature GPG du depot
-    (le keyring signed-by), donc plus de telechargement .deb ni de check
-    SHA-256 cote applicatif : tout passe par apt, comme l'installation.
+    Integrity verification is ensured by the repository's GPG signature
+    (the signed-by keyring), so no more .deb download nor application-side
+    SHA-256 check: everything goes through apt, like the installation.
     """
     if not _apt_available():
         raise RuntimeError("apt is not available: cannot update MurOS.")
 
-    # 1. Snapshot pre-upgrade : DB + nftables.conf, archive horodatee.
-    # Label porte la version installee AVANT upgrade pour que l'admin
-    # identifie d'un coup d'oeil ce vers quoi le restore le ramene.
+    # 1. Pre-upgrade snapshot: DB + nftables.conf, timestamped archive.
+    # The label carries the version installed BEFORE the upgrade so the admin
+    # identifies at a glance what a restore would bring them back to.
     current_pkg_version = _dpkg_installed_version(MUROS_PACKAGE_PREFIX) or "unknown"
     snap_label = f"pre-upgrade-{current_pkg_version}"
     try:
@@ -322,9 +397,8 @@ def install_muros() -> dict:
     except Exception as exc:  # noqa: BLE001
         snap = {"name": None, "error": str(exc)}
 
-    # 2. Rafraichit la metadata apt (apt.muros.org) avant l'upgrade pour
-    # que la nouvelle version soit visible meme si aucun check n'a ete
-    # lance recemment depuis l'UI.
+    # 2. Refresh the apt metadata (apt.muros.org) before the upgrade so the
+    # new version is visible even if no check was run recently from the UI.
     env = {**os.environ, "DEBIAN_FRONTEND": "noninteractive", "LC_ALL": "C"}
     try:
         upd = subprocess.run(
@@ -333,41 +407,41 @@ def install_muros() -> dict:
         )
         if upd.returncode != 0:
             raise RuntimeError(
-                f"apt-get update a echoue : {(upd.stderr or '').strip()[:400]}"
+                f"apt-get update failed: {(upd.stderr or '').strip()[:400]}"
             )
     except subprocess.TimeoutExpired as exc:
-        raise RuntimeError("apt-get update n'a pas repondu en 60s.") from exc
+        raise RuntimeError("apt-get update did not respond within 60s.") from exc
 
-    # apt install --only-upgrade muros : on ne peut PAS faire un subprocess.run
-    # bloquant ici car le postinst du nouveau .deb va `systemctl restart
-    # muros-backend.service`, ce qui envoie SIGTERM au backend (et donc a
-    # l'apt-get spawn par le backend). apt-get meurt en code -15 et dpkg
-    # laisse le paquet en etat "half-configured".
+    # apt install --only-upgrade muros: we can NOT do a blocking subprocess.run
+    # here because the postinst of the new .deb will `systemctl restart
+    # muros-backend.service`, which sends SIGTERM to the backend (and thus to
+    # the apt-get spawned by the backend). apt-get dies with code -15 and dpkg
+    # leaves the package in a "half-configured" state.
     #
-    # Solution : lancer apt-get dans une unit transient systemd detachee
-    # (`systemd-run --no-block --unit=muros-self-upgrade`). L'unit survit
-    # au restart de muros-backend, apt fait son boulot jusqu'au bout, et
-    # l'UI poll /api/updates/muros/progress pour suivre l'avancement et
-    # se reconnecter quand le nouveau backend repond.
+    # Solution: run apt-get in a detached transient systemd unit
+    # (`systemd-run --no-block --unit=muros-self-upgrade`). The unit survives
+    # the muros-backend restart, apt does its job to the end, and the UI polls
+    # /api/updates/muros/progress to follow progress and
+    # reconnect when the new backend responds.
     progress_log = STATE_DIR / "muros-upgrade.log"
     progress_log.parent.mkdir(parents=True, exist_ok=True)
     candidate = _apt_candidate_version(MUROS_PACKAGE_PREFIX) or "latest"
     progress_log.write_text(
-        f"# {datetime.now(timezone.utc).isoformat()} : "
+        f"# {datetime.now(timezone.utc).isoformat()}: "
         f"apt install --only-upgrade muros (-> {candidate})\n"
     )
 
     if shutil.which("systemd-run") is None or os.geteuid() != 0:
-        # Fallback dev / non-root : on tente quand meme l'apt en synchrone
-        # (et tant pis si SIGTERM nous coupe ; au moins en dev sans
-        # muros-backend.service le scenario n'existe pas).
+        # Dev / non-root fallback: we still attempt apt synchronously
+        # (and too bad if SIGTERM cuts us off; at least in dev without
+        # muros-backend.service the scenario does not exist).
         cmd = ["apt-get", "-y", "install", "--only-upgrade", "muros"]
         try:
             proc = subprocess.run(
                 cmd, env=env, capture_output=True, text=True, timeout=600,
             )
         except (subprocess.SubprocessError, FileNotFoundError) as exc:
-            raise RuntimeError(f"apt-get install --only-upgrade muros a echoue : {exc}") from exc
+            raise RuntimeError(f"apt-get install --only-upgrade muros failed: {exc}") from exc
         if proc.returncode != 0:
             raise RuntimeError(
                 f"apt-get install code {proc.returncode}: {proc.stderr[:400]}"
@@ -377,9 +451,9 @@ def install_muros() -> dict:
         )
         started_detached = False
     else:
-        # Lance dans une unit transient detachee. `--collect` nettoie la
-        # unit au exit, `--no-block` rend la main immediatement, on
-        # redirige stdout/stderr dans le fichier de log pour suivi UI.
+        # Run in a detached transient unit. `--collect` cleans up the unit
+        # on exit, `--no-block` returns immediately, we redirect stdout/stderr
+        # into the log file for UI follow-up.
         cmd = [
             "systemd-run",
             "--collect",
@@ -396,16 +470,16 @@ def install_muros() -> dict:
             proc = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
         except (subprocess.SubprocessError, FileNotFoundError) as exc:
             raise RuntimeError(
-                f"systemd-run a echoue pour l'upgrade MurOS : {exc}"
+                f"systemd-run failed for the MurOS upgrade: {exc}"
             ) from exc
         if proc.returncode != 0:
             raise RuntimeError(
-                f"systemd-run a refuse de lancer l'upgrade (code {proc.returncode}) : "
+                f"systemd-run refused to launch the upgrade (code {proc.returncode}): "
                 f"{(proc.stderr or proc.stdout or '').strip()[:400]}"
             )
         started_detached = True
 
-    # Reset entry MurOS du cache local de paquets en attente
+    # Reset the MurOS entry from the local pending-packages cache
     state = _load_state()
     state["packages"] = [p for p in state.get("packages", []) if not _is_muros_pkg(p["name"])]
     state["last_check_at"] = datetime.now(timezone.utc).isoformat()
@@ -415,21 +489,21 @@ def install_muros() -> dict:
         "installed": True,
         "snapshot": snap,
         "output_tail": (
-            "Mise a jour lancee en arriere-plan via systemd-run "
-            "(unit muros-self-upgrade.service). Le backend va redemarrer "
-            "automatiquement a la fin du postinst, l'UI se reconnectera "
-            "toute seule. Suivre la progression dans "
+            "Update started in the background via systemd-run "
+            "(unit muros-self-upgrade.service). The backend will restart "
+            "automatically at the end of the postinst, the UI will reconnect "
+            "by itself. Follow the progress in "
             "/var/lib/muros/muros-upgrade.log."
-        ) if started_detached else "Upgrade applique en mode synchrone (dev).",
+        ) if started_detached else "Upgrade applied synchronously (dev).",
     }
 
 
 def get_muros_install_progress() -> dict:
-    """Retourne l'etat de l'upgrade auto-declenchee de MurOS.
+    """Return the state of the auto-triggered MurOS upgrade.
 
-    Lit a la fois la unit systemd transient `muros-self-upgrade.service`
-    (active / done / failed) et le tail du fichier de log pour
-    visualisation cote UI.
+    Reads both the transient systemd unit `muros-self-upgrade.service`
+    (active / done / failed) and the tail of the log file for display
+    in the UI.
     """
     log_path = STATE_DIR / "muros-upgrade.log"
     log_tail = ""
@@ -465,9 +539,8 @@ def get_muros_install_progress() -> dict:
             elif active == "inactive" and result == "success":
                 state = "done"
             elif active in ("inactive", "") and not result:
-                # La unit a deja ete collectee (apres --collect) : on se
-                # rabat sur le tail du log pour deviner si ca s'est bien
-                # passe.
+                # The unit has already been collected (after --collect): we
+                # fall back on the log tail to guess whether it went well.
                 if log_tail and "# done" in log_tail:
                     state = "done"
                 elif "Setting up muros" in log_tail or "Unpacking muros" in log_tail:

@@ -16,6 +16,7 @@ override_dh_auto_install:
 	cp -a backend/app debian/muros/opt/muros/backend/
 	cp -a backend/scripts debian/muros/opt/muros/backend/
 	cp backend/requirements.txt debian/muros/opt/muros/backend/
+	install -D -m 644 CHANGELOG.md debian/muros/opt/muros/CHANGELOG.md
 	install -d debian/muros/opt/muros/web
 	cp -a frontend/dist/. debian/muros/opt/muros/web/
 	# install.sh et uninstall.sh ne sont PAS livres dans le .deb.

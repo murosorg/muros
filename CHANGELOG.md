@@ -4,6 +4,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [v0.9.0-rc70] - 2026-05-30
+
 ### Added
 - Management-lockout guard on firewall applies. Before applying, MurOS
   statically evaluates the input chain against a new connection from the
@@ -16,17 +18,27 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Early "Management lockout risk" indicator next to the Apply button on
   the firewall pages, shown as soon as there are pending changes that
   would block new management connections (before opening the modal).
+- MurOS version card on the dashboard: shows the installed version, an
+  up-to-date / update-available badge, the candidate version on the apt
+  channel, and the changelog of the latest version, with a link to manage
+  updates. The changelog is read from the `CHANGELOG.md` shipped with the
+  package and exposed by `GET /api/updates/muros` (`release_notes`).
 
 ### Changed
 - Firewall apply now honors the configurable `apply_confirm_timeout`
   setting (60s by default) instead of a hardcoded 10s countdown.
 - API client surfaces structured error details (`detail.message`)
   instead of stringifying them to `[object Object]`.
-- Dashboard reorganized: KPIs (CPU, memory, conntrack, load) moved to a
-  full-width top row; services and storage side by side below. The
-  service list now groups essential (always-on) services and only shows
-  optional ones when active or in error, with a summary line for the
-  rest.
+- Dashboard reorganized: the service inventory, storage and the version
+  card sit at the top; the resource KPIs (CPU, memory, conntrack, load)
+  move to a row below. The service list groups essential (always-on)
+  services and only shows optional ones when active or in error, with a
+  summary line for the rest.
+
+### Internationalization
+- Translated the remaining French comments and user-facing error strings
+  to English across the backend (core modules, `wireguard.py`,
+  `ipsec.py`, audit labels and API messages).
 
 ## [v0.9.0-rc53] - 2026-05-30
 
