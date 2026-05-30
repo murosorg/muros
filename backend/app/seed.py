@@ -1,4 +1,4 @@
-"""Donnees initiales : creees au premier demarrage si la base est vide."""
+"""Initial data: created on first boot if the database is empty."""
 import logging
 
 from sqlalchemy.orm import Session
@@ -51,44 +51,45 @@ seed_admin_user = seed_root_user
 
 
 def seed_ssh_disabled_by_default(db: Session) -> None:
-    """Sur une install fraiche, SSH est ferme par defaut.
+    """On a fresh install, SSH is closed by default.
 
-    On materialise la ligne SshConfig avec admin_disabled=True pour que
-    l'UI affiche l'etat 'desactive par l'admin', en miroir du `systemctl
-    disable --now ssh` pose par le postinst sur une install fraiche.
-    L'admin reactive SSH explicitement depuis la page Acces SSH. On ne
-    touche jamais une ligne existante (cas upgrade) : seule la creation
-    initiale impose le defaut ferme.
+    Materialize the SshConfig row with admin_disabled=True so the UI
+    shows the 'disabled by admin' state, mirroring the `systemctl
+    disable --now ssh` set by the postinst on a fresh install. The admin
+    re-enables SSH explicitly from the SSH Access page. An existing row
+    is never touched (upgrade case): only the initial creation imposes
+    the closed default.
     """
     if db.get(models.SshConfig, 1) is not None:
         return
     db.add(models.SshConfig(id=1, admin_disabled=True))
     db.commit()
-    log.info("SshConfig seede avec admin_disabled=True (SSH ferme par defaut)")
+    log.info("SshConfig seeded with admin_disabled=True (SSH closed by default)")
 
 
 def seed_snmp_if_missing(db: Session) -> None:
-    """Cree la ligne SnmpConfig au premier boot avec enabled=True.
+    """Create the SnmpConfig row on first boot with enabled=True.
 
-    SNMP est active par defaut sur une appliance firewall (monitoring attendu).
-    L'ecoute reste limitee aux LAN prives (10/8, 172.16/12, 192.168/16) via
-    allowed_networks et community 'public' en lecture seule. L'admin peut
-    desactiver ou durcir depuis Notifications > SNMP.
+    SNMP is enabled by default on a firewall appliance (monitoring is
+    expected). Listening stays limited to private LANs (10/8, 172.16/12,
+    192.168/16) via allowed_networks, with a read-only 'public'
+    community. The admin can disable or harden it from Notifications >
+    SNMP.
     """
     cfg = db.get(models.SnmpConfig, 1)
     if cfg is not None:
         return
     db.add(models.SnmpConfig(id=1))
     db.commit()
-    log.info("SnmpConfig seede avec enabled=True (defaut appliance)")
+    log.info("SnmpConfig seeded with enabled=True (appliance default)")
 
 
 def apply_snmp_if_enabled(db: Session) -> None:
-    """Au boot, si SnmpConfig.enabled=True et snmpd n'est pas actif, on l'applique.
+    """At boot, if SnmpConfig.enabled=True and snmpd is not active, apply it.
 
-    Best-effort : on swallow les exceptions pour ne pas bloquer le demarrage de
-    l'API si snmpd manque ou refuse la conf. L'utilisateur verra l'etat dans
-    l'UI et pourra cliquer Appliquer.
+    Best-effort: exceptions are swallowed so a missing snmpd or a refused
+    config does not block API startup. The user sees the state in the UI
+    and can click Apply.
     """
     cfg = db.get(models.SnmpConfig, 1)
     if cfg is None or not cfg.enabled:
@@ -99,13 +100,13 @@ def apply_snmp_if_enabled(db: Session) -> None:
         if not st.get("snmpd_installed") or st.get("service_active"):
             return
         snmp.apply_config(cfg)
-        log.info("SNMP applique au boot (enabled par defaut)")
+        log.info("SNMP applied at boot (enabled by default)")
     except Exception as exc:  # noqa: BLE001
-        log.warning("Application SNMP au boot impossible : %s", exc)
+        log.warning("Cannot apply SNMP at boot: %s", exc)
 
 
 def seed_if_empty(db: Session) -> None:
-    """Initialise les zones par defaut et importe les interfaces physiques reelles."""
+    """Initialize the default zones and import the real physical interfaces."""
     if db.query(models.Zone).count() > 0:
         return
 
@@ -115,19 +116,19 @@ def seed_if_empty(db: Session) -> None:
     db.add_all([wan, lan, dmz])
     db.flush()
 
-    # Import automatique des interfaces physiques detectees, AVEC l'IP
-    # et la gateway en cours. C'est CRITIQUE au premier boot d'une
-    # appliance installee via DHCP : si on ne capture pas l'IP active,
-    # muros-boot ecrit ip_mode='none' au prochain reboot et le boitier
-    # perd son IP, l'admin perd l'acces. Un firewall n'utilise pas DHCP
-    # en run, mais il en herite UNE FOIS au moment de l'install. On fige
-    # cette config en mode 'static' dans la DB, l'admin pourra ajuster
-    # ensuite via l'UI.
+    # Automatically import detected physical interfaces, WITH their
+    # current IP and gateway. This is CRITICAL on the first boot of an
+    # appliance installed over DHCP: if the active IP is not captured,
+    # muros-boot writes ip_mode='none' on the next reboot and the box
+    # loses its IP, the admin loses access. A firewall does not use DHCP
+    # at runtime, but it inherits one ONCE at install time. We freeze
+    # that config as 'static' in the DB; the admin can adjust it later
+    # from the UI.
     imported = 0
     seeded_with_ip = 0
-    # Interfaces deja en DB (typiquement, l adoption a la lifespan FastAPI
-    # les a deja inserees a partir du kernel). On les skip ici pour eviter
-    # un UNIQUE constraint failed.
+    # Interfaces already in DB (typically adoption at the FastAPI
+    # lifespan already inserted them from the kernel). Skip them here to
+    # avoid a UNIQUE constraint failure.
     existing_iface_names = {
         row[0] for row in db.query(models.Interface.name).all()
     }
@@ -135,15 +136,15 @@ def seed_if_empty(db: Session) -> None:
         if sysif["is_virtual"]:
             continue
         if sysif["name"] in existing_iface_names:
-            continue  # deja adoptee depuis le kernel
-        # Premiere IPv4 globale (on ignore link-local 169.254/16 et v6).
+            continue  # already adopted from the kernel
+        # First global IPv4 (ignore link-local 169.254/16 and v6).
         cidr: str | None = None
         for addr in sysif["addresses"]:
             ip_part = addr.split("/", 1)[0]
             if ":" in ip_part:
-                continue  # IPv6 pas seede automatiquement
+                continue  # IPv6 not auto-seeded
             if ip_part.startswith("169.254."):
-                continue  # link-local fallback DHCP
+                continue  # link-local DHCP fallback
             if ip_part.startswith("127."):
                 continue
             cidr = addr
@@ -169,14 +170,14 @@ def seed_if_empty(db: Session) -> None:
         ))
         imported += 1
     log.info(
-        "Seed : %d interface(s) importee(s), %d avec IP figee depuis l'install",
+        "Seed: %d interface(s) imported, %d with IP frozen from install",
         imported, seeded_with_ip,
     )
 
-    # Regles d'amorce. Volontairement permissives sur l'admin (any -> firewall
-    # sur 22/80/443) pour eviter le lock-out au premier boot tant que les
-    # interfaces ne sont pas rattachees aux zones. L'admin restreindra
-    # ensuite via l'UI une fois ses zones cablees.
+    # Bootstrap rules. Deliberately permissive on admin access (any ->
+    # firewall on 22/80/443) to avoid a lock-out on first boot while the
+    # interfaces are not yet attached to zones. The admin then restricts
+    # via the UI once the zones are wired.
     rules = [
         models.FirewallRule(
             position=10, chain="input", action="accept",
