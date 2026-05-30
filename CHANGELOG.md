@@ -2,6 +2,14 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [v0.9.0-rc16] - 2026-05-30
+
+### Fixed
+- The dashboard no longer shows SSH as "disabled by admin". SSH is now
+  treated like every other service and simply shows as inactive when it
+  is stopped. SSH is still disabled on a fresh install and can be turned
+  back on manually from the SSH page toggle.
+
 ## [v0.9.0-rc15] - 2026-05-30
 
 ### Added
