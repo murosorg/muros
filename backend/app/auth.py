@@ -1,12 +1,18 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (c) 2026 MurOS contributors.
-"""Authentification : hash bcrypt + JWT + dependency FastAPI."""
+"""Authentication: JWT issuance/validation + FastAPI dependencies.
+
+Credentials are verified against the Linux account database via PAM (see
+``app.pam_auth``); MurOS stores no password hash of its own (the mirror
+``users.password_hash`` column is a sentinel ``"!"``). This module only
+mints and validates the bearer tokens and exposes the ``current_user`` /
+``require_admin`` dependencies.
+"""
 import os
 import secrets
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-import bcrypt
 import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
@@ -40,17 +46,6 @@ TOKEN_TTL = timedelta(hours=8)
 MFA_TOKEN_TTL = timedelta(minutes=5)
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
-
-
-def hash_password(plain: str) -> str:
-    return bcrypt.hashpw(plain.encode(), bcrypt.gensalt()).decode()
-
-
-def verify_password(plain: str, hashed: str) -> bool:
-    try:
-        return bcrypt.checkpw(plain.encode(), hashed.encode())
-    except (ValueError, TypeError):
-        return False
 
 
 def create_token(user: models.User) -> str:
