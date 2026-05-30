@@ -369,7 +369,7 @@ def reload(db: Session) -> None:
         # if missing. Required by the `auto-trust-anchor-file` directive
         # when DNSSEC is enabled. Without this, `unbound-checkconf`
         # rejects the conf on a fresh install where the file was never
-        # provisioned (unbound was disabled at postinst time).
+        # provisioned.
         if cfg.dnssec:
             try:
                 subprocess.run(
@@ -397,8 +397,8 @@ def reload(db: Session) -> None:
             )
 
         # Pre-flight : refuse to start Unbound if something else holds
-        # :53 (typical : systemd-resolved that someone unmasked, an old
-        # dnsmasq running in DNS mode, ...). Otherwise Unbound enters a
+        # :53 (typical : systemd-resolved that someone unmasked, or
+        # another resolver bound to :53, ...). Otherwise Unbound enters a
         # restart loop and finishes in `failed` state, with a cryptic
         # "Address already in use" message in journalctl.
         squatter = _port53_squatter()

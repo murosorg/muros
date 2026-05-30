@@ -423,7 +423,7 @@ def reconcile_all(db: Session, source: str = "reconcile") -> dict[str, bool]:
 def reconcile_on_startup(db: Session) -> dict[str, bool]:
     """Boot-time alias for reconcile_all(source='reconcile-on-startup').
 
-    Some daemons (dnsmasq, unbound, snmpd) load their drop-in conf
+    Some daemons (Kea, unbound, snmpd) load their drop-in conf
     files at OS boot, BEFORE the MurOS backend starts. If the operator
     clicked Save but never Apply, then rebooted, the daemon ends up
     running the saved config anyway -- yet the dirty flag in

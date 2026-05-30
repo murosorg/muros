@@ -96,7 +96,7 @@ async def lifespan(app: FastAPI):
         apply_snmp_if_enabled(db)
         # Clear false-positive dirty flags : if the operator clicked
         # Save then rebooted without clicking Apply, daemons like
-        # dnsmasq / unbound / snmpd load the saved conf at OS boot
+        # Kea / unbound / snmpd load the saved conf at OS boot
         # anyway, so the dirty flag in the DB is stale. Compare the
         # rendered conf to the on-disk file and clear when they match.
         from app import service_dirty

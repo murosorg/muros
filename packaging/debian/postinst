@@ -289,8 +289,8 @@ EOF
       # Helper: disable a feature daemon AND clear any lingering "failed"
       # status. A plain `disable --now` stops and un-enables the unit but
       # leaves it marked "failed" in systemd if it had crashed earlier
-      # (e.g. a dependency daemon shipped by us, like dnsmasq or unbound,
-      # was already installed and auto-started by its own package
+      # (e.g. a dependency daemon shipped by us, like kea-dhcp4-server or
+      # unbound, was already installed and auto-started by its own package
       # postinst, collided on port 53, and crashed before our policy-rc.d
       # could hold it back). Without `reset-failed` the operator sees a
       # red "failed" unit right after install even though the feature is

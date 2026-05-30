@@ -33,7 +33,7 @@ const ENDPOINTS: Record<ServiceName, Endpoints> = {
 type Props = {
   service: ServiceName
   // Service-specific label shown in the tooltip when pending
-  // (e.g. 'Reload dnsmasq', 'Restart unbound').
+  // (e.g. 'Reload Kea', 'Restart unbound').
   pendingTooltip?: string
   // Notified after a successful apply so the page can reload its
   // status / config snapshots.

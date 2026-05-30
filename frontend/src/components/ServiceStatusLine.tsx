@@ -7,7 +7,7 @@
 export type ServiceState = 'active' | 'inactive' | 'failed' | 'unknown'
 
 // Strip Debian / Ubuntu packaging suffixes from a version string so the
-// pill displays "dnsmasq 2.91" instead of "dnsmasq 2.91-1+deb13u1".
+// pill displays "unbound 1.19" instead of "unbound 1.19-1+deb13u1".
 // The full string is still exposed via the title (hover tooltip).
 //
 // Examples:
@@ -37,7 +37,7 @@ const STATE_STYLE: Record<ServiceState, { dot: string; label: string; text: stri
  * or a section banner (CardHeader children). Renders dot + optional service
  * name + state label + version with no border, no background and no padding.
  * Omit `name` when the surrounding page title already identifies the service
- * (e.g. "DHCP server" implies dnsmasq).
+ * (e.g. "DHCP server" implies Kea).
  */
 // When a caller passes both `name="keepalived"` and a `version` produced
 // by `pkg_version("keepalived")` that already prepends the package name
