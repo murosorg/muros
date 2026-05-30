@@ -2,6 +2,34 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [v0.9.0-rc53] - 2026-05-30
+
+### Added
+- System settings page (hostname, timezone, locale, console keymap),
+  applied live and persisted through systemd (hostnamectl / timedatectl /
+  localectl). Changing the hostname also updates `/etc/hosts` and
+  refreshes the self-signed UI certificate.
+- Management fallback: if a box boots with no usable IP at all, MurOS
+  assigns a deterministic management address (default `192.168.1.1/24`)
+  on a physical interface and serves DHCP on it via Kea, so the UI stays
+  reachable from a directly attached laptop without a shell.
+
+### Changed
+- Installer ISO default credentials are now **`root` / `root`**. The
+  password is deliberately AZERTY/QWERTY-safe so the first console login
+  is never blocked by a keyboard layout mismatch; override with
+  `MUROS_ROOT_PASSWORD` and rotate it after first login. The ISO also
+  preinstalls `kbd` and `console-setup` so `loadkeys` works at the
+  console.
+
+### Fixed
+- Installer ISO: the unattended install no longer fails with apt exit
+  code 100. The preseed now disables the CD-ROM apt source (a lingering
+  `deb cdrom:` line broke `apt-get update` since the disc is not mounted
+  in the installed system), and `install.sh` defensively comments out any
+  such line. The netinst point release is auto-detected instead of being
+  pinned to an outdated version, and the hybrid ISO repack was fixed.
+
 ## [v0.9.0-rc30] - 2026-05-30
 
 ### Added

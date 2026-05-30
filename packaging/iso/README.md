@@ -54,12 +54,29 @@ sudo dd if=muros-installer-amd64.iso of=/dev/sdX bs=4M status=progress oflag=syn
 or attach the ISO to a VM and boot it. The install needs network access
 (DHCP + outbound HTTPS) to reach the Debian mirror and `apt.muros.org`.
 
+## First login
+
+When built with the defaults, the installed system logs in with:
+
+- **Username:** `root`
+- **Password:** `root`
+
+The default password is deliberately `root`: it types identically on
+AZERTY and QWERTY keyboards, so the first console login is never blocked
+by a layout mismatch (unlike, say, `muros`). The console keymap can then
+be switched with `loadkeys fr` (the `kbd` package is preinstalled) or set
+persistently from the UI (System settings).
+
+Change this password immediately after first login (UI: Access > Users,
+or `passwd` at the console). If you built the ISO with a custom
+`MUROS_ROOT_PASSWORD`, use that value instead.
+
 ## Notes
 
 - The installer wipes the first disk (`auto=true priority=critical`).
   Only boot it on the target machine.
-- The default password is a convenience for lab use. Set
-  `MUROS_ROOT_PASSWORD` for anything else and rotate it from the UI
-  (Access > Users) after install.
+- The default `root` / `root` credentials are a convenience for lab use
+  and a safe first console login. Set `MUROS_ROOT_PASSWORD` for anything
+  else and rotate it from the UI (Access > Users) after install.
 - MurOS uses the system `root` account for both the web UI and SSH, so
   the preseed creates no separate user.

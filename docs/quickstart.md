@@ -2,6 +2,18 @@
 
 This guide walks you from a fresh Debian install to a working firewall.
 
+There are two ways to install:
+
+* **Option A (recommended): the MurOS installer ISO.** Boot it and walk
+  away. It installs Debian and MurOS unattended, no questions asked. The
+  installed system logs in with **`root` / `root`** by default (a value
+  that types the same on AZERTY and QWERTY, so the first console login is
+  never blocked by a keyboard layout mismatch). Change it right after the
+  first login. Build instructions: `packaging/iso/README.md`.
+* **Option B: install on an existing Debian.** Run the one-line installer
+  on a machine you already provisioned. This is the path detailed below;
+  here MurOS keeps your existing root password unchanged.
+
 ## Prerequisites
 
 * An x86_64 machine (VM or bare metal):
