@@ -20,7 +20,7 @@ def _validate_address(v: str | None) -> str | None:
     if v is None or v == "":
         return None
     try:
-        # Accepte IP simple ou reseau CIDR, v4 ou v6
+        # Accepts a single IP or a CIDR network, v4 or v6
         ipaddress.ip_network(v, strict=False)
         return v
     except ValueError:
@@ -187,8 +187,8 @@ class HttpConfigIn(BaseModel):
     listen_address: str = Field(default="0.0.0.0", min_length=1, max_length=255)
     port_https: int = Field(default=443, ge=1, le=65535)
     port_http: int = Field(default=80, ge=1, le=65535)
-    # Garde-fou : refuse une adresse loopback (127.x ou ::1) sans confirmation
-    # explicite, sinon on lock-out l'admin qui se connecte depuis le LAN.
+    # Guard: refuse a loopback address (127.x or ::1) without explicit
+    # confirmation, otherwise we lock out the admin connecting from the LAN.
     confirm_loopback: bool = False
     # Si True : pas de pending_apply, pas de rollback. A utiliser quand
     # l'admin sait qu'il va changer d'IP/d'interface et ne pourra donc

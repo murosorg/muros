@@ -21,7 +21,7 @@ def _validate_address(v: str | None) -> str | None:
     if v is None or v == "":
         return None
     try:
-        # Accepte IP simple ou reseau CIDR, v4 ou v6
+        # Accepts a single IP or a CIDR network, v4 or v6
         ipaddress.ip_network(v, strict=False)
         return v
     except ValueError:
@@ -130,8 +130,8 @@ class WireGuardPeerIn(BaseModel):
 
 
 class WireGuardPresharedKeyOut(BaseModel):
-    # Reponse de POST /api/wireguard/psk : une cle WG generee (base64 32 octets)
-    # a coller dans le champ Preshared key d'un peer (optionnel mais recommande).
+    # Response of POST /api/wireguard/psk: a generated WG key (base64 32 bytes)
+    # to paste into a peer's Preshared key field (optional but recommended).
     preshared_key: str
 
 
@@ -239,5 +239,8 @@ class IpsecCertGenerate(BaseModel):
 class IpsecCertImport(BaseModel):
     name: str
     cert_pem: str
+
+
+
 
 

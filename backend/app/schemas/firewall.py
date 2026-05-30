@@ -5,7 +5,14 @@ import ipaddress
 import re
 from datetime import datetime
 from typing import Annotated, Literal
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 Action = Literal["accept", "drop", "reject"]
 Chain = Literal["input", "forward", "output"]
@@ -21,7 +28,7 @@ def _validate_address(v: str | None) -> str | None:
     if v is None or v == "":
         return None
     try:
-        # Accepte IP simple ou reseau CIDR, v4 ou v6
+        # Accepts a single IP or a CIDR network, v4 or v6
         ipaddress.ip_network(v, strict=False)
         return v
     except ValueError:
@@ -68,6 +75,20 @@ class FirewallRuleBase(BaseModel):
     service_group_id: int | None = None
     src_address_group_id: int | None = None
     dst_address_group_id: int | None = None
+
+    @model_validator(mode="after")
+    def _normalize_zones_for_chain(self) -> "FirewallRuleBase":
+        # One endpoint is the firewall itself on the input/output chains:
+        # input traffic is destined to the firewall (no destination zone),
+        # output traffic originates from the firewall (no source zone).
+        # Silently drop the zone that does not apply so a rule can never
+        # encode a nonsensical "any zone -> any zone" on a single-ended
+        # chain, regardless of what the client sent.
+        if self.chain == "input":
+            self.dst_zone_id = None
+        elif self.chain == "output":
+            self.src_zone_id = None
+        return self
 
     @field_validator("rate_limit")
     @classmethod

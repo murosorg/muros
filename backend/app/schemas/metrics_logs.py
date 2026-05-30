@@ -21,7 +21,7 @@ def _validate_address(v: str | None) -> str | None:
     if v is None or v == "":
         return None
     try:
-        # Accepte IP simple ou reseau CIDR, v4 ou v6
+        # Accepts a single IP or a CIDR network, v4 or v6
         ipaddress.ip_network(v, strict=False)
         return v
     except ValueError:
@@ -102,7 +102,7 @@ class FirewallLogEntryOut(BaseModel):
     syslog_identifier: str | None = None
     # Champs derives du prefixe nft "[muros <ACTION> r=<ID> <CHAIN>]"
     # quand celui-ci est present dans le message. Permet a l'UI d'afficher
-    # un badge action + un lien vers la regle correspondante.
+    # an action badge + a link to the matching rule.
     action: str | None = None
     rule_id: int | None = None
     chain: str | None = None

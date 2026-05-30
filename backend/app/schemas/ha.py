@@ -21,7 +21,7 @@ def _validate_address(v: str | None) -> str | None:
     if v is None or v == "":
         return None
     try:
-        # Accepte IP simple ou reseau CIDR, v4 ou v6
+        # Accepts a single IP or a CIDR network, v4 or v6
         ipaddress.ip_network(v, strict=False)
         return v
     except ValueError:
@@ -60,8 +60,8 @@ class HaConfigIn(BaseModel):
     sync_interface: str = ""
     # conntrack_sync est non-modifiable depuis l'UI : sans synchro des
     # sessions, un failover casse toutes les connexions TCP existantes,
-    # ce qui defait l'interet du HA active/passif. On accepte le champ
-    # en entree pour la compat des anciens clients, mais on force True
+    # which defeats the purpose of active/passive HA. We accept the field
+    # as input for backward compat with old clients, but we force True
     # cote validation (Pydantic).
     conntrack_sync: bool = True
     preempt: bool = True

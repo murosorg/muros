@@ -21,7 +21,7 @@ def _validate_address(v: str | None) -> str | None:
     if v is None or v == "":
         return None
     try:
-        # Accepte IP simple ou reseau CIDR, v4 ou v6
+        # Accepts a single IP or a CIDR network, v4 or v6
         ipaddress.ip_network(v, strict=False)
         return v
     except ValueError:
@@ -98,8 +98,8 @@ class NotificationTestResult(BaseModel):
 class SnmpConfigIn(BaseModel):
     enabled: bool = False
     port: int = Field(default=161, ge=1, le=65535)
-    # community v2c : on impose au moins 4 caracteres (la valeur 'public'
-    # passe mais l'UI doit suggerer de la changer).
+    # v2c community: we require at least 4 characters (the value 'public'
+    # passes but the UI should suggest changing it).
     community: str = Field(default="public", min_length=4, max_length=255)
     allowed_networks: str = "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
     syscontact: str = Field(default="admin@localhost", max_length=255)
