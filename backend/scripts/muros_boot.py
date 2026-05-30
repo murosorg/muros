@@ -361,6 +361,22 @@ def _restore_ntp(db) -> None:
         log.warning("NTP reconcile failed: %r", exc)
 
 
+def _restore_ra(db) -> None:
+    """Reconcile IPv6 Router Advertisements (radvd) after a reboot.
+
+    Runs after the network restore so the LAN interface and its IPv6
+    prefix are known. radvd stays disabled unless RA is enabled in the DB.
+    """
+    from app.services import ra_apply
+    try:
+        ra_apply.apply(db)
+        cfg = ra_apply.get_config(db)
+        if cfg.enabled and cfg.interface:
+            log.info("IPv6 Router Advertisements restored on %s", cfg.interface)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("RA reconcile failed: %r", exc)
+
+
 def main() -> int:
     from app.db import SessionLocal, init_db
     from app import adoption
@@ -399,6 +415,7 @@ def main() -> int:
             _restore_ha(db)
             _restore_watcher(db)
             _restore_ntp(db)
+            _restore_ra(db)
         except Exception:
             log.exception("Echec lors de la restauration")
             return 1

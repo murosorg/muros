@@ -5,6 +5,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [v0.9.0-rc28] - 2026-05-30
 
 ### Added
+- IPv6 Router Advertisements / SLAAC (lot 2 of IPv6 support). MurOS can now
+  act as the IPv6 router for a LAN interface via radvd: it advertises a /64
+  prefix derived from the interface's own IPv6 address so clients
+  autoconfigure an address and default route (SLAAC). Optional RDNSS
+  (advertise the firewall as IPv6 resolver) and the M/O flags to hand off
+  to DHCPv6. Managed from a new card on the DHCP services page (it is the
+  IPv6 counterpart of the IPv4 DHCP server). radvd ships as a held daemon,
+  started only when Router Advertisements are enabled, and the config is
+  reconciled at boot once the LAN interface is up. IPv6 forwarding is
+  enabled automatically when RA is on. New /api/ipv6/ra endpoints.
+
+## [v0.9.0-rc28] - 2026-05-30
+
+### Added
 - CI regression coverage for the per-service config generators. The
   backend pytest job now exercises the rendering path of WireGuard (VPN),
   SNMP, NTP (chrony), DHCP (Kea) and DNS (Unbound) on every push and pull

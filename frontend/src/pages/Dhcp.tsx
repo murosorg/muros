@@ -12,6 +12,7 @@ import {
   type DhcpStaticLeaseInput,
   type DhcpStatus,
   type Interface,
+  type RaConfig,
 } from '../lib/api'
 import PageHeader from '../components/PageHeader'
 import CardHeader from '../components/CardHeader'
@@ -21,6 +22,7 @@ import EmptyState from '../components/EmptyState'
 import ApplyServiceButton from '../components/ApplyServiceButton'
 import { isDirty } from '../lib/dirty'
 import { ErrorBlock, SuccessBlock } from '../components/Alerts'
+import { toast } from '../components/Toast'
 import { ServiceStatusInline, type ServiceState } from '../components/ServiceStatusLine'
 import { useConfirm } from '../components/ConfirmModal'
 import { Network } from 'lucide-react'
@@ -394,6 +396,8 @@ export default function DhcpPage() {
             </div>
           )}
         </section>
+
+        <RaCard />
       </div>
 
       <PoolModal
@@ -416,6 +420,98 @@ export default function DhcpPage() {
 
       <ConfirmHost />
     </div>
+  )
+}
+
+// IPv6 Router Advertisements (radvd) - the IPv6 counterpart of the DHCP
+// server. The box advertises a SLAAC prefix derived from the LAN
+// interface's own IPv6 address so clients autoconfigure v6.
+function RaCard() {
+  const [ra, setRa] = useState<RaConfig | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const load = () => api.ipv6.getRa().then(setRa).catch((e) => setError(String(e)))
+  useEffect(() => { void load() }, [])
+
+  const save = async (next: RaConfig) => {
+    setBusy(true); setError(null)
+    try {
+      const res = await api.ipv6.setRa({
+        enabled: next.enabled,
+        interface: next.interface,
+        managed: next.managed,
+        other_config: next.other_config,
+        advertise_dns: next.advertise_dns,
+      })
+      setRa(res)
+      toast.success('IPv6 Router Advertisements updated')
+    } catch (e) { setError(String(e)); void load() } finally { setBusy(false) }
+  }
+
+  if (!ra) return null
+  return (
+    <section className="card">
+      <CardHeader title="IPv6 Router Advertisements (SLAAC)" />
+      <p className="text-sm text-gray-600 mb-3">
+        Advertise the firewall as the IPv6 router so LAN clients autoconfigure
+        an IPv6 address (SLAAC). The prefix is taken from the selected
+        interface's own IPv6 address. This is the IPv6 counterpart of the DHCP
+        server above.
+      </p>
+      {error && <ErrorBlock message={error} />}
+      <div className="flex items-center gap-2 mb-3">
+        <Toggle checked={ra.enabled}
+          onChange={(v) => save({ ...ra, enabled: v })} disabled={busy} />
+        <span className="text-sm font-medium">Enabled</span>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <label className="block">
+          <div className="text-xs font-medium text-gray-600 mb-1">LAN interface</div>
+          <select className="input" value={ra.interface || ''} disabled={busy}
+            onChange={(e) => setRa({ ...ra, interface: e.target.value || null })}>
+            <option value="">Select an interface...</option>
+            {ra.available_interfaces.map((n) => <option key={n} value={n}>{n}</option>)}
+          </select>
+          {ra.available_interfaces.length === 0 && (
+            <div className="text-xs text-amber-700 mt-1">
+              No interface has an IPv6 address yet. Assign one on the Network page.
+            </div>
+          )}
+        </label>
+        <div>
+          <div className="text-xs font-medium text-gray-600 mb-1">Advertised prefix</div>
+          <div className="font-mono text-sm text-gray-900 py-2">
+            {ra.prefix || <span className="text-gray-500">none (no IPv6 on this interface)</span>}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-3 space-y-2">
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" checked={ra.advertise_dns} disabled={busy}
+            onChange={(e) => setRa({ ...ra, advertise_dns: e.target.checked })} />
+          <span className="text-sm">Advertise this firewall as IPv6 DNS resolver (RDNSS)</span>
+        </label>
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" checked={ra.managed} disabled={busy}
+            onChange={(e) => setRa({ ...ra, managed: e.target.checked })} />
+          <span className="text-sm">Managed (M): clients get their address via DHCPv6 instead of SLAAC</span>
+        </label>
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" checked={ra.other_config} disabled={busy}
+            onChange={(e) => setRa({ ...ra, other_config: e.target.checked })} />
+          <span className="text-sm">Other config (O): clients fetch extra options via DHCPv6</span>
+        </label>
+      </div>
+
+      <div className="mt-4">
+        <button className="btn-apply" disabled={busy} onClick={() => save(ra)}>
+          {busy ? 'Applying...' : 'Apply'}
+        </button>
+      </div>
+    </section>
   )
 }
 

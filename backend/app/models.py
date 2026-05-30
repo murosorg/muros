@@ -441,6 +441,28 @@ class NtpConfig(Base):
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
 
+class RaConfig(Base):
+    """IPv6 Router Advertisements (radvd) for the LAN.
+
+    When enabled, MurOS advertises itself as the IPv6 router on the chosen
+    LAN interface so clients autoconfigure an address (SLAAC) and a default
+    route. The advertised /64 prefix is derived from the interface's own
+    IPv6 address. The M (managed) and O (other-config) flags tell clients
+    whether to also use DHCPv6. This is the IPv6 counterpart of the DHCP
+    server (which only serves IPv4).
+    """
+    __tablename__ = "ra_config"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    interface: Mapped[str | None] = mapped_column(String(32))
+    # M flag: clients obtain their address via DHCPv6 instead of SLAAC.
+    managed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # O flag: clients use DHCPv6 for "other" info (e.g. DNS) on top of SLAAC.
+    other_config: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Advertise the firewall as the IPv6 recursive resolver (RDNSS option).
+    advertise_dns: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+
 class NatRule(Base):
     __tablename__ = "nat_rules"
 

@@ -246,6 +246,16 @@ export type SetupState = {
   interfaces: SetupInterface[]
 }
 
+export type RaConfig = {
+  enabled: boolean
+  interface: string | null
+  managed: boolean
+  other_config: boolean
+  advertise_dns: boolean
+  prefix: string | null
+  available_interfaces: string[]
+}
+
 export type LoginResult = {
   access_token?: string
   token_type: string
@@ -605,6 +615,14 @@ export const api = {
     state: () => request<SetupState>('GET', '/api/setup/state'),
     apply: (data: { wan_interface: string; lan_interface: string; lan_cidr: string }) =>
       request<SetupState>('POST', '/api/setup/apply', data),
+  },
+
+  ipv6: {
+    getRa: () => request<RaConfig>('GET', '/api/ipv6/ra'),
+    setRa: (data: {
+      enabled: boolean; interface: string | null; managed: boolean
+      other_config: boolean; advertise_dns: boolean
+    }) => request<RaConfig>('PUT', '/api/ipv6/ra', data),
   },
 
   network: {
