@@ -181,13 +181,6 @@ class SshKeyAddResult(BaseModel):
     message: str | None = None
 
 
-class ListenAddressOut(BaseModel):
-    label: str
-    address: str
-    interface: str
-    loopback: bool
-
-
 # --- HTTP / nginx config ---
 
 class HttpConfigIn(BaseModel):

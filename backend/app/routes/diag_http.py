@@ -209,26 +209,6 @@ def http_apply(skip_rollback: bool = False, db: Session = Depends(get_db)):
     }
 
 
-@http_router.post("/confirm-apply/{pending_id}")
-def http_confirm_apply(pending_id: int):
-    from app import pending_apply
-    try:
-        entry = pending_apply.confirm(pending_id)
-        return {"status": entry.status, "id": entry.id}
-    except ValueError as exc:
-        raise HTTPException(404, str(exc))
-
-
-@http_router.post("/rollback-apply/{pending_id}")
-def http_rollback_apply(pending_id: int):
-    from app import pending_apply
-    try:
-        entry = pending_apply.rollback_now(pending_id)
-        return {"status": entry.status, "id": entry.id, "error": entry.rollback_error}
-    except ValueError as exc:
-        raise HTTPException(404, str(exc))
-
-
 
 
 

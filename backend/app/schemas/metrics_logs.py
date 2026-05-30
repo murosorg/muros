@@ -5,7 +5,7 @@ import ipaddress
 import re
 from datetime import datetime
 from typing import Annotated, Literal
-from pydantic import AfterValidator, BaseModel, ConfigDict
+from pydantic import AfterValidator, BaseModel
 
 Action = Literal["accept", "drop", "reject"]
 Chain = Literal["input", "forward", "output"]
@@ -92,36 +92,6 @@ class MetricsSummaryOut(BaseModel):
     disks: list[DiskInfoOut]
     interfaces: list[NetInterfaceStatsOut]
     conntrack: ConntrackInfoOut
-
-
-# --- Metrics history ---
-class MetricSamplePoint(BaseModel):
-    timestamp: datetime
-    cpu_usage_percent: float
-    memory_used_percent: float
-    memory_used_bytes: int
-    conntrack_current: int
-    conntrack_used_percent: float
-    load_1: float
-    load_5: float
-    load_15: float
-    model_config = ConfigDict(from_attributes=True)
-
-
-class InterfaceSamplePoint(BaseModel):
-    timestamp: datetime
-    interface_name: str
-    rx_bytes: int
-    tx_bytes: int
-    rx_packets: int
-    tx_packets: int
-    model_config = ConfigDict(from_attributes=True)
-
-
-class MetricsHistoryOut(BaseModel):
-    samples: list[MetricSamplePoint]
-    interfaces: dict[str, list[InterfaceSamplePoint]]
-    retention_hours: int
 
 
 # --- Logs ---

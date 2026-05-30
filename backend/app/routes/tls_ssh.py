@@ -90,26 +90,6 @@ def tls_regenerate(_data: schemas.TlsRegenerateIn | None = None):
     }
 
 
-@tls_router.post("/confirm-apply/{pending_id}")
-def tls_confirm_apply(pending_id: int):
-    from app import pending_apply
-    try:
-        entry = pending_apply.confirm(pending_id)
-        return {"status": entry.status, "id": entry.id}
-    except ValueError as exc:
-        raise HTTPException(404, str(exc))
-
-
-@tls_router.post("/rollback-apply/{pending_id}")
-def tls_rollback_apply(pending_id: int):
-    from app import pending_apply
-    try:
-        entry = pending_apply.rollback_now(pending_id)
-        return {"status": entry.status, "id": entry.id, "error": entry.rollback_error}
-    except ValueError as exc:
-        raise HTTPException(404, str(exc))
-
-
 # --- SSH config ---
 ssh_router = APIRouter(prefix="/api/ssh", tags=["ssh"], dependencies=_auth_dep)
 
@@ -236,26 +216,6 @@ def ssh_apply(skip_rollback: bool = False, db: Session = Depends(get_db)):
         "pending_apply_id": pending_id,
         "rollback_timeout_seconds": 10 if pending_id else None,
     }
-
-
-@ssh_router.post("/confirm-apply/{pending_id}")
-def ssh_confirm_apply(pending_id: int):
-    from app import pending_apply
-    try:
-        entry = pending_apply.confirm(pending_id)
-        return {"status": entry.status, "id": entry.id}
-    except ValueError as exc:
-        raise HTTPException(404, str(exc))
-
-
-@ssh_router.post("/rollback-apply/{pending_id}")
-def ssh_rollback_apply(pending_id: int):
-    from app import pending_apply
-    try:
-        entry = pending_apply.rollback_now(pending_id)
-        return {"status": entry.status, "id": entry.id, "error": entry.rollback_error}
-    except ValueError as exc:
-        raise HTTPException(404, str(exc))
 
 
 @ssh_router.get("/keys", response_model=list[schemas.SshAuthorizedKey])

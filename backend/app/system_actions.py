@@ -112,48 +112,6 @@ _SERVICE_CATALOG = [
 ]
 
 
-def list_listen_addresses() -> list[dict]:
-    """Liste les IPs locales utilisables comme adresse d'ecoute.
-
-    Retourne pour chaque IP : label (affichable), address, interface, loopback.
-    """
-    addresses: list[dict] = [
-        {"label": "All interfaces (0.0.0.0)", "address": "0.0.0.0",
-         "interface": "*", "loopback": False},
-    ]
-    try:
-        import json as _json
-        r = subprocess.run(
-            ["ip", "-j", "addr", "show"],
-            capture_output=True, text=True, timeout=3,
-        )
-        if r.returncode == 0 and r.stdout.strip():
-            data = _json.loads(r.stdout)
-            for iface in data:
-                name = iface.get("ifname", "")
-                if name == "lo":
-                    addresses.append({
-                        "label": "127.0.0.1 (loopback)", "address": "127.0.0.1",
-                        "interface": "lo", "loopback": True,
-                    })
-                    continue
-                for addr_info in iface.get("addr_info", []):
-                    if addr_info.get("family") != "inet":
-                        continue
-                    local = addr_info.get("local")
-                    if not local:
-                        continue
-                    addresses.append({
-                        "label": f"{local} ({name})",
-                        "address": local,
-                        "interface": name,
-                        "loopback": False,
-                    })
-    except (subprocess.SubprocessError, FileNotFoundError, ValueError):
-        pass
-    return addresses
-
-
 def list_services() -> list[dict]:
     """Liste les services MurOS-geres, filtre sur ceux installes.
 

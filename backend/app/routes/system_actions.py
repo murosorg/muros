@@ -32,13 +32,6 @@ def sys_services():
     return system_actions.list_services()
 
 
-@system_actions_router.get("/listen-addresses", response_model=list[schemas.ListenAddressOut])
-def sys_listen_addresses():
-    """Liste les IPs locales utilisables comme adresse d'ecoute."""
-    from app import system_actions
-    return system_actions.list_listen_addresses()
-
-
 @system_actions_router.post("/shutdown", response_model=schemas.SystemActionResult)
 def sys_shutdown():
     from app import system_actions

@@ -129,16 +129,6 @@ class WireGuardPeerIn(BaseModel):
     enabled: bool = True
 
 
-class WireGuardQuickPeerIn(BaseModel):
-    """Minimal payload to provision a peer in one click.
-
-    Everything else is derived server-side (keys, PSK, tunnel IP,
-    keepalive, full-tunnel routing).
-    """
-    name: str = Field(min_length=1, max_length=64)
-    description: str | None = None
-
-
 class WireGuardPresharedKeyOut(BaseModel):
     # Reponse de POST /api/wireguard/psk : une cle WG generee (base64 32 octets)
     # a coller dans le champ Preshared key d'un peer (optionnel mais recommande).

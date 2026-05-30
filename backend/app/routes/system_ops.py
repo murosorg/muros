@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (c) 2026 MurOS contributors.
 """Routes HTTP de l'API MurOS (sous-module)."""
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -13,7 +13,6 @@ from app.metrics import (
     conntrack_info, cpu_cores, cpu_usage_percent, disks_info,
     interfaces_stats, load_average, memory_info, swap_info, uptime_seconds,
 )
-from app.metrics_history import RETENTION_HOURS as METRICS_RETENTION_HOURS
 
 from .network_fw import nat_router
 
@@ -104,41 +103,6 @@ def metrics_summary():
         disks=disks_info(),
         interfaces=interfaces_stats(),
         conntrack=conntrack_info(),
-    )
-
-
-@metrics_router.get("/history", response_model=schemas.MetricsHistoryOut)
-def metrics_history(hours: int = 24, db: Session = Depends(get_db)):
-    """Retourne l'historique des metriques stocke en base.
-
-    hours : fenetre temporelle (1 a la retention configuree).
-    """
-    hours = max(1, min(hours, METRICS_RETENTION_HOURS))
-    since = datetime.now(timezone.utc) - timedelta(hours=hours)
-
-    samples = (
-        db.query(models.MetricSample)
-        .filter(models.MetricSample.timestamp >= since)
-        .order_by(models.MetricSample.timestamp.asc())
-        .all()
-    )
-    iface_samples = (
-        db.query(models.InterfaceSample)
-        .filter(models.InterfaceSample.timestamp >= since)
-        .order_by(models.InterfaceSample.timestamp.asc())
-        .all()
-    )
-
-    interfaces: dict[str, list[schemas.InterfaceSamplePoint]] = {}
-    for s in iface_samples:
-        interfaces.setdefault(s.interface_name, []).append(
-            schemas.InterfaceSamplePoint.model_validate(s)
-        )
-
-    return schemas.MetricsHistoryOut(
-        samples=[schemas.MetricSamplePoint.model_validate(s) for s in samples],
-        interfaces=interfaces,
-        retention_hours=METRICS_RETENTION_HOURS,
     )
 
 

@@ -93,52 +93,6 @@ def wireguard_get_config(db: Session = Depends(get_db)):
     return cfg
 
 
-@wireguard_router.post("/peers/quick", response_model=schemas.WireGuardPeerExport)
-def wireguard_quick_create_peer(
-    data: schemas.WireGuardQuickPeerIn,
-    db: Session = Depends(get_db),
-):
-    """One-click peer creation. Caller only provides the peer name.
-
-    Backend allocates the tunnel IP, generates the keypair and PSK, sets
-    PersistentKeepalive, persists the peer, applies the server config so
-    the new peer is reachable immediately, and returns the ready-to-paste
-    client config (with the private key inlined) plus a QR code.
-    """
-    from app import wireguard, ha_sync
-    try:
-        peer, peer_private_key = wireguard.quick_create_peer(
-            db, name=data.name.strip(), description=data.description,
-        )
-    except ValueError as exc:
-        raise HTTPException(400, str(exc))
-    except RuntimeError as exc:
-        raise HTTPException(500, str(exc))
-
-    # Auto-apply so the kernel picks up the new peer without an extra
-    # click. This matches the "minimum friction" promise.
-    cfg = _get_wg_config(db)
-    peers = db.query(models.WireGuardPeer).order_by(models.WireGuardPeer.id).all()
-    try:
-        wireguard.apply_config(cfg, peers)
-    except (RuntimeError, ValueError):
-        # The peer is saved either way: the operator can retry Apply.
-        pass
-    # Make sure the auto-injected forward/masquerade nftables rules
-    # are loaded too, otherwise the client tunnel comes up but has no
-    # route to the internet.
-    _refresh_nftables_for_vpn(db, "wireguard-quick-peer")
-    ha_sync.maybe_auto_push(db, triggered_by="wireguard-quick-peer")
-
-    text = wireguard.render_peer_client_config(cfg, peer, peer_private_key)
-    qr = None
-    try:
-        qr = wireguard.render_peer_qr_svg(text)
-    except RuntimeError:
-        pass
-    return {"config_text": text, "qr_svg": qr}
-
-
 @wireguard_router.put("/config", response_model=schemas.WireGuardConfigOut)
 def wireguard_update_config(data: schemas.WireGuardConfigIn, db: Session = Depends(get_db)):
     from app import wireguard
@@ -419,30 +373,6 @@ def ipsec_apply(db: Session = Depends(get_db)):
 @ipsec_router.get("/pending")
 def ipsec_pending(db: Session = Depends(get_db)):
     return service_dirty.get_state(db, "ipsec")
-
-
-@ipsec_router.post("/service/start")
-def ipsec_service_start():
-    """Start the strongswan daemon now, without touching the saved
-    connection list. Counterpart to /service/stop. The Apply endpoint
-    already handles enable/disable based on the connection count; these
-    two routes expose the bare systemctl primitives to the UI for
-    operators that want explicit control."""
-    from app import ipsec
-    try:
-        return ipsec.start_service()
-    except RuntimeError as exc:
-        raise HTTPException(500, str(exc))
-
-
-@ipsec_router.post("/service/stop")
-def ipsec_service_stop():
-    """Stop the strongswan daemon now. Active SAs are torn down."""
-    from app import ipsec
-    try:
-        return ipsec.stop_service()
-    except RuntimeError as exc:
-        raise HTTPException(500, str(exc))
 
 
 def _cert_to_out(c: models.IpsecCert) -> dict:

@@ -231,57 +231,6 @@ def install_packages() -> dict:
     }
 
 
-# --- Service control (start / stop) ---
-#
-# Apply already enables and starts strongswan when there is at least one
-# active connection, and disables it when none. These helpers expose the
-# same systemctl primitives on demand from the UI so the operator can
-# bring strongswan up or down without touching the connection list. They
-# try both possible unit names (strongswan-starter on Debian 12+,
-# strongswan on Debian 11) for portability.
-
-def start_service() -> dict:
-    """Start strongswan now. Returns the unit that responded."""
-    if not _which("systemctl"):
-        raise RuntimeError("systemctl is not available on this system.")
-    last_err = ""
-    for svc in ("strongswan-starter", "strongswan"):
-        r = subprocess.run(
-            ["systemctl", "start", svc],
-            capture_output=True, text=True, timeout=15,
-        )
-        if r.returncode == 0:
-            return {"service": svc, "message": f"{svc} started."}
-        last_err = (r.stderr or r.stdout).strip()[:400]
-    raise RuntimeError(
-        f"Could not start strongswan (no known unit responded): {last_err}"
-    )
-
-
-def stop_service() -> dict:
-    """Stop strongswan now. Stops every known unit name that exists so we
-    are sure the daemon is down even when both flavours of the package
-    are present."""
-    if not _which("systemctl"):
-        raise RuntimeError("systemctl is not available on this system.")
-    stopped: list[str] = []
-    last_err = ""
-    for svc in IPSEC_SERVICES:
-        r = subprocess.run(
-            ["systemctl", "stop", svc],
-            capture_output=True, text=True, timeout=15,
-        )
-        if r.returncode == 0:
-            stopped.append(svc)
-        else:
-            last_err = (r.stderr or r.stdout).strip()[:400]
-    if not stopped:
-        raise RuntimeError(
-            f"Could not stop strongswan (no known unit responded): {last_err}"
-        )
-    return {"service": stopped[0], "message": f"{', '.join(stopped)} stopped."}
-
-
 # --- Rendu de la conf swanctl ---
 
 def render_swanctl_conf(connections: list, certs_by_id: dict | None = None) -> str:

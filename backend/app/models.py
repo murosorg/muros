@@ -19,34 +19,6 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-class MetricSample(Base):
-    __tablename__ = "metric_samples"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    timestamp: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow, index=True)
-    cpu_usage_percent: Mapped[float] = mapped_column(default=0.0)
-    memory_used_percent: Mapped[float] = mapped_column(default=0.0)
-    memory_used_bytes: Mapped[int] = mapped_column(Integer, default=0)
-    conntrack_current: Mapped[int] = mapped_column(Integer, default=0)
-    conntrack_used_percent: Mapped[float] = mapped_column(default=0.0)
-    load_1: Mapped[float] = mapped_column(default=0.0)
-    load_5: Mapped[float] = mapped_column(default=0.0)
-    load_15: Mapped[float] = mapped_column(default=0.0)
-
-
-class InterfaceSample(Base):
-    __tablename__ = "interface_samples"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    timestamp: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow, index=True)
-    interface_name: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
-    rx_bytes: Mapped[int] = mapped_column(Integer, default=0)
-    tx_bytes: Mapped[int] = mapped_column(Integer, default=0)
-    rx_packets: Mapped[int] = mapped_column(Integer, default=0)
-    tx_packets: Mapped[int] = mapped_column(Integer, default=0)
-
-
-
 class User(Base):
     __tablename__ = "users"
 

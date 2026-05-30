@@ -10,7 +10,7 @@ from app.apply import manager as apply_manager
 from app.auth import current_user
 from app.compiler import compile_ruleset
 from app.db import SessionLocal, get_db
-from app.routing import apply_all_routes, apply_route
+from app.routing import apply_route
 from app.system import list_system_interfaces
 
 _auth_dep = [Depends(current_user)]
@@ -910,12 +910,5 @@ def delete_route(route_id: int, db: Session = Depends(get_db)):
         apply_route(route, "del")
     db.delete(route)
     db.commit()
-
-
-@routes_router.post("/reapply", response_model=schemas.StaticRouteOut | None)
-def reapply_routes(db: Session = Depends(get_db)):
-    """Reapplique toutes les routes activees (utile apres un reboot ou un import)."""
-    apply_all_routes(db)
-    return None
 
 

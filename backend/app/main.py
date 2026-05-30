@@ -28,7 +28,6 @@ from app.routes import (
     setup_router,
     ra_router,
 )
-from app.metrics_history import start as start_metrics_collector, stop as stop_metrics_collector
 from app.routing import apply_all_routes, enable_ip_forwarding
 from app.seed import (
     seed_root_user,
@@ -107,7 +106,6 @@ async def lifespan(app: FastAPI):
                 log.info("service_dirty reconciled at startup : %s", reconciled)
         except Exception:
             log.exception("service_dirty reconcile_on_startup failed (non blocking)")
-    start_metrics_collector()
     # Rearm rollback timers for any pending_apply rows left over from a
     # prior process: nginx/sshd/tls/interface/route. Replaces the old
     # polling watcher thread, the unified rollback manager (app.rollback)
@@ -130,7 +128,6 @@ async def lifespan(app: FastAPI):
     log.info("MurOS API ready")
     yield
     log.info("MurOS API shutting down")
-    stop_metrics_collector()
 
 
 app = FastAPI(title="MurOS API", version=__version__, lifespan=lifespan)
