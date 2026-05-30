@@ -4,7 +4,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-## [v0.9.0-rc95] - 2026-05-30
+## [v0.9.0-rc96] - 2026-05-30
 
 ### Added
 - Dynamic DNS client. A new "Dynamic DNS" page (Network section) keeps
