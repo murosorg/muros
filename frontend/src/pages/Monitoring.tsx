@@ -155,11 +155,11 @@ export default function Monitoring() {
           <ErrorBlock message={error} />
         )}
 
-        {/* Service inventory top-left, storage and the MurOS version /
-            changelog widget filling the space next to it. This block
-            answers "what is running, where is the space going, and am I
-            on the latest version?" first. The raw resource KPIs (CPU,
-            memory, conntrack, load) sit below it. */}
+        {/* Service inventory top-left, with the MurOS version / changelog
+            widget on top of storage filling the space next to it. This
+            block answers "what is running, am I on the latest version,
+            and where is the space going?" first. The raw resource KPIs
+            (CPU, memory, conntrack, load) sit below it. */}
         {!data && !error && <LoadingState text="Loading metrics..." />}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
@@ -173,6 +173,8 @@ export default function Monitoring() {
           </section>
 
           <div className="lg:col-span-2 space-y-4">
+            <VersionCard />
+
             {data && (
               <section>
                 <h2 className="text-sm font-semibold mb-2 text-gray-900">Storage</h2>
@@ -211,8 +213,6 @@ export default function Monitoring() {
                 </div>
               </section>
             )}
-
-            <VersionCard />
           </div>
         </div>
 
