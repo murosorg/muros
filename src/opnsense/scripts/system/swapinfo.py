@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!/usr/bin/python3
 
 """
     Copyright (c) 2024 Deciso B.V.
@@ -24,24 +24,29 @@
     CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
     ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
     POSSIBILITY OF SUCH DAMAGE.
+
+    --------------------------------------------------------------------------------------
+    report swap usage (Linux, read from /proc/swaps)
 """
 
-import subprocess
 import json
-
-swapinfo_output = subprocess.check_output("/usr/sbin/swapinfo -k", shell=True).decode('utf-8')
 
 swap_data = []
 
-for line in swapinfo_output.splitlines():
-    if '/dev/' in line:
+try:
+    with open('/proc/swaps') as handle:
+        lines = handle.read().splitlines()
+    # columns: Filename Type Size Used Priority (sizes already in KiB)
+    for line in lines[1:]:
         parts = line.split()
-        swap_item = {
-            "device": parts[0],
-            "total": parts[1],
-            "used": parts[2]
-        }
-        swap_data.append(swap_item)
+        if len(parts) >= 4:
+            swap_data.append({
+                "device": parts[0],
+                "total": parts[2],
+                "used": parts[3]
+            })
+except FileNotFoundError:
+    pass
 
 result = {"swap": swap_data}
 
