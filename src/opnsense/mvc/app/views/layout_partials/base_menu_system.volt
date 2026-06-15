@@ -16,7 +16,7 @@
             <div id="mainmenu" class="panel" style="border:0px">
                 <div class="panel list-group" style="border:0px">
                     {% for topMenuItem in menuSystem %}
-                        {% if topMenuItem.Children|length >= 1 %}
+                        {% if topMenuItem.Children|length >= 1 and topMenuItem.Url == '' %}
                             <a href="#{{ topMenuItem.Id }}" class="{{ topMenuItem.LinkClass }}" data-toggle="collapse" data-parent="#mainmenu">
                                 <span class="{{ topMenuItem.CssClass }} __iconspacer"></span><span style="word-break: keep-all">{{ topMenuItem.VisibleName }}</span>
                             </a>

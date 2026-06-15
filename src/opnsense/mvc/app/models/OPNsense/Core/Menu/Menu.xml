@@ -1,15 +1,9 @@
 <menu>
-    <Lobby order="10" cssClass="fa fa-laptop">
-        <Dashboard order="0" url="/ui/core/dashboard" cssClass="fa fa-dashboard fa-fw">
-            <Args url="/index.php*" visibility="hidden"/>
-            <Root url="/" visibility="hidden"/>
-            <RootArgs url="/?*" visibility="hidden"/>
-        </Dashboard>
-        <License order="1" url="/ui/core/license" cssClass="fa fa-balance-scale fa-fw"/>
-        <Password order="2" url="/system_usermanager_passwordmg.php" cssClass="fa fa-key fa-fw">
-            <Edit url="/system_usermanager_passwordmg.php*" visibility="hidden"/>
-        </Password>
-        <Logout order="3" url="/index.php?logout" cssClass="fa fa-sign-out fa-fw"/>
+    <Lobby order="10" url="/ui/core/dashboard" cssClass="fa fa-laptop">
+        <Args url="/index.php*" visibility="hidden"/>
+        <Root url="/" visibility="hidden"/>
+        <RootArgs url="/?*" visibility="hidden"/>
+        <DashboardPage url="/ui/core/dashboard*" visibility="hidden"/>
     </Lobby>
     <Reporting order="15" cssClass="fa fa-area-chart">
         <Traffic order="20" url="/ui/diagnostics/traffic" cssClass="fa fa-line-chart fa-fw"/>
