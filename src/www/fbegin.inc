@@ -44,8 +44,8 @@ $aclObj = new \OPNsense\Core\ACL();
                 <span class="muros-version">v<?= html_safe(product::getInstance()->version()) ?></span>
             </div>
             <div class="muros-user-row">
-                <span class="muros-identity"><?= html_safe($_SESSION['Username'] ?? '') ?>@pam</span>
-                <a class="muros-logout" href="/index.php?logout">Logout</a>
+                <span class="muros-identity"><span class="muros-user"><?= html_safe(explode('@', $_SESSION['Username'] ?? '')[0]) ?></span> <span class="muros-host">@<?= html_safe($config['system']['hostname'] ?? '') ?></span></span>
+                <a class="muros-logout" href="/index.php?logout"><i class="fa fa-sign-out"></i> Logout</a>
             </div>
         </div>
         <div class="row">

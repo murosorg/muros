@@ -7418,7 +7418,6 @@ div[data-for*=help_for] {
   margin-top: 16px;
 }
 .muros-identity {
-  color: #cfd9e6;
   font-family: "Courier New", monospace;
   font-size: 13px;
   min-width: 0;
@@ -7426,11 +7425,16 @@ div[data-for*=help_for] {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.muros-identity .muros-user { color: #e6ebf2; }
+.muros-identity .muros-host { color: #8a99ad; }
 a.muros-logout {
   color: #9fb0c4 !important;
   font-size: 13px;
   flex-shrink: 0;
+  text-decoration: none;
 }
+a.muros-logout:hover { color: #F5C518 !important; }
+a.muros-logout i { margin-right: 5px; }
 a.muros-logout:hover, a.muros-logout:focus {
   color: #ffffff !important;
   text-decoration: none;
