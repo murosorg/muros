@@ -144,6 +144,10 @@ function service_status($service)
         return true;
     }
 
+    if (!empty($service['systemd'])) {
+        return mwexecf('/usr/bin/systemctl --quiet is-active %s', [$service['systemd']], true) == 0;
+    }
+
     if (isset($service['pidfile'])) {
         return isvalidpid($service['pidfile']);
     }
@@ -166,6 +170,11 @@ function service_message($service)
     if (!empty($service['nocheck'])) {
         /* do not expose pid / may not exist */
         $status = true;
+    } elseif (!empty($service['systemd'])) {
+        $status = mwexecf('/usr/bin/systemctl --quiet is-active %s', [$service['systemd']], true) == 0;
+        if ($status) {
+            $pid = ' as pid ' . trim((string)@shell_exec(sprintf('/usr/bin/systemctl show -p MainPID --value %s', escapeshellarg($service['systemd']))));
+        }
     } elseif (isset($service['pidfile'])) {
         $status = isvalidpid($service['pidfile']);
         if ($status) {
@@ -212,7 +221,9 @@ function service_control_start($name, $extras)
         return $service;
     }
 
-    if (isset($service['configd']['start'])) {
+    if (isset($service['systemd'])) {
+        mwexecf('/usr/bin/systemctl start %s', [$service['systemd']]);
+    } elseif (isset($service['configd']['start'])) {
         foreach ($service['configd']['start'] as $cmd) {
             configd_run($cmd);
         }
@@ -244,7 +255,9 @@ function service_control_stop($name, $extras)
         return $service;
     }
 
-    if (isset($service['configd']['stop'])) {
+    if (isset($service['systemd'])) {
+        mwexecf('/usr/bin/systemctl stop %s', [$service['systemd']]);
+    } elseif (isset($service['configd']['stop'])) {
         foreach ($service['configd']['stop'] as $cmd) {
             configd_run($cmd);
         }
@@ -273,7 +286,9 @@ function service_control_restart($name, $extras)
         return $service;
     }
 
-    if (isset($service['configd']['restart'])) {
+    if (isset($service['systemd'])) {
+        mwexecf('/usr/bin/systemctl restart %s', [$service['systemd']]);
+    } elseif (isset($service['configd']['restart'])) {
         foreach ($service['configd']['restart'] as $cmd) {
             configd_run($cmd);
         }
