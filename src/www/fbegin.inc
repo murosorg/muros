@@ -55,7 +55,7 @@ $aclObj = new \OPNsense\Core\ACL();
 <?php
                           foreach($menuSystem as $topMenuItem): ?>
 <?php
-                          if (count($topMenuItem->Children) >= 1): ?>
+                          if (count($topMenuItem->Children) >= 1 && $topMenuItem->Url == ''): ?>
                             <a href="#<?=$topMenuItem->Id;?>" class="<?= $topMenuItem->LinkClass; ?>" data-toggle="collapse" data-parent="#mainmenu"><span class="<?=$topMenuItem->CssClass;?> __iconspacer"></span><span style="word-break: keep-all"><?= html_safe($topMenuItem->VisibleName) ?></span></a>
                             <div class="collapse <?=$topMenuItem->Selected ? 'active-menu in' :'';?>" id="<?=$topMenuItem->Id;?>">
 <?php
