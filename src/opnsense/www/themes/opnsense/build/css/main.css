@@ -7376,19 +7376,56 @@ div[data-for*=help_for] {
   border: 0 !important;
 }
 
-/* brand block at the top of the left panel */
+/* brand block at the top of the left panel: compact, two rows
+   (logo + version, then identity + logout) to avoid empty space */
 .muros-brand {
-  padding: 18px 16px 14px 18px;
+  padding: 12px 14px 11px 16px;
   background: #0f1d33;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
-.muros-brand .muros-brand-logo { display: block; line-height: 0; }
-.muros-brand .muros-brand-logo img { height: 34px; width: auto; display: block; }
-.muros-identity {
+.muros-brand-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.muros-brand .muros-brand-logo { display: inline-flex; line-height: 0; }
+.muros-brand .muros-brand-logo img { height: 30px; width: auto; display: block; }
+.muros-version {
+  font-family: "Courier New", monospace;
+  font-size: 11px;
+  line-height: 1;
+  color: #aebbcd;
+  background: #16263f;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 3px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+.muros-user-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   margin-top: 9px;
-  color: #9fb0c4;
+}
+.muros-identity {
+  color: #cfd9e6;
+  font-family: "Courier New", monospace;
   font-size: 12px;
-  letter-spacing: 0.3px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+a.muros-logout {
+  color: #9fb0c4 !important;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+a.muros-logout:hover, a.muros-logout:focus {
+  color: #ffffff !important;
+  text-decoration: none;
 }
 
 /* menu items on the night-blue panel */

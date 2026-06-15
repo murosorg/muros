@@ -1,9 +1,15 @@
 <aside id="navigation" class="page-side col-xs-12 col-sm-3 col-lg-2 hidden-xs">
     <div class="muros-brand">
-        <a class="muros-brand-logo" href="/">
-            <img src="{{ cache_safe('/ui/themes/%s/build/images/default-logo.svg' | format(theme_name)) }}" alt="MurOS"/>
-        </a>
-        <div class="muros-identity">{{session_username}}@pam</div>
+        <div class="muros-brand-row">
+            <a class="muros-brand-logo" href="/">
+                <img src="{{ cache_safe('/ui/themes/%s/build/images/default-logo.svg' | format(theme_name)) }}" alt="MurOS"/>
+            </a>
+            <span class="muros-version">v{{ product_version|default('') }}</span>
+        </div>
+        <div class="muros-user-row">
+            <span class="muros-identity">{{session_username}}@pam</span>
+            <a class="muros-logout" href="/index.php?logout">Logout</a>
+        </div>
     </div>
     <div class="row">
         <nav class="page-side-nav">
