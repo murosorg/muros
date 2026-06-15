@@ -244,7 +244,7 @@
         <div class="collapse navbar-collapse">
           <ul class="nav navbar-nav navbar-right">
             <li id="menu_messages">
-              <span class="navbar-text">{{session_username}}@{{system_hostname}}.{{system_domain}}</span>
+              <span class="navbar-text">{{session_username}}@pam</span>
             </li>
             <li>
               <span class="navbar-text" style="margin-left: 0">

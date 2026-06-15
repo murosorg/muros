@@ -416,10 +416,8 @@ function get_menu_user()
     global $config;
 
     return sprintf(
-      '<span class="navbar-text">%s@%s.%s</span>',
-      $_SESSION['Username'],
-      $config['system']['hostname'],
-      $config['system']['domain']
+      '<span class="navbar-text">%s@pam</span>',
+      $_SESSION['Username']
     );
 }
 
