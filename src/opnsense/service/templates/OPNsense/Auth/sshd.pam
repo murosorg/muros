@@ -1,24 +1,17 @@
 #
-# PAM configuration for the "sshd" service
+# MurOS PAM configuration for the "sshd" service (Linux-PAM)
 #
 
 # auth
-#auth		sufficient	pam_krb5.so		no_warn try_first_pass
-#auth		sufficient	pam_ssh.so		no_warn try_first_pass
-auth		sufficient	pam_opnsense.so		authtok_prompt=Password:
-auth		required	pam_unix.so		no_warn try_first_pass authtok_prompt=Password:
+auth		sufficient	pam_exec.so	expose_authtok quiet /usr/bin/php /usr/local/libexec/opnsense-pam-exec
+auth		required	pam_unix.so	try_first_pass nullok
 
 # account
 account		required	pam_nologin.so
-#account	required	pam_krb5.so
-account		required	pam_login_access.so
-account		sufficient	pam_opnsense.so
 account		required	pam_unix.so
 
 # session
-#session	optional	pam_ssh.so		want_agent
-session		required	pam_permit.so
+session		required	pam_unix.so
 
 # password
-#password	sufficient	pam_krb5.so		no_warn try_first_pass
-password	required	pam_unix.so		no_warn try_first_pass
+password	required	pam_unix.so	try_first_pass

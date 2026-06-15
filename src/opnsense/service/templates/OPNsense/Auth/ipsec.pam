@@ -1,5 +1,10 @@
+#
+# MurOS PAM configuration for the "ipsec" service (Linux-PAM)
+#
+
 # auth
-auth		sufficient	pam_opnsense.so
+auth		sufficient	pam_exec.so	expose_authtok quiet /usr/bin/php /usr/local/libexec/opnsense-pam-exec
+auth		required	pam_deny.so
 
 # account
-account		sufficient	pam_opnsense.so
+account		required	pam_permit.so
