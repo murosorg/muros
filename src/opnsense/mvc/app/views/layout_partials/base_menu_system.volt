@@ -7,8 +7,8 @@
             <span class="muros-version">v{{ product_version|default('') }}</span>
         </div>
         <div class="muros-user-row">
-            <span class="muros-identity">{{session_username}}@pam</span>
-            <a class="muros-logout" href="/index.php?logout">Logout</a>
+            <span class="muros-identity"><span class="muros-user">{{ session_user_display }}</span> <span class="muros-host">@{{ system_hostname }}</span></span>
+            <a class="muros-logout" href="/index.php?logout"><i class="fa fa-sign-out"></i> Logout</a>
         </div>
     </div>
     <div class="row">

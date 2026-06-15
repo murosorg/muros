@@ -442,6 +442,9 @@ class ControllerBase extends ControllerRoot
 
         // info about the current user and box
         $this->view->session_username = !empty($_SESSION['Username']) ? $_SESSION['Username'] : '(unknown)';
+        // username without the authentication realm suffix (e.g. "root@pam" -> "root")
+        $this->view->session_user_display = !empty($_SESSION['Username'])
+            ? explode('@', $_SESSION['Username'])[0] : '(unknown)';
         $this->view->system_hostname = $cnf->object()->system->hostname;
         $this->view->system_domain = $cnf->object()->system->domain;
 
