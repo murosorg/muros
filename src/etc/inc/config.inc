@@ -47,9 +47,10 @@ final class product
     {
         self::$data = json_decode(file_get_contents('/usr/local/opnsense/version/core'), true);
 
-        /* boot detection */
+        /* boot detection: read-only probe of the shared lock so the web user
+           does not need write access to the boot marker. */
         self::$data['product_booting'] = false;
-        $fp = fopen('/var/run/booting', 'a+e');
+        $fp = @fopen('/var/run/booting', 'r');
         if ($fp) {
             self::$data['product_booting'] = !flock($fp, LOCK_SH | LOCK_NB);
             fclose($fp);
