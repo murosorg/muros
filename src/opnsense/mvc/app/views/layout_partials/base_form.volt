@@ -74,9 +74,7 @@
             {%  if not section['type'] and (fields['advanced']|default(false) or fields['help']|default(false)) %}
             <tr>
                 <td>{% if fields['advanced']|default(false) %}<a href="#"><i class="fa fa-toggle-off text-danger" id="show_advanced_formDialog{{base_form_id}}"></i></a> <small>{{ lang._('advanced mode') }}</small>{% endif %}</td>
-                <td colspan="2" style="text-align:right;">
-                    {% if fields['help']|default(false) %}<small>{{ lang._('full help') }}</small> <a href="#"><i class="fa fa-toggle-off text-danger" id="show_all_help_formDialog{{base_form_id}}"></i></a>{% endif %}
-                </td>
+                <td colspan="2" style="text-align:right;"></td>
             </tr>
             {% endif %}
             {% for field in section['children']%}

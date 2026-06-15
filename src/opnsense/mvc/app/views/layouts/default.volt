@@ -105,7 +105,6 @@
                 addMultiSelectClearUI();
                 initGlobalOpenShortcuts();
 
-                updateSystemStatus();
 
                 // Register collapsible table headers
                 $('.table').on('click', 'thead', function(event) {
@@ -124,67 +123,6 @@
                     }
                 });
 
-                // hook in live menu search
-                $.ajax("/api/core/menu/search/", {
-                    type: 'get',
-                    cache: false,
-                    dataType: "json",
-                    data: {},
-                    error : function (jqXHR, textStatus, errorThrown) {
-                        console.log('menu.search : ' +errorThrown);
-                    },
-                    success: function (data) {
-                        var menusearch_items = [];
-                        $.each(data,function(idx, menu_item){
-                            if (menu_item.Url != "") {
-                                menusearch_items.push({
-                                    id:$('<div/>').html(menu_item.Url).text(),
-                                    name: $("<div/>").html(menu_item.breadcrumb).text()
-                                });
-                            }
-                        });
-                        $("#menu_search_box").typeahead({
-                            source: menusearch_items,
-                            matcher: function (item) {
-                                var ar = this.query.trim();
-                                if (ar == "") {
-                                    return false;
-                                }
-                                ar = ar.toLowerCase().split(/\s+/);
-                                if (ar.length == 0) {
-                                    return false;
-                                }
-                                var it = this.displayText(item).toLowerCase();
-                                for (var i = 0; i < ar.length; i++) {
-                                    if (it.indexOf(ar[i]) == -1) {
-                                        return false;
-                                    }
-                                }
-                                return true;
-                            },
-                            afterSelect: function(item){
-                                // (re)load page
-                                if (window.location.href.split("#")[0].indexOf(item.id.split("#")[0]) > -1 ) {
-                                    // same url, different hash marker
-                                    window.location.href = item.id;
-                                    window.location.reload();
-                                } else {
-                                    window.location.href = item.id;
-                                }
-                            }
-                        });
-                    }
-                });
-
-                // change search input size on focus() to fit results
-                $("#menu_search_box").focus(function(){
-                    $("#menu_search_box").css('width', '450px');
-                    $("#system_status").hide();
-                });
-                $("#menu_search_box").focusout(function(){
-                    $("#menu_search_box").css('width', '250px');
-                    $("#system_status").show();
-                });
                 // enable bootstrap tooltips
                 $('body').tooltip({
                     selector: '[data-toggle="tooltip"]',
@@ -217,53 +155,6 @@
         <script src="{{ cache_safe(theme_file_or_default('/js/theme.js', theme_name)) }}"></script>
   </head>
   <body>
-  <header class="page-head">
-    <nav class="navbar navbar-default">
-      <div class="container-fluid">
-        <div class="navbar-header">
-          <a class="navbar-brand" href="/">
-            {% if file_exists(["/usr/local/opnsense/www/themes/",theme_name,"/build/images/default-logo.svg"]|join("")) %}
-                <img class="brand-logo" src="{{ cache_safe('/ui/themes/%s/build/images/default-logo.svg' | format(theme_name)) }}" height="30" alt="logo"/>
-            {% else %}
-                <img class="brand-logo" src="{{ cache_safe('/ui/themes/%s/build/images/default-logo.png' | format(theme_name)) }}" height="30" alt="logo"/>
-            {% endif %}
-            {% if file_exists(["/usr/local/opnsense/www/themes/",theme_name,"/build/images/icon-logo.svg"]|join("")) %}
-                <img class="brand-icon" src="{{ cache_safe('/ui/themes/%s/build/images/icon-logo.svg' | format(theme_name)) }}" height="30" alt="icon"/>
-            {% else %}
-                <img class="brand-icon" src="{{ cache_safe('/ui/themes/%s/build/images/icon-logo.png' | format(theme_name)) }}" height="30" alt="icon"/>
-            {% endif %}
-          </a>
-          <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-target="#navigation">
-            <span class="sr-only">{{ lang._('Toggle navigation') }}</span>
-            <span class="icon-bar"></span>
-            <span class="icon-bar"></span>
-            <span class="icon-bar"></span>
-          </button>
-        </div>
-        <button class="toggle-sidebar" data-toggle="tooltip right" title="{{ lang._('Toggle sidebar') }}" style="display:none;"><i class="fa fa-chevron-left"></i></button>
-        <div class="collapse navbar-collapse">
-          <ul class="nav navbar-nav navbar-right">
-            <li id="menu_messages">
-              <span class="navbar-text">{{session_username}}@pam</span>
-            </li>
-            <li>
-              <span class="navbar-text" style="margin-left: 0">
-                <i id="system_status" data-toggle="tooltip left" title="{{ lang._('Show system status') }}" style="cursor:pointer" class="fa fa-circle text-muted"></i>
-              </span>
-            </li>
-            <li>
-              <form class="navbar-form" role="search">
-                <div class="input-group">
-                  <div class="input-group-addon"><i class="fa fa-search"></i></div>
-                  <input type="text" style="width: 250px;" class="form-control" tabindex="1" data-provide="typeahead" id="menu_search_box" autocomplete="off">
-                </div>
-              </form>
-            </li>
-          </ul>
-        </div>
-      </div>
-    </nav>
-  </header>
 
   <main class="page-content col-sm-9 col-sm-push-3 col-lg-10 col-lg-push-2">
       <!-- menu system -->
