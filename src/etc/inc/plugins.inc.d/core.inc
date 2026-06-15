@@ -32,13 +32,15 @@ function core_services()
 
     $services[] = [
         'description' => gettext('System Configuration Daemon'),
-        'pidfile' => '/var/run/configd.pid',
-        'mwexec' => [
-            'restart' => ['/usr/local/etc/rc.d/configd restart'],
-            'start' => ['/usr/local/etc/rc.d/configd start'],
-            'stop' => ['/usr/local/etc/rc.d/configd stop'],
-        ],
+        'systemd' => 'muros-configd',
         'name' => 'configd',
+        'locked' => true,
+    ];
+
+    $services[] = [
+        'description' => gettext('Firewall (nftables)'),
+        'systemd' => 'muros-firewall',
+        'name' => 'firewall',
         'locked' => true,
     ];
 
@@ -71,11 +73,7 @@ function core_services()
 
     $services[] = [
         'description' => gettext('Cron'),
-        'php' => [
-            'start' => ['system_cron_configure'],
-            'restart' => ['system_cron_configure'],
-        ],
-        'pidfile' => '/var/run/cron.pid',
+        'systemd' => 'cron',
         'name' => 'cron',
     ];
 
