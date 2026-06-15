@@ -737,43 +737,49 @@ function filter_get_time_based_rule_status($schedule)
     return false;
 }
 
+/* Return total physical memory in bytes, read from the Linux kernel. */
+function filter_physmem_bytes()
+{
+    $meminfo = @file_get_contents('/proc/meminfo');
+    if ($meminfo !== false && preg_match('/^MemTotal:\s+(\d+)\s*kB/m', $meminfo, $m)) {
+        return ((int)$m[1]) * 1024;
+    }
+
+    return 0;
+}
+
 function filter_current_table_entries()
 {
-    return shell_safe('pfctl -sm | grep table-entries | awk \'{print $4}\'');
+    /*
+     * nftables has no global "table-entries" limit equivalent to pf; named
+     * sets are sized individually. Report the intended default so the GUI has
+     * a meaningful value to display and compare against.
+     */
+    return filter_default_table_entries();
 }
 
 function filter_default_table_entries()
 {
     /*
-     * Table entries have 160 bytes as of this commit
-     * (see "vm.uma.pf_table_entries.size" sysctl).
-     *
-     * Retain the minimum of 1 million, but quickly scale
-     * up to 5 million and cap at around 10 million.
-     *
-     * The resulting maximal memory requirement of a
-     * full table at the minimum 3GB recommendation is
-     * around 22% with roughly 5 million entries to make
-     * use of the growing GeoIP set.
+     * Sizing for named sets (aliases): retain a minimum of 1 million entries,
+     * scale up with available memory and cap at around 10 million to make use
+     * of large GeoIP / threat-feed sets without exhausting memory.
      */
-    return (min(10000000, max(1000000, (int)(get_single_sysctl('hw.physmem') / 1048576) * 1500)));
+    return (min(10000000, max(1000000, (int)(filter_physmem_bytes() / 1048576) * 1500)));
 }
 
 function filter_default_state_size()
 {
     /* be cautious and only allocate 10% of system memory to the state table */
-    return (int)(get_single_sysctl('hw.physmem') / 1048576) * 100;
+    return (int)(filter_physmem_bytes() / 1048576) * 100;
 }
 
 function filter_current_hostid()
 {
-    foreach (shell_safe('/sbin/pfctl -si -v 2> /dev/null', [], true) as $line) {
-        if (strpos($line, 'Hostid:') !== false) {
-            return preg_split('/\s+/', $line)[1];
-        }
-    }
+    /* On Linux the host identifier is provided by the hostid(1) utility. */
+    $hostid = trim(shell_safe('/usr/bin/hostid'));
 
-    return null;
+    return $hostid !== '' ? $hostid : null;
 }
 
 function get_protocols()
