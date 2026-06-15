@@ -82,10 +82,16 @@ $aclObj = new \OPNsense\Core\ACL();
 <main class="page-content col-sm-9 col-sm-push-3 col-lg-10 col-lg-push-2">
     <aside id="navigation" class="page-side col-xs-12 col-sm-3 col-lg-2 hidden-xs">
         <div class="muros-brand">
-            <a class="muros-brand-logo" href="/index.php">
-                <img src="<?= cache_safe(get_themed_filename('/images/default-logo.svg')) ?>" alt="MurOS"/>
-            </a>
-            <div class="muros-identity"><?= html_safe($_SESSION['Username'] ?? '') ?>@pam</div>
+            <div class="muros-brand-row">
+                <a class="muros-brand-logo" href="/index.php">
+                    <img src="<?= cache_safe(get_themed_filename('/images/default-logo.svg')) ?>" alt="MurOS"/>
+                </a>
+                <span class="muros-version">v<?= html_safe(product::getInstance()->version()) ?></span>
+            </div>
+            <div class="muros-user-row">
+                <span class="muros-identity"><?= html_safe($_SESSION['Username'] ?? '') ?>@pam</span>
+                <a class="muros-logout" href="/index.php?logout">Logout</a>
+            </div>
         </div>
         <div class="row">
             <nav class="page-side-nav">
