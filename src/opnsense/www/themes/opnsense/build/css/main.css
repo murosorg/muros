@@ -7428,37 +7428,45 @@ a.muros-logout:hover, a.muros-logout:focus {
   text-decoration: none;
 }
 
-/* menu items on the night-blue panel */
+/* left menu: white by default, amber on hover, current page highlighted */
 #navigation .list-group-item {
   background: transparent !important;
-  color: #c9d4e3 !important;
+  color: #ffffff !important;
   border-color: rgba(255, 255, 255, 0.06) !important;
 }
-#navigation .list-group-item:hover,
-#navigation .list-group-item:focus {
-  background: rgba(255, 255, 255, 0.06) !important;
-  color: #ffffff !important;
-}
-#navigation .list-group-item.active,
-#navigation .active-menu > a.list-group-item,
-#navigation .active-menu-title.active {
-  background: rgba(245, 197, 24, 0.16) !important;
-  color: #ffffff !important;
-}
+/* expanded sub-panel background (declared before the active/hover rules so
+   the more specific selectors below win the background). */
 #navigation .collapse.in,
 #navigation .collapse.in > a.list-group-item,
 #navigation .collapse.in > div.collapse.in > a.list-group-item {
   background: #16263f !important;
   border-color: rgba(255, 255, 255, 0.06) !important;
 }
-#navigation .active-menu a:before,
-#navigation .active-menu-title:before { background: #F5C518 !important; }
+#navigation .list-group-item:hover,
+#navigation .list-group-item:focus,
+#navigation .collapse.in > a.list-group-item:hover,
+#navigation .collapse.in > div.collapse.in > a.list-group-item:hover {
+  background: rgba(255, 255, 255, 0.05) !important;
+  color: #F5C518 !important;
+}
+/* current page (leaf) and the open section title */
+#navigation a.list-group-item.active,
+#navigation .collapse.in > a.list-group-item.active,
+#navigation .collapse.in > div.collapse.in > a.list-group-item.active,
+#navigation .active-menu-title.active,
+#navigation .active-menu > a.list-group-item {
+  background: rgba(245, 197, 24, 0.16) !important;
+  color: #F5C518 !important;
+  border-left: 3px solid #F5C518 !important;
+}
+/* icons follow the link colour (white -> amber on hover / current page) */
 #navigation .list-group-item .fa,
 #navigation .list-group-item .fa-solid,
-#navigation .list-group-item .glyphicon { color: #9fb0c4 !important; }
-#navigation .list-group-item:hover .fa,
-#navigation .list-group-item.active .fa,
-#navigation .active-menu > a.list-group-item .fa { color: #F5C518 !important; }
+#navigation .list-group-item .fas,
+#navigation .list-group-item .far,
+#navigation .list-group-item .fab,
+#navigation .list-group-item .glyphicon,
+#navigation .list-group-item span[class*="fa-"] { color: inherit !important; }
 
 /* amber primary buttons with black text (replaces brick orange) */
 .btn-primary { background-color: #F5C518 !important; border-color: #e0b40f !important; color: #1a1a1a !important; }
