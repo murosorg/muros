@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!/usr/bin/python3
 
 """
     Copyright (c) 2024 Deciso B.V.
@@ -26,54 +26,53 @@
     POSSIBILITY OF SUCH DAMAGE.
 
     --------------------------------------------------------------------------------------
-    streams cpu usage
+    streams cpu usage (Linux, derived from /proc/stat)
 """
 
-import subprocess
-import select
 import argparse
-import ujson
-import re
+import json
+import time
+
+
+def read_cpu():
+    """return the aggregate cpu time counters from /proc/stat"""
+    with open('/proc/stat') as handle:
+        for line in handle:
+            if line.startswith('cpu '):
+                return [int(x) for x in line.split()[1:]]
+    return []
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--interval', help='poll interval', default='1')
     inputargs = parser.parse_args()
+    interval = float(inputargs.interval)
 
-    process = subprocess.Popen(
-        ['iostat', '-w', inputargs.interval, 'cpu'],
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        bufsize=0
-    )
-    read_fds = [process.stdout]
-
+    # counters: user nice system idle iowait irq softirq steal guest guest_nice
+    previous = read_cpu()
     while True:
-        readable, _, _ = select.select(read_fds, [], [])
-
-        for fd in readable:
-            data = fd.readline()
-
-            if data:
-                output = data.decode().strip()
-                if output.startswith("tty") or output.startswith("tin"):
-                    continue
-
-                formatted = re.sub(r'\s+', ' ', output).split(" ")[2:]
-                formatted = [int(x) for x in formatted]
-                result = {
-                    'total': sum(formatted) - formatted[4],
-                    'user': formatted[0],
-                    'nice': formatted[1],
-                    'sys': formatted[2],
-                    'intr': formatted[3],
-                    'idle': formatted[4]
-                }
-                print(f"event: message\ndata: {ujson.dumps(result)}\n\n", flush=True)
-            else:
-                read_fds.remove(fd)
-
-        if process.poll() is not None:
-            break
-
-    process.stdout.close()
-    process.stderr.close()
+        time.sleep(interval)
+        current = read_cpu()
+        if not current or not previous or len(current) != len(previous):
+            previous = current
+            continue
+        deltas = [c - p for c, p in zip(current, previous)]
+        previous = current
+        total = sum(deltas)
+        if total <= 0:
+            continue
+        user = deltas[0]
+        nice = deltas[1]
+        system = deltas[2]
+        idle = deltas[3] + (deltas[4] if len(deltas) > 4 else 0)
+        intr = (deltas[5] if len(deltas) > 5 else 0) + (deltas[6] if len(deltas) > 6 else 0)
+        result = {
+            'total': round((total - idle) * 100.0 / total),
+            'user': round(user * 100.0 / total),
+            'nice': round(nice * 100.0 / total),
+            'sys': round(system * 100.0 / total),
+            'intr': round(intr * 100.0 / total),
+            'idle': round(idle * 100.0 / total)
+        }
+        print(f"event: message\ndata: {json.dumps(result)}\n\n", flush=True)
