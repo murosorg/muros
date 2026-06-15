@@ -1,12 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="MurOS">
-  <defs><clipPath id="ico"><rect x="14" y="20" width="92" height="80" rx="4"/></clipPath></defs>
-  <g clip-path="url(#ico)" fill="#b5482f">
-    <rect x="14" y="20" width="42" height="24"/>
-    <rect x="58" y="20" width="42" height="24"/>
-    <rect x="-8" y="46" width="42" height="24"/>
-    <rect x="36" y="46" width="42" height="24"/>
-    <rect x="80" y="46" width="42" height="24"/>
-    <rect x="14" y="72" width="42" height="24"/>
-    <rect x="58" y="72" width="42" height="24"/>
-  </g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 80" width="60" height="80">
+  <rect x="8" y="15" width="44" height="12" rx="2" fill="#F5C518"/>
+  <rect x="8" y="33" width="34" height="12" rx="2" fill="#F5C518"/>
+  <rect x="8" y="51" width="24" height="12" rx="2" fill="#F5C518"/>
 </svg>

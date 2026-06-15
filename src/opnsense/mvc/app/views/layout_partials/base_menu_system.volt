@@ -1,4 +1,10 @@
 <aside id="navigation" class="page-side col-xs-12 col-sm-3 col-lg-2 hidden-xs">
+    <div class="muros-brand">
+        <a class="muros-brand-logo" href="/">
+            <img src="{{ cache_safe('/ui/themes/%s/build/images/default-logo.svg' | format(theme_name)) }}" alt="MurOS"/>
+        </a>
+        <div class="muros-identity">{{session_username}}@pam</div>
+    </div>
     <div class="row">
         <nav class="page-side-nav">
             <div id="mainmenu" class="panel" style="border:0px">
