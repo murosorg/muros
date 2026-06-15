@@ -128,9 +128,15 @@ class ControllerBase extends ControllerRoot
         $this->view->setDI(new FactoryDefault());
         $this->view->registerEngines([
             '.volt' => function ($view) use ($appcfg, $volt_functions) {
+                $cacheDir = $appcfg->application->cacheDir;
+                if (!is_dir($cacheDir)) {
+                    /* make sure the compiled template cache directory exists, otherwise Volt
+                       cannot persist compiled templates and every render fails. */
+                    @mkdir($cacheDir, 0775, true);
+                }
                 $volt = new VoltEngine($view);
                 $volt->setOptions([
-                    'path' => $appcfg->application->cacheDir . '/', /* XXX definitely a Phalcon bug */
+                    'path' => $cacheDir . '/', /* XXX definitely a Phalcon bug */
                     'separator' => '_'
                 ]);
                 foreach ($volt_functions as $func_name => $function) {

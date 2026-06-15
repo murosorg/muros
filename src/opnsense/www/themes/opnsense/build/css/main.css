@@ -7379,28 +7379,36 @@ div[data-for*=help_for] {
 /* brand block at the top of the left panel: compact, two rows
    (logo + version, then identity + logout) to avoid empty space */
 .muros-brand {
-  padding: 20px 18px 18px 18px;
+  padding: 16px 16px 14px 16px;
   background: #0f1d33;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  overflow: hidden;
 }
 .muros-brand-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  flex-wrap: wrap;
+  gap: 6px 10px;
 }
-.muros-brand .muros-brand-logo { display: inline-flex; line-height: 0; }
-.muros-brand .muros-brand-logo img { height: 42px; width: auto; display: block; }
+.muros-brand .muros-brand-logo { display: inline-flex; line-height: 0; min-width: 0; }
+.muros-brand .muros-brand-logo img {
+  height: 32px;
+  max-width: 100%;
+  width: auto;
+  display: block;
+}
 .muros-version {
   font-family: "Courier New", monospace;
-  font-size: 12px;
+  font-size: 11px;
   line-height: 1;
   color: #aebbcd;
   background: #16263f;
   border: 1px solid rgba(255, 255, 255, 0.12);
-  padding: 4px 8px;
+  padding: 3px 7px;
   border-radius: 4px;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 .muros-user-row {
   display: flex;
@@ -7449,12 +7457,12 @@ a.muros-logout:hover, a.muros-logout:focus {
   background: rgba(255, 255, 255, 0.05) !important;
   color: #F5C518 !important;
 }
-/* current page (leaf) and the open section title */
+/* highlight only the current page (leaf) and the section titles on its path,
+   not every item of the open section. */
 #navigation a.list-group-item.active,
 #navigation .collapse.in > a.list-group-item.active,
 #navigation .collapse.in > div.collapse.in > a.list-group-item.active,
-#navigation .active-menu-title.active,
-#navigation .active-menu > a.list-group-item {
+#navigation a.list-group-item.active-menu-title {
   background: rgba(245, 197, 24, 0.16) !important;
   color: #F5C518 !important;
   border-left: 3px solid #F5C518 !important;
