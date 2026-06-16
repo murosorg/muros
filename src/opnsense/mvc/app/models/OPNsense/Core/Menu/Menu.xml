@@ -125,9 +125,4 @@
         <Reboot order="10" url="/ui/core/reboot" cssClass="fa fa-repeat fa-fw"/>
         <PowerOff VisibleName="Power Off" order="20" url="/ui/core/halt" cssClass="fa fa-power-off fa-fw"/>
     </Power>
-    <Help order="80" cssClass="fa fa-support">
-        <Documentation order="10" url="https://docs.opnsense.org/" cssClass="fa fa-book" IsExternal="Y"/>
-        <Forum VisibleName="User Forum" order="20" url="https://forum.opnsense.org/" cssClass="fa fa-ticket" IsExternal="Y"/>
-        <Support VisibleName="Commercial Support" order="30" url="https://opnsense.org/support-overview/commercial-support/" cssClass="fa fa-phone" IsExternal="Y"/>
-    </Help>
 </menu>
