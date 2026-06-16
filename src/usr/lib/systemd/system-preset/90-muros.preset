@@ -1,0 +1,7 @@
+# MurOS control-plane services enabled by default on install.
+# Applied by the package build (systemctl preset) so a fresh install boots
+# with the firewall, interface assignment and addressing active.
+enable muros-configd.service
+enable muros-firewall.service
+enable muros-interface-assign.service
+enable muros-interfaces.service
