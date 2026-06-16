@@ -413,7 +413,7 @@ abstract class BaseModel
             return $class_info->newInstance(true)->getNodeContent();
         }
         $cache_filename = self::getCacheFileName();
-        $fobj = new \OPNsense\Core\FileObject($cache_filename, 'a+', 0660, LOCK_EX, 'wwwonly:wheel');
+        $fobj = new \OPNsense\Core\FileObject($cache_filename, 'a+', 0660, LOCK_EX, 'www-data:www-data');
         $cache_payload = $fobj->readJson() ?? [];
         if (!isset($cache_payload['persisted_at']) || $cache_payload['persisted_at'] != $persisted_at) {
             /**
