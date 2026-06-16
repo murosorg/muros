@@ -54,18 +54,152 @@ function fmt_ports(?string $ports): ?string
     if ($ports === '') {
         return null;
     }
-    /* OPNsense stores ranges as "from:to"; nft wants "from-to". */
+    /* OPNsense stores ranges as "from:to"; nft wants "from-to". Only emit
+     * numeric ports and numeric ranges: anything else (an unresolved alias
+     * name, a service keyword) is dropped so it can never produce a token
+     * that would make `nft -f` reject the whole ruleset. */
     $ports = str_replace(':', '-', $ports);
-    if (strpos($ports, ',') !== false) {
-        $items = array_filter(array_map('trim', explode(',', $ports)), 'strlen');
-        return '{ ' . implode(', ', $items) . ' }';
+    $valid = [];
+    foreach (array_filter(array_map('trim', explode(',', $ports)), 'strlen') as $item) {
+        if (preg_match('/^\d+(-\d+)?$/', $item)) {
+            $valid[] = $item;
+        }
     }
-    return $ports;
+    if (empty($valid)) {
+        return null;
+    }
+    return count($valid) === 1 ? $valid[0] : '{ ' . implode(', ', $valid) . ' }';
 }
 
 function fmt_addr_set(array $values): string
 {
     return count($values) === 1 ? $values[0] : '{ ' . implode(', ', $values) . ' }';
+}
+
+/* Classify a single alias entry into an IPv4 address/CIDR, an IPv6
+ * address/CIDR or a port (single or range). Hostnames, nested aliases and
+ * other unsupported tokens are silently ignored: the resulting set simply
+ * does not include them, so a reference still resolves to a valid (possibly
+ * empty) named set instead of breaking the whole ruleset. */
+function classify_alias_token(string $token, array &$al): void
+{
+    $token = trim($token);
+    if ($token === '') {
+        return;
+    }
+    if (preg_match('/^\d+[:\-]\d+$/', $token)) {
+        $al['port'][] = str_replace(':', '-', $token);
+        return;
+    }
+    if (ctype_digit($token)) {
+        $al['port'][] = $token;
+        return;
+    }
+    $ipPart = (strpos($token, '/') !== false) ? substr($token, 0, strpos($token, '/')) : $token;
+    if (filter_var($ipPart, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
+        $al['v6'][] = $token;
+        return;
+    }
+    if (filter_var($ipPart, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+        $al['v4'][] = $token;
+    }
+}
+
+/* Read firewall aliases from both the modern (OPNsense/Firewall/Alias) and
+ * the legacy (aliases) locations and turn each into address and/or port
+ * element lists. Returns name => [v4, v6, port, type, hasaddr, hasport]. */
+function build_aliases(SimpleXMLElement $cfg): array
+{
+    $aliases = [];
+    $collect = function (string $name, string $type, array $tokens) use (&$aliases) {
+        if (!preg_match('/^[A-Za-z0-9_]+$/', $name)) {
+            return;
+        }
+        if (!isset($aliases[$name])) {
+            $aliases[$name] = ['v4' => [], 'v6' => [], 'port' => [], 'type' => $type];
+        }
+        foreach ($tokens as $token) {
+            classify_alias_token($token, $aliases[$name]);
+        }
+    };
+
+    if (isset($cfg->OPNsense->Firewall->Alias->aliases->alias)) {
+        foreach ($cfg->OPNsense->Firewall->Alias->aliases->alias as $a) {
+            if (isset($a->enabled) && trim((string)$a->enabled) === '0') {
+                continue;
+            }
+            $collect(trim((string)$a->name), trim((string)$a->type), preg_split('/[\s,]+/', trim((string)$a->content)) ?: []);
+        }
+    }
+    if (isset($cfg->aliases->alias)) {
+        foreach ($cfg->aliases->alias as $a) {
+            $collect(trim((string)$a->name), trim((string)$a->type), preg_split('/[\s,]+/', trim((string)$a->address)) ?: []);
+        }
+    }
+
+    foreach ($aliases as &$al) {
+        $isPort = ($al['type'] === 'port') || (!empty($al['port']) && empty($al['v4']) && empty($al['v6']));
+        $al['hasport'] = $isPort;
+        $al['hasaddr'] = !$isPort;
+    }
+    unset($al);
+
+    return $aliases;
+}
+
+/* Reference to the address set for an alias in a given family, or null when
+ * the name is not an address alias. */
+function alias_addr_ref(string $name, string $family, array $aliases): ?string
+{
+    if (isset($aliases[$name]) && $aliases[$name]['hasaddr']) {
+        return '@' . $name . ($family === 'ip6' ? '_v6' : '_v4');
+    }
+    return null;
+}
+
+/* Resolve a port specification that may be a literal port/range/list or the
+ * name of a port alias (then referenced as a named set). */
+function resolve_port(?string $ports, array $aliases): ?string
+{
+    $value = trim((string)$ports);
+    if ($value === '') {
+        return null;
+    }
+    if (isset($aliases[$value]) && $aliases[$value]['hasport']) {
+        return '@' . $value . '_p';
+    }
+    return fmt_ports($value);
+}
+
+/* Emit the `set` definitions for every alias. Address aliases always get
+ * both an IPv4 and an IPv6 set (possibly empty) so references in either
+ * family resolve; port aliases get an inet_service set. */
+function alias_set_lines(array $aliases): array
+{
+    $lines = [];
+    foreach ($aliases as $name => $al) {
+        if (!empty($al['hasaddr'])) {
+            foreach (['v4' => 'ipv4_addr', 'v6' => 'ipv6_addr'] as $fam => $atype) {
+                $lines[] = '    set ' . $name . '_' . $fam . ' {';
+                $lines[] = '        type ' . $atype . ';';
+                $lines[] = '        flags interval;';
+                if (!empty($al[$fam])) {
+                    $lines[] = '        elements = { ' . implode(', ', array_unique($al[$fam])) . ' }';
+                }
+                $lines[] = '    }';
+            }
+        }
+        if (!empty($al['hasport'])) {
+            $lines[] = '    set ' . $name . '_p {';
+            $lines[] = '        type inet_service;';
+            $lines[] = '        flags interval;';
+            if (!empty($al['port'])) {
+                $lines[] = '        elements = { ' . implode(', ', array_unique($al['port'])) . ' }';
+            }
+            $lines[] = '    }';
+        }
+    }
+    return $lines;
 }
 
 /* Map an interface configuration key (wan, lan, optX) to its device and,
@@ -109,14 +243,16 @@ function network_of(string $ip, int $prefix): string
 
 /* Resolve a <source>/<destination> block to an nft address token, or null
  * when it cannot be expressed yet (dynamic address, alias, etc.). */
-function resolve_endpoint(?SimpleXMLElement $ep, string $family, array $ifaces): ?string
+function resolve_endpoint(?SimpleXMLElement $ep, string $family, array $ifaces, array $aliases = []): ?string
 {
     if ($ep === null || isset($ep->any)) {
         return null;
     }
     $addr = trim((string)$ep->address);
     if ($addr !== '') {
-        return $addr;
+        /* address may be a literal IP/CIDR or the name of an address alias. */
+        $ref = alias_addr_ref($addr, $family, $aliases);
+        return $ref !== null ? $ref : $addr;
     }
     $net = trim((string)$ep->network);
     if ($net === '') {
@@ -130,7 +266,8 @@ function resolve_endpoint(?SimpleXMLElement $ep, string $family, array $ifaces):
     if (strpos($net, '/') !== false) {
         return $net;
     }
-    return null;
+    /* network may also carry an alias name in some configurations. */
+    return alias_addr_ref($net, $family, $aliases);
 }
 
 function martian_lines(array $ifaces): array
@@ -182,7 +319,7 @@ function wan_devices(SimpleXMLElement $cfg, array $ifaces): array
  * forwards) from the <nat> section. Returns prerouting lines, postrouting
  * lines and the filter passes that must accompany port forwards (traffic
  * is evaluated by the forward hook after dnat rewrote the destination). */
-function build_nat(SimpleXMLElement $cfg, array $ifaces, array $wanDevs): array
+function build_nat(SimpleXMLElement $cfg, array $ifaces, array $wanDevs, array $aliases = []): array
 {
     $pre = [];
     $post = [];
@@ -216,13 +353,13 @@ function build_nat(SimpleXMLElement $cfg, array $ifaces, array $wanDevs): array
                 continue;
             }
             $parts = ['oifname ' . ifname_token($dev)];
-            $src = resolve_endpoint($r->source ?? null, 'ip', $ifaces);
+            $src = resolve_endpoint($r->source ?? null, 'ip', $ifaces, $aliases);
             if ($src !== null) {
                 $parts[] = "ip saddr $src";
             }
             $proto = strtolower(trim((string)$r->protocol));
             if ($proto === 'tcp' || $proto === 'udp') {
-                $dport = fmt_ports((string)($r->destination->port ?? ''));
+                $dport = resolve_port((string)($r->destination->port ?? ''), $aliases);
                 if ($dport !== null) {
                     $parts[] = "$proto dport $dport";
                 }
@@ -248,7 +385,7 @@ function build_nat(SimpleXMLElement $cfg, array $ifaces, array $wanDevs): array
             if (!filter_var($target, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
                 continue;
             }
-            $extPort = fmt_ports((string)($r->{'destination'}->port ?? ''));
+            $extPort = resolve_port((string)($r->{'destination'}->port ?? ''), $aliases);
             $localPort = trim((string)$r->{'local-port'});
             $parts = [];
             if ($dev !== null) {
@@ -277,7 +414,7 @@ function build_nat(SimpleXMLElement $cfg, array $ifaces, array $wanDevs): array
 
 /* Translate a single <rule> into one nft statement, or null when the rule
  * uses a feature this iteration does not handle yet. */
-function rule_line(SimpleXMLElement $rule, array $ifaces): ?string
+function rule_line(SimpleXMLElement $rule, array $ifaces, array $aliases = []): ?string
 {
     if (isset($rule->disabled)) {
         return null;
@@ -314,12 +451,12 @@ function rule_line(SimpleXMLElement $rule, array $ifaces): ?string
 
     /* source / destination addresses. */
     $hasL3 = $proto === 'icmp';
-    $saddr = resolve_endpoint($rule->source ?? null, $family, $ifaces);
+    $saddr = resolve_endpoint($rule->source ?? null, $family, $ifaces, $aliases);
     if ($saddr !== null) {
         $parts[] = "$family saddr $saddr";
         $hasL3 = true;
     }
-    $daddr = resolve_endpoint($rule->destination ?? null, $family, $ifaces);
+    $daddr = resolve_endpoint($rule->destination ?? null, $family, $ifaces, $aliases);
     if ($daddr !== null) {
         $parts[] = "$family daddr $daddr";
         $hasL3 = true;
@@ -334,8 +471,8 @@ function rule_line(SimpleXMLElement $rule, array $ifaces): ?string
 
     /* ports (tcp/udp only). */
     if ($l4 !== null) {
-        $sport = fmt_ports((string)($rule->source->port ?? ''));
-        $dport = fmt_ports((string)($rule->destination->port ?? ''));
+        $sport = resolve_port((string)($rule->source->port ?? ''), $aliases);
+        $dport = resolve_port((string)($rule->destination->port ?? ''), $aliases);
         if ($l4 === 'th') {
             $parts[] = 'meta l4proto { tcp, udp }';
             if ($sport !== null) {
@@ -383,11 +520,12 @@ if ($cfg === false) {
 }
 
 $ifaces = build_interfaces($cfg);
+$aliases = build_aliases($cfg);
 
 $rules = [];
 if (isset($cfg->filter)) {
     foreach ($cfg->filter->rule as $rule) {
-        $line = rule_line($rule, $ifaces);
+        $line = rule_line($rule, $ifaces, $aliases);
         if ($line !== null) {
             $rules[] = $line;
         }
@@ -395,7 +533,8 @@ if (isset($cfg->filter)) {
 }
 
 $wanDevs = wan_devices($cfg, $ifaces);
-$nat = build_nat($cfg, $ifaces, $wanDevs);
+$nat = build_nat($cfg, $ifaces, $wanDevs, $aliases);
+$aliasSets = alias_set_lines($aliases);
 
 $martians = martian_lines($ifaces);
 $lockout = '        tcp dport ' . fmt_addr_set(ANTI_LOCKOUT_PORTS)
@@ -407,6 +546,12 @@ $out[] = '# Generated by MurOS nft_build.php. Do not edit by hand.';
 $out[] = 'flush ruleset';
 $out[] = '';
 $out[] = 'table inet muros {';
+foreach ($aliasSets as $line) {
+    $out[] = $line;
+}
+if (!empty($aliasSets)) {
+    $out[] = '';
+}
 $out[] = '    chain input {';
 $out[] = '        type filter hook input priority 0; policy drop;';
 $out[] = '        iif "lo" accept';
