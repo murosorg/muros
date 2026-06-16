@@ -249,7 +249,115 @@ function legacy_interface_stats($ifs = null)
  * @param string|null $intf
  * @return array list of interface specifics indexed by physical interface name
  */
+/* MurOS: collect interface details from iproute2 (ip -j -d addr show) and
+ * shape them into the structure historically produced by the FreeBSD
+ * ifconfig parser, so existing consumers keep working unchanged. */
+function _legacy_interfaces_details_iproute2($intf = null)
+{
+    $result = [];
+    $cmd = '/usr/sbin/ip -j -d addr show';
+    if (!empty($intf)) {
+        $cmd .= ' dev ' . escapeshellarg($intf);
+    }
+
+    exec($cmd . ' 2> /dev/null', $out, $ret);
+    $entries = json_decode(implode('', $out), true);
+    if (!is_array($entries)) {
+        return $result;
+    }
+
+    $vfaces = interfaces_virtual_patterns();
+
+    foreach ($entries as $entry) {
+        $dev = $entry['ifname'] ?? null;
+        if ($dev === null) {
+            continue;
+        }
+
+        $flags = array_map('strtolower', $entry['flags'] ?? []);
+        $operstate = $entry['operstate'] ?? 'UNKNOWN';
+        if ($operstate === 'UP' && !in_array('up', $flags)) {
+            $flags[] = 'up';
+        }
+
+        $rec = [
+            'flags' => $flags,
+            'capabilities' => [],
+            'options' => [],
+            'macaddr' => !empty($entry['address']) ? $entry['address'] : '00:00:00:00:00:00',
+            'macaddr_hw' => $entry['address'] ?? '00:00:00:00:00:00',
+            'ipv4' => [],
+            'ipv6' => [],
+            'supported_media' => [],
+            'is_physical' => !count(array_intersect(preg_split('/\d+/', $dev), $vfaces)),
+            'device' => $dev,
+            'mtu' => (string)($entry['mtu'] ?? ''),
+        ];
+
+        /* present a FreeBSD-like link status used by the GUI */
+        if (in_array('up', $flags)) {
+            $rec['status'] = in_array($operstate, ['DOWN', 'LOWERLAYERDOWN'], true) ? 'no carrier' : 'active';
+        } else {
+            $rec['status'] = 'no carrier';
+        }
+
+        foreach (($entry['addr_info'] ?? []) as $ai) {
+            $family = $ai['family'] ?? '';
+            if ($family === 'inet') {
+                $rec['ipv4'][] = [
+                    'ipaddr' => $ai['local'] ?? '',
+                    'subnetbits' => (int)($ai['prefixlen'] ?? 32),
+                    'tunnel' => false,
+                ];
+            } elseif ($family === 'inet6') {
+                $addr = $ai['local'] ?? '';
+                $rec['ipv6'][] = [
+                    'autoconf' => !empty($ai['dynamic']),
+                    'deprecated' => !empty($ai['deprecated']),
+                    'detached' => false,
+                    'ipaddr' => $addr,
+                    'link-local' => (($ai['scope'] ?? '') === 'link') || (bool)preg_match('/^fe[89ab][0-9a-f]:/i', $addr),
+                    'pltime' => (string)($ai['preferred_life_time'] ?? '0'),
+                    'tentative' => !empty($ai['tentative']),
+                    'tunnel' => false,
+                    'vltime' => (string)($ai['valid_life_time'] ?? '0'),
+                    'subnetbits' => (int)($ai['prefixlen'] ?? 128),
+                ];
+            }
+        }
+
+        if (!empty($rec['ipv6'])) {
+            /* sort link local addresses to the bottom, keep primary on top */
+            usort($rec['ipv6'], function ($a, $b) {
+                return $a['link-local'] - $b['link-local'];
+            });
+        }
+
+        /* VLAN details, exposed by `ip -d` under linkinfo */
+        if (($entry['linkinfo']['info_kind'] ?? '') === 'vlan') {
+            $vd = $entry['linkinfo']['info_data'] ?? [];
+            $rec['vlan'] = [
+                'tag' => (string)($vd['id'] ?? ''),
+                'proto' => $vd['protocol'] ?? '802.1Q',
+                'pcp' => '0',
+                'parent' => $entry['link'] ?? '',
+            ];
+        }
+
+        $result[$dev] = $rec;
+    }
+
+    return $result;
+}
+
 function legacy_interfaces_details($intf = null)
+{
+    /* MurOS: interface details are collected from iproute2 on Debian. The
+     * original FreeBSD ifconfig parser is kept below (inert) for reference. */
+    return _legacy_interfaces_details_iproute2($intf);
+}
+
+function _legacy_interfaces_details_freebsd($intf = null)
 {
     $cmd = '/sbin/ifconfig -Lmv';
     $result = [];
