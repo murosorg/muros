@@ -43,6 +43,13 @@ class FileObject
     public function __construct($filename, $mode, $permissions = null, $operation = null, string $chown = null)
     {
         $this->fhandle = fopen($filename, $mode . 'e');   /* always add close-on-exec flag to prevent fork inherit */
+        if ($this->fhandle === false) {
+            /* Surface a catchable error instead of letting a later flock() on a
+             * false handle raise a fatal TypeError (e.g. when the file exists
+             * but is owned by another user and cannot be reopened). */
+            $this->fhandle = null;
+            throw new Exception('Unable to open file: ' . $filename);
+        }
 
         if ($permissions != null) {
             @chmod($filename, $permissions);

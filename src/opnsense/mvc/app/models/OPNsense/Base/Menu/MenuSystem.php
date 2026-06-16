@@ -159,7 +159,7 @@ class MenuSystem
             flock($fp, LOCK_UN);
             fclose($fp);
             chmod($this->menuCacheFilename, 0660);
-            @chown($this->menuCacheFilename, 'wwwonly'); /* XXX frontend owns file */
+            @chown($this->menuCacheFilename, 'www-data'); /* XXX frontend owns file */
             @chgrp($this->menuCacheFilename, 'wheel'); /* XXX backend can work with it */
         }
         // return generated xml
