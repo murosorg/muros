@@ -1,7 +1,8 @@
-#!/usr/local/bin/python3
+#!/usr/bin/python3
 
 """
     Copyright (c) 2021-2022 Franco Fichtner <franco@opnsense.org>
+    Copyright (c) 2026 MurOS
     All rights reserved.
 
     Redistribution and use in source and binary forms, with or without
@@ -26,73 +27,108 @@
     POSSIBILITY OF SUCH DAMAGE.
 
     --------------------------------------------------------------------------------------
-    return current sysctl(8) information
+    return current kernel information (Debian / procfs + sysctl)
+
+    On FreeBSD this wrapped sysctl(8) and its BSD-only OIDs. On Debian we emulate
+    the handful of BSD OIDs the GUI relies on (kern.boottime, vm.loadavg, ...) from
+    /proc and fall back to the Linux sysctl for dotted Linux keys.
 """
 
 import argparse
+import datetime
+import json
 import os
 import subprocess
 import sys
-import ujson
+import time
 
-# type mapping: r => read-only, t => boot-time, w => runtime
+_cache_filename = "/tmp/sysctl_map.cache"
+
+
+def emulated_oids():
+    vals = {}
+    try:
+        with open('/proc/uptime') as fh:
+            uptime = float(fh.read().split()[0])
+        sec = int(time.time() - uptime)
+        when = datetime.datetime.fromtimestamp(sec).strftime('%a %b %e %H:%M:%S %Y')
+        vals['kern.boottime'] = '{ sec = %d, usec = 0 } %s' % (sec, when)
+    except Exception:
+        pass
+    try:
+        with open('/proc/loadavg') as fh:
+            la = fh.read().split()
+        vals['vm.loadavg'] = '{ %s %s %s }' % (la[0], la[1], la[2])
+    except Exception:
+        pass
+    try:
+        with open('/proc/meminfo') as fh:
+            for line in fh:
+                if line.startswith('MemTotal:'):
+                    nbytes = int(line.split()[1]) * 1024
+                    vals['hw.physmem'] = str(nbytes)
+                    vals['hw.realmem'] = str(nbytes)
+                    break
+    except Exception:
+        pass
+    try:
+        ncpu = os.cpu_count() or 1
+        vals['hw.ncpu'] = str(ncpu)
+        vals['kern.smp.cpus'] = str(ncpu)
+    except Exception:
+        pass
+    return vals
+
+
+def linux_sysctl(names):
+    out = {}
+    if not names:
+        return out
+    sp = subprocess.run(['/usr/sbin/sysctl', '-e'] + names, capture_output=True, text=True)
+    for line in sp.stdout.split("\n"):
+        parts = line.strip().split(' = ', 1)
+        if len(parts) > 1:
+            out[parts[0].strip()] = parts[1].strip()
+    return out
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--gather', help='gather syctl info', action='store_true')
+    parser.add_argument('--gather', help='gather sysctl info', action='store_true')
     parser.add_argument('--values', help='comma-separated list of sysctl values to fetch')
     inputargs = parser.parse_args()
 
-    _cache_filename = "/tmp/sysctl_map.cache"
+    output = '{}'
 
     if inputargs.values:
+        emap = emulated_oids()
         result = {}
-        params = inputargs.values.split(',')
-        sp = subprocess.run(['/sbin/sysctl', '-i'] + params, capture_output=True, text=True)
-        for line in sp.stdout.split("\n"):
-            # include original oid in output so caller can match back
-            parts = line.strip().split(": ", 1)
-            if len(parts) > 1:
-                result[parts[0]] = parts[1].strip()
-        output = ujson.dumps(result)
+        missing = []
+        for param in inputargs.values.split(','):
+            param = param.strip()
+            if param in emap:
+                result[param] = emap[param]
+            else:
+                missing.append(param)
+        result.update(linux_sysctl(missing))
+        output = json.dumps(result)
     elif inputargs.gather:
         if os.path.exists(_cache_filename):
-            f = open(_cache_filename, "r")
-            print(f.read())
+            with open(_cache_filename, 'r') as fh:
+                print(fh.read())
             sys.exit(0)
 
         result = {}
-        sp = subprocess.run(['/sbin/sysctl', '-a'], capture_output=True, text=True)
+        for name, value in emulated_oids().items():
+            result[name] = {'name': name, 'value': value, 'type': 'r', 'description': ''}
+        sp = subprocess.run(['/usr/sbin/sysctl', '-a'], capture_output=True, text=True)
         for line in sp.stdout.split("\n"):
-            parts = line.strip().split(": ", 1)
+            parts = line.strip().split(' = ', 1)
             if len(parts) > 1:
-                item = {'name': parts[0], 'value': parts[1], 'type': 'r', 'description': ''}
-                result[parts[0]] = item
-        sp = subprocess.run(['/sbin/sysctl', '-ad'], capture_output=True, text=True)
-        for line in sp.stdout.split("\n"):
-            parts = line.strip().split(": ", 1)
-            if len(parts) > 1:
-                if parts[0] in result:
-                    result[parts[0]].update({'description': parts[1]})
-                else:
-                    # sysctl entries exist that seem to have no value?
-                    item = {'name': parts[0], 'value': '', 'type': 'r', 'description': parts[1]}
-                    result[parts[0]] = item
-        sp = subprocess.run(['/sbin/sysctl', '-aNT'], capture_output=True, text=True)
-        for line in sp.stdout.split("\n"):
-            part = line.strip()
-            if part in result:
-                result[part].update({'type': 't'})
-        sp = subprocess.run(['/sbin/sysctl', '-aNW'], capture_output=True, text=True)
-        for line in sp.stdout.split("\n"):
-            part = line.strip()
-            if part in result:
-                result[part].update({'type': 'w'})
+                name = parts[0].strip()
+                result[name] = {'name': name, 'value': parts[1].strip(), 'type': 'w', 'description': ''}
+        output = json.dumps(result)
+        with open(_cache_filename, 'w') as fh:
+            fh.write(output)
 
-        output = ujson.dumps(result)
-
-        f = open(_cache_filename, "w")
-        f.write(output)
-        f.close()
-
-    print (output)
+    print(output)

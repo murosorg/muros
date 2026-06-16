@@ -1,7 +1,8 @@
-#!/usr/local/bin/python3
+#!/usr/bin/python3
 
 """
     Copyright (c) 2016-2019 Ad Schellevis <ad@opnsense.org>
+    Copyright (c) 2026 MurOS
     All rights reserved.
 
     Redistribution and use in source and binary forms, with or without
@@ -26,50 +27,56 @@
     POSSIBILITY OF SUCH DAMAGE.
 
     --------------------------------------------------------------------------------------
-    returns the system routing table
+    returns the system routing table (Debian / iproute2)
 """
+import json
 import subprocess
 import sys
-import ujson
+
+FIELDNAMES = ['proto', 'destination', 'gateway', 'flags', 'netif', 'mtu']
+
+
+def is_host(dst):
+    if dst == 'default' or not dst:
+        return False
+    if '/' not in dst:
+        return True
+    return dst.rsplit('/', 1)[1] in ('32', '128')
+
+
+def collect(proto, family_arg):
+    rows = []
+    try:
+        sp = subprocess.run(['/usr/sbin/ip', '-j', family_arg, 'route', 'show'],
+                            capture_output=True, text=True)
+        data = json.loads(sp.stdout or '[]')
+    except Exception:
+        data = []
+    for r in data:
+        dst = r.get('dst', '')
+        gw = r.get('gateway', '')
+        flags = 'U'
+        if gw:
+            flags += 'G'
+        if is_host(dst):
+            flags += 'H'
+        rows.append({
+            'proto': proto,
+            'destination': dst,
+            'gateway': gw if gw else 'link#0',
+            'flags': flags,
+            'netif': r.get('dev', ''),
+            'mtu': str(r.get('mtu', '')),
+        })
+    return rows
+
 
 if __name__ == '__main__':
-    result = []
-    fieldnames=[]
-    if '-n' in sys.argv:
-        resolv = 'n'
-    else:
-        resolv = ''
-    sp = subprocess.run(['/usr/bin/netstat', '-rW' + resolv], capture_output=True, text=True)
-    current_proto = ""
-    for line in sp.stdout.split("\n"):
-        fields = line.split()
-        if len(fields) == 0:
-            continue
-        elif len(fields) == 1 and fields[0] == 'Internet:':
-            current_proto = 'ipv4'
-        elif len(fields) == 1 and  fields[0] == 'Internet6:':
-            current_proto = 'ipv6'
-        elif len(fields) > 2 and fields[0] == 'Destination' and fields[1] == 'Gateway':
-            fieldnames = list(map(lambda x : x.lower(), fields))
-        elif len(fields) > 2:
-            record = {'proto': current_proto}
-            for fieldid in range(len(fields)):
-                if len(fieldnames) > fieldid:
-                    record[fieldnames[fieldid]] = fields[fieldid]
-            # space out missing fields
-            for fieldname in fieldnames:
-                if fieldname not in record:
-                    record[fieldname] = ""
-            result.append(record)
+    result = collect('ipv4', '-4') + collect('ipv6', '-6')
 
-    # handle command line argument (type selection)
-    if len(sys.argv) > 1 and 'json' in sys.argv:
-        print(ujson.dumps(result))
+    if 'json' in sys.argv:
+        print(json.dumps(result))
     else:
-        # output plain
-        print ('\t\t'.join(fieldnames))
-        frmt = "%(proto)s\t"
-        for fieldname in fieldnames:
-            frmt = frmt + "%("+fieldname+")s\t"
+        print('\t\t'.join(FIELDNAMES))
         for record in result:
-            print (frmt%record)
+            print('\t'.join(str(record.get(f, '')) for f in FIELDNAMES))
