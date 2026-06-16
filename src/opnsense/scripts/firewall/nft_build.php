@@ -171,6 +171,16 @@ function resolve_port(?string $ports, array $aliases): ?string
     return fmt_ports($value);
 }
 
+/* Whether a source/destination block carries the "invert match" flag. */
+function ep_negated(?SimpleXMLElement $ep): bool
+{
+    if ($ep === null) {
+        return false;
+    }
+    $value = strtolower(trim((string)($ep->not ?? '')));
+    return !in_array($value, ['', '0', 'false', 'no'], true);
+}
+
 /* Emit the `set` definitions for every alias. Address aliases always get
  * both an IPv4 and an IPv6 set (possibly empty) so references in either
  * family resolve; port aliases get an inet_service set. */
@@ -512,12 +522,12 @@ function rule_line(SimpleXMLElement $rule, array $ifaces, array $aliases = []): 
     $hasL3 = $proto === 'icmp';
     $saddr = resolve_endpoint($rule->source ?? null, $family, $ifaces, $aliases);
     if ($saddr !== null) {
-        $parts[] = "$family saddr $saddr";
+        $parts[] = "$family saddr " . (ep_negated($rule->source ?? null) ? '!= ' : '') . $saddr;
         $hasL3 = true;
     }
     $daddr = resolve_endpoint($rule->destination ?? null, $family, $ifaces, $aliases);
     if ($daddr !== null) {
-        $parts[] = "$family daddr $daddr";
+        $parts[] = "$family daddr " . (ep_negated($rule->destination ?? null) ? '!= ' : '') . $daddr;
         $hasL3 = true;
     }
 
