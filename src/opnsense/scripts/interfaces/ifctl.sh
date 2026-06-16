@@ -45,7 +45,11 @@ flush_routes()
 		# flush null route to delegated prefix
 		for CONTENT in $(cat ${FILE}); do
 			if [ "${CONTENT##*/}" != "64" ]; then
-				route delete -${AF} "${CONTENT}"
+				if [ "${AF}" = "inet6" ]; then
+					ip -6 route del "${CONTENT}" 2>/dev/null
+				else
+					ip route del "${CONTENT}" 2>/dev/null
+				fi
 			fi
 		done
 		;;
@@ -56,9 +60,8 @@ flush_routes()
 
 flush_slaac()
 {
-	ifconfig "${IF}" | grep -e autoconf -e deprecated | while read FAMILY ADDR MORE; do
-		ifconfig "${IF}" "${FAMILY}" "${ADDR}" -alias
-	done
+	# drop kernel-managed SLAAC / temporary (dynamic) global IPv6 addresses
+	ip -6 addr flush dev "${IF}" scope global dynamic 2>/dev/null
 }
 
 delete_or_update()
@@ -163,7 +166,7 @@ if [ "${DO_COMMAND}" = "-c" ]; then
 	done
 
         # XXX legacy behaviour originating from interface_reset()
-	/usr/sbin/arp -d -i ${IF} -a
+	ip neigh flush dev ${IF} 2>/dev/null
 
 	exit 0
 elif [ "${DO_COMMAND}" = "-f" ]; then
@@ -287,7 +290,7 @@ rm -f ${TEMP}
 for CONTENT in ${DO_CONTENTS}; do
 	# null route handling for delegated prefix
 	if [ ${MD} = "prefix" -a "${CONTENT##*/}" != "64" ]; then
-		route add -${AF} -blackhole ${CONTENT} ::1
+		ip -6 route add blackhole ${CONTENT} 2>/dev/null
 	fi
 done
 
