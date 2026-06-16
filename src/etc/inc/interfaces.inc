@@ -3830,7 +3830,7 @@ function get_interface_mac($interface, $ifconfig_details = null)
         $intf_details = $ifconfig_details[$interface];
     }
 
-    return $intf_details['macaddr'];
+    return $intf_details['macaddr'] ?? '';
 }
 
 function interfaces_neighbors_configure($interface, $ifconfig_details = null)
