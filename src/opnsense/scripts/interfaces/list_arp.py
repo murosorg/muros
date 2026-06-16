@@ -1,7 +1,8 @@
-#!/usr/local/bin/python3
+#!/usr/bin/python3
 
 """
-    Copyright (c) 2016-2019 Ad Schellevis <ad@opnsense.org>
+    Copyright (c) 2016 Ad Schellevis <ad@opnsense.org>
+    Copyright (c) 2026 MurOS
     All rights reserved.
 
     Redistribution and use in source and binary forms, with or without
@@ -26,57 +27,59 @@
     POSSIBILITY OF SUCH DAMAGE.
 
     --------------------------------------------------------------------------------------
-    list arp table
+    list ARP (IPv4 neighbour) table, Debian / iproute2
 """
+import json
 import subprocess
 import sys
-import ujson
 sys.path.insert(0, "/usr/local/opnsense/site-python")
 import watchers.dhcpd
 from lib import OUI
 
 
 if __name__ == '__main__':
-    # do we use reverse DNS lookup ?
-    arp_arg = '-a' if '-r' in sys.argv else '-an'
-
     result = []
 
     # import dhcp_leases (index by ip address)
     dhcp_leases = {}
-    dhcpdleases = watchers.dhcpd.DHCPDLease()
-    for lease in dhcpdleases.watch():
-        if 'client-hostname' in lease and 'address' in lease:
-            dhcp_leases[lease['address']]  = {'hostname': lease['client-hostname']}
+    try:
+        dhcpdleases = watchers.dhcpd.DHCPDLease()
+        for lease in dhcpdleases.watch():
+            if 'client-hostname' in lease and 'address' in lease:
+                dhcp_leases[lease['address']] = {'hostname': lease['client-hostname']}
+    except Exception:
+        pass
 
-    # parse arp output
-    sp = subprocess.run(['/usr/sbin/arp', arp_arg, '--libxo','json'], capture_output=True, text=True)
-    libxo_out = ujson.loads(sp.stdout)
-    arp_cache = libxo_out['arp']['arp-cache'] if 'arp' in libxo_out and 'arp-cache' in libxo_out['arp'] else []
+    sp = subprocess.run(['/usr/sbin/ip', '-j', '-4', 'neigh', 'show'], capture_output=True, text=True)
+    try:
+        neigh = json.loads(sp.stdout or '[]')
+    except Exception:
+        neigh = []
 
-    for src_record in arp_cache:
-        if 'incomplete' in src_record and src_record['incomplete'] is True:
+    for src in neigh:
+        mac = src.get('lladdr')
+        ip = src.get('dst')
+        if not mac or not ip:
             continue
+        states = src.get('state', [])
         record = {
-            'mac': src_record['mac-address'],
-            'ip': src_record['ip-address'],
-            'intf': src_record['interface'],
-            'expired': src_record['expired'] if 'expired' in src_record else False,
-            'expires': src_record['expires'] if 'expires' in src_record else -1,
-            'permanent': src_record['permanent'] if 'permanent' in src_record else False,
-            'type': src_record['type'],
-            'manufacturer': OUI().get_vendor(src_record['mac-address'], ''),
-            'hostname': src_record['hostname'] if src_record['hostname'] != '?' else ''
+            'mac': mac,
+            'ip': ip,
+            'intf': src.get('dev', ''),
+            'expired': 'STALE' in states or 'FAILED' in states,
+            'expires': -1,
+            'permanent': 'PERMANENT' in states or 'NOARP' in states,
+            'type': 'ethernet',
+            'manufacturer': OUI().get_vendor(mac, ''),
+            'hostname': ''
         }
         if record['ip'] in dhcp_leases:
             record['hostname'] = dhcp_leases[record['ip']]['hostname']
         result.append(record)
 
-    # handle command line argument (type selection)
     if len(sys.argv) > 1 and 'json' in sys.argv:
-        print(ujson.dumps(result))
+        print(json.dumps(result))
     else:
-        # output plain text (console)
         print('%-16s %-20s %-10s %-20s %s' % ('ip', 'mac', 'intf', 'hostname', 'manufacturer'))
         for record in result:
             print('%(ip)-16s %(mac)-20s %(intf)-10s %(hostname)-20s %(manufacturer)s' % record)

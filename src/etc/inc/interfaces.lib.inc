@@ -209,39 +209,49 @@ function legacy_vlan_proto($ifs, $proto)
 
 function legacy_interface_stats($ifs = null)
 {
+    /* MurOS: per-interface counters from iproute2 (ip -s -j link show),
+     * mapped to the human readable keys the GUI expects. */
+    $cmd = '/usr/sbin/ip -s -j link show';
     if ($ifs != null) {
-        // only request data for selected interface
-        $cmd = '/usr/local/sbin/ifinfo ' . escapeshellarg($ifs);
-    } else {
-        // all interfaces
-        $cmd = '/usr/local/sbin/ifinfo';
+        $cmd .= ' dev ' . escapeshellarg($ifs);
     }
     $stats = [];
 
-    exec($cmd . ' 2>&1', $out, $ret);
-    if ($ret) {
-        legacy_interface_error($cmd);
-        return $stats;
+    exec($cmd . ' 2> /dev/null', $out, $ret);
+    $entries = json_decode(implode('', $out), true);
+    if (!is_array($entries)) {
+        return $ifs != null ? [] : $stats;
     }
 
-    $current_interface = '';
-    foreach ($out as $line) {
-        if (preg_match('/^Interface ([^\s]+) \(([^\)]+)\):$/i', $line, $names)) {
-            $stats[$names[1]] = [
-                'device' => $names[1],
-                'driver' => $names[2],
-            ];
-            $current_interface = $names[1];
-        } elseif ($current_interface != '') {
-            $stat = explode(':', $line);
-            $stats[$current_interface][trim($stat[0])] = trim($stat[1]);
+    foreach ($entries as $entry) {
+        $dev = $entry['ifname'] ?? null;
+        if ($dev === null) {
+            continue;
         }
+        $s64 = $entry['stats64'] ?? [];
+        $rx = $s64['rx'] ?? [];
+        $tx = $s64['tx'] ?? [];
+        $stats[$dev] = [
+            'device' => $dev,
+            'driver' => '',
+            'packets received' => (string)($rx['packets'] ?? 0),
+            'input errors' => (string)($rx['errors'] ?? 0),
+            'packets transmitted' => (string)($tx['packets'] ?? 0),
+            'output errors' => (string)($tx['errors'] ?? 0),
+            'collisions' => (string)($tx['collisions'] ?? 0),
+            'bytes received' => (string)($rx['bytes'] ?? 0),
+            'bytes transmitted' => (string)($tx['bytes'] ?? 0),
+            'multicasts received' => (string)($rx['multicast'] ?? 0),
+            'input queue drops' => (string)($rx['dropped'] ?? 0),
+            'send queue drops' => (string)($tx['dropped'] ?? 0),
+        ];
     }
+
     if ($ifs != null) {
-        return $stats[$current_interface];
-    } else {
-        return $stats;
+        return $stats[$ifs] ?? (count($stats) ? reset($stats) : []);
     }
+
+    return $stats;
 }
 
 /**

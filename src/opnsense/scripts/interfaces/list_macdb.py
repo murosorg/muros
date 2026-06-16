@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!/usr/bin/python3
 
 """
     Copyright (c) 2016-2023 Ad Schellevis <ad@opnsense.org>
@@ -31,7 +31,7 @@
 
 import os.path
 import sys
-import ujson
+import json as ujson
 from lib import OUI
 
 
