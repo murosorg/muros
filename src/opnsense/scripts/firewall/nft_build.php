@@ -447,6 +447,18 @@ function rule_line(SimpleXMLElement $rule, array $ifaces, array $aliases = []): 
         $l4 = 'th';
     } elseif ($proto === 'icmp') {
         $parts[] = $family === 'ip6' ? 'meta l4proto ipv6-icmp' : 'ip protocol icmp';
+    } elseif ($proto !== '' && $proto !== 'any') {
+        /* Other IP protocols (VPN passthrough, routing, multicast...). Map to
+         * the IANA protocol number, which `meta l4proto` always accepts, so we
+         * never risk an unknown keyword. Unrecognised protocols are skipped. */
+        $protoNumbers = [
+            'igmp' => 2, 'ipencap' => 4, 'ipv6' => 41, 'gre' => 47, 'esp' => 50,
+            'ah' => 51, 'ospf' => 89, 'pim' => 103, 'vrrp' => 112, 'carp' => 112,
+            'pfsync' => 240, 'sctp' => 132, 'etherip' => 97, 'l2tp' => 115,
+        ];
+        if (isset($protoNumbers[$proto])) {
+            $parts[] = 'meta l4proto ' . $protoNumbers[$proto];
+        }
     }
 
     /* source / destination addresses. */
