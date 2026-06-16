@@ -1,7 +1,8 @@
-#!/usr/local/bin/python3
+#!/usr/bin/python3
 
 """
-    Copyright (c) 2016-2019 Ad Schellevis <ad@opnsense.org>
+    Copyright (c) 2016 Ad Schellevis <ad@opnsense.org>
+    Copyright (c) 2026 MurOS
     All rights reserved.
 
     Redistribution and use in source and binary forms, with or without
@@ -14,45 +15,38 @@
      notice, this list of conditions and the following disclaimer in the
      documentation and/or other materials provided with the distribution.
 
-    THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES,
-    INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
-    AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
-    AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY,
-    OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-    SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-    INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-    CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-    ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-    POSSIBILITY OF SUCH DAMAGE.
-
+    THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES.
     --------------------------------------------------------------------------------------
-    list ndp table
+    list NDP (IPv6 neighbour) table, Debian / iproute2
 """
+import json
 import subprocess
-import os
 import sys
-import ujson
+sys.path.insert(0, "/usr/local/opnsense/site-python")
 from lib import OUI
 
 if __name__ == '__main__':
     result = []
-    # parse ndp output
-    sp = subprocess.run(['/usr/sbin/ndp', '-an'], capture_output=True, text=True)
-    for line in sp.stdout.split('\n')[1:]:
-        line_parts = line.split()
-        if len(line_parts) > 3 and line_parts[1] != '(incomplete)':
-            record = {'mac': line_parts[1],
-                      'ip': line_parts[0],
-                      'intf': line_parts[2],
-                      'manufacturer':  OUI().get_vendor(line_parts[1], ''),
-                      }
-            result.append(record)
+    sp = subprocess.run(['/usr/sbin/ip', '-j', '-6', 'neigh', 'show'], capture_output=True, text=True)
+    try:
+        neigh = json.loads(sp.stdout or '[]')
+    except Exception:
+        neigh = []
+    for src in neigh:
+        mac = src.get('lladdr')
+        ip = src.get('dst')
+        if not mac or not ip:
+            continue
+        result.append({
+            'mac': mac,
+            'ip': ip,
+            'intf': src.get('dev', ''),
+            'manufacturer': OUI().get_vendor(mac, ''),
+        })
 
-    # handle command line argument (type selection)
     if len(sys.argv) > 1 and sys.argv[1] == 'json':
-        print(ujson.dumps(result))
+        print(json.dumps(result))
     else:
-        # output plain text (console)
-        print ('%-40s %-20s %-10s %s' % ('ip', 'mac', 'intf', 'manufacturer'))
+        print('%-40s %-20s %-10s %s' % ('ip', 'mac', 'intf', 'manufacturer'))
         for record in result:
-            print ('%(ip)-40s %(mac)-20s %(intf)-10s %(manufacturer)s' % record)
+            print('%(ip)-40s %(mac)-20s %(intf)-10s %(manufacturer)s' % record)
