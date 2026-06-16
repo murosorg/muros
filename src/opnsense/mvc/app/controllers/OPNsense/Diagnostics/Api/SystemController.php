@@ -196,7 +196,10 @@ class SystemController extends ApiControllerBase
 
         if (!empty($disk_info['storage-system-information'])) {
             foreach ($disk_info['storage-system-information']['filesystem'] as $fs) {
-                if (!in_array(trim($fs['type']), ['cd9660', 'msdosfs', 'tmpfs', 'ufs', 'zfs'])) {
+                if (!in_array(trim($fs['type']), [
+                    'btrfs', 'ext2', 'ext3', 'ext4', 'f2fs', 'fat', 'vfat', 'xfs',
+                    'overlay', 'tmpfs', 'iso9660', 'cd9660', 'msdosfs', 'ufs', 'zfs',
+                ])) {
                     continue;
                 }
 
