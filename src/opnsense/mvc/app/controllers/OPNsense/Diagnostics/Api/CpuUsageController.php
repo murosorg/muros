@@ -40,12 +40,15 @@ class CpuUsageController extends ApiControllerBase
     public function getCPUTypeAction()
     {
         $sysctls = json_decode((new Backend())->configdRun('system sysctl values hw.model,kern.smp.cpus,kern.smp.cores'), true);
+        if (!is_array($sysctls)) {
+            $sysctls = [];
+        }
 
         return [sprintf(
             gettext('%s (%s cores, %s threads)'),
-            $sysctls['hw.model'],
-            $sysctls['kern.smp.cores'],
-            $sysctls['kern.smp.cpus']
+            $sysctls['hw.model'] ?? gettext('Unknown'),
+            $sysctls['kern.smp.cores'] ?? '?',
+            $sysctls['kern.smp.cpus'] ?? '?'
         )];
     }
 
