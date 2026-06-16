@@ -1,0 +1,20 @@
+# MurOS automatic interface assignment.
+# Maps the logical interfaces (wan, lan, optX) to the real Linux devices
+# when their configured device is a placeholder or no longer present. Runs
+# before the addressing is applied and reloads the firewall so the nft
+# ruleset is rebuilt with the resolved device names.
+[Unit]
+Description=MurOS automatic interface assignment
+Documentation=https://github.com/ecritel/muros
+After=systemd-networkd.service network-online.target
+Wants=network-online.target
+Before=muros-interfaces.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/php /usr/local/opnsense/scripts/interfaces/assign_interfaces.php
+ExecStartPost=-/usr/bin/systemctl --no-block try-reload-or-restart muros-firewall.service
+
+[Install]
+WantedBy=multi-user.target
