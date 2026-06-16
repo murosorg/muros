@@ -31,7 +31,9 @@ require_once 'util.inc';
 
 $changelogfile = '/usr/local/opnsense/changelog/index.json';
 
-list ($series, $version) = shell_safe('opnsense-version -Vv', [], true, ' ');
+$version_info = shell_safe('opnsense-version -Vv', [], true, ' ');
+$series = $version_info[0] ?? '';
+$version = $version_info[1] ?? '';
 $version = explode('_', $version)[0];
 
 if (empty($argv[1]) && ($ret = json_decode(@file_get_contents($changelogfile), true)) != null) {
