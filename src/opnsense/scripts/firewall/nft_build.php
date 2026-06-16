@@ -16,11 +16,12 @@
  *   - tcp / udp / icmp, source and destination address/network and ports
  *   - block-private / block-bogons martian drops on flagged interfaces
  *   - a mandatory anti-lockout allowance (ssh + web to the firewall)
+ *   - NAT: automatic/hybrid outbound masquerade, advanced outbound rules
+ *     and destination NAT port forwards (with their associated forward pass)
  *
- * Not yet handled (kept on the roadmap): NAT (SNAT/DNAT/NPt), policy
- * based routing (route-to/reply-to), traffic shaping/dummynet, and the
- * finer pf state options. Those map to nft nat/meta/queue and need a
- * dedicated pass.
+ * Not yet handled (kept on the roadmap): 1:1 NAT and NPt, policy based
+ * routing (route-to/reply-to), traffic shaping/dummynet, aliases as named
+ * sets, and the finer pf state options.
  *
  * Usage: nft_build.php [config.xml]   (defaults to /conf/config.xml)
  * The ruleset is written to stdout.
@@ -153,6 +154,127 @@ function martian_lines(array $ifaces): array
     return $lines;
 }
 
+/* Identify which interface keys act as WAN (uplink). OPNsense marks an
+ * uplink by attaching a gateway or by requesting a dynamic address; the
+ * conventional key is "wan". We collect every match so multi-WAN still
+ * gets outbound NAT. */
+function wan_devices(SimpleXMLElement $cfg, array $ifaces): array
+{
+    $wan = [];
+    foreach ($ifaces as $key => $itf) {
+        $node = $cfg->interfaces->$key ?? null;
+        $isWan = $key === 'wan';
+        if ($node !== null) {
+            $ip4 = trim((string)$node->ipaddr);
+            $gw = trim((string)$node->gateway);
+            if ($ip4 === 'dhcp' || $ip4 === 'pppoe' || $gw !== '') {
+                $isWan = true;
+            }
+        }
+        if ($isWan) {
+            $wan[$key] = $itf['device'];
+        }
+    }
+    return $wan;
+}
+
+/* Build the NAT chains (source NAT / masquerade and destination NAT port
+ * forwards) from the <nat> section. Returns prerouting lines, postrouting
+ * lines and the filter passes that must accompany port forwards (traffic
+ * is evaluated by the forward hook after dnat rewrote the destination). */
+function build_nat(SimpleXMLElement $cfg, array $ifaces, array $wanDevs): array
+{
+    $pre = [];
+    $post = [];
+    $passes = [];
+
+    $localNets = [];
+    foreach ($ifaces as $key => $itf) {
+        if (!isset($wanDevs[$key]) && $itf['cidr4'] !== null) {
+            $localNets[] = $itf['cidr4'];
+        }
+    }
+
+    $mode = isset($cfg->nat->outbound->mode) ? trim((string)$cfg->nat->outbound->mode) : 'automatic';
+
+    /* automatic / hybrid: masquerade internal networks leaving each WAN. */
+    if (($mode === 'automatic' || $mode === 'hybrid') && $wanDevs && $localNets) {
+        foreach ($wanDevs as $dev) {
+            $post[] = '        oifname ' . ifname_token($dev) . ' ip saddr ' . fmt_addr_set($localNets)
+                . ' counter masquerade comment "auto outbound nat"';
+        }
+    }
+
+    /* advanced / hybrid: explicit outbound rules. */
+    if ($mode !== 'disabled' && isset($cfg->nat->outbound->rule)) {
+        foreach ($cfg->nat->outbound->rule as $r) {
+            if (isset($r->disabled)) {
+                continue;
+            }
+            $dev = $ifaces[trim((string)$r->interface)]['device'] ?? null;
+            if ($dev === null) {
+                continue;
+            }
+            $parts = ['oifname ' . ifname_token($dev)];
+            $src = resolve_endpoint($r->source ?? null, 'ip', $ifaces);
+            if ($src !== null) {
+                $parts[] = "ip saddr $src";
+            }
+            $proto = strtolower(trim((string)$r->protocol));
+            if ($proto === 'tcp' || $proto === 'udp') {
+                $dport = fmt_ports((string)($r->destination->port ?? ''));
+                if ($dport !== null) {
+                    $parts[] = "$proto dport $dport";
+                }
+            }
+            $target = trim((string)$r->target);
+            $verb = filter_var($target, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) ? "snat to $target" : 'masquerade';
+            $post[] = '        ' . implode(' ', $parts) . " counter $verb comment \"outbound nat\"";
+        }
+    }
+
+    /* port forwards: destination NAT plus an associated forward pass. */
+    if (isset($cfg->nat->rule)) {
+        foreach ($cfg->nat->rule as $r) {
+            if (isset($r->disabled)) {
+                continue;
+            }
+            $dev = $ifaces[trim((string)$r->interface)]['device'] ?? null;
+            $proto = strtolower(trim((string)$r->protocol)) ?: 'tcp';
+            if (!in_array($proto, ['tcp', 'udp'], true)) {
+                continue;
+            }
+            $target = trim((string)$r->target);
+            if (!filter_var($target, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+                continue;
+            }
+            $extPort = fmt_ports((string)($r->{'destination'}->port ?? ''));
+            $localPort = trim((string)$r->{'local-port'});
+            $parts = [];
+            if ($dev !== null) {
+                $parts[] = 'iifname ' . ifname_token($dev);
+            }
+            $parts[] = "$proto";
+            if ($extPort !== null) {
+                $parts[] = "dport $extPort";
+            }
+            $to = $localPort !== '' ? "$target:$localPort" : $target;
+            $pre[] = '        ' . implode(' ', $parts) . " dnat to $to comment \"port forward\"";
+
+            /* let the rewritten flow through the (drop-policy) forward hook. */
+            $fp = ["ip daddr $target", $proto];
+            if ($localPort !== '') {
+                $fp[] = "dport " . fmt_ports($localPort);
+            } elseif ($extPort !== null) {
+                $fp[] = "dport $extPort";
+            }
+            $passes[] = '        ' . implode(' ', $fp) . ' ct status dnat counter accept comment "port forward pass"';
+        }
+    }
+
+    return ['pre' => $pre, 'post' => $post, 'passes' => $passes];
+}
+
 /* Translate a single <rule> into one nft statement, or null when the rule
  * uses a feature this iteration does not handle yet. */
 function rule_line(SimpleXMLElement $rule, array $ifaces): ?string
@@ -272,6 +394,9 @@ if (isset($cfg->filter)) {
     }
 }
 
+$wanDevs = wan_devices($cfg, $ifaces);
+$nat = build_nat($cfg, $ifaces, $wanDevs);
+
 $martians = martian_lines($ifaces);
 $lockout = '        tcp dport ' . fmt_addr_set(ANTI_LOCKOUT_PORTS)
     . ' counter accept comment "anti-lockout (ssh/web)"';
@@ -303,6 +428,9 @@ $out[] = '        ct state invalid counter drop';
 foreach ($martians as $m) {
     $out[] = $m;
 }
+foreach ($nat['passes'] as $p) {
+    $out[] = $p;
+}
 $out[] = '        jump filter_rules';
 $out[] = '    }';
 $out[] = '';
@@ -310,6 +438,24 @@ $out[] = '    chain output {';
 $out[] = '        type filter hook output priority 0; policy accept;';
 $out[] = '    }';
 $out[] = '';
+if (!empty($nat['pre'])) {
+    $out[] = '    chain prerouting {';
+    $out[] = '        type nat hook prerouting priority dstnat; policy accept;';
+    foreach ($nat['pre'] as $line) {
+        $out[] = $line;
+    }
+    $out[] = '    }';
+    $out[] = '';
+}
+if (!empty($nat['post'])) {
+    $out[] = '    chain postrouting {';
+    $out[] = '        type nat hook postrouting priority srcnat; policy accept;';
+    foreach ($nat['post'] as $line) {
+        $out[] = $line;
+    }
+    $out[] = '    }';
+    $out[] = '';
+}
 $out[] = '    chain filter_rules {';
 if (empty($rules)) {
     $out[] = '        # no translatable user rules';
