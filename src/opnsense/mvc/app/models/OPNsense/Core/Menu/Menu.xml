@@ -1,5 +1,5 @@
 <menu>
-    <Lobby order="10" url="/ui/core/dashboard" cssClass="fa fa-laptop">
+    <Lobby VisibleName="Dashboard" order="10" url="/ui/core/dashboard" cssClass="fa fa-laptop">
         <Args url="/index.php*" visibility="hidden"/>
         <Root url="/" visibility="hidden"/>
         <RootArgs url="/?*" visibility="hidden"/>
@@ -82,7 +82,6 @@
         <Categories url="/ui/firewall/category" cssClass="fa fa-tags fa-fw"/>
         <Groups url="/ui/firewall/group" cssClass="fa fa-sitemap fa-fw"/>
         <NAT cssClass="fa fa-exchange fa-fw"/>
-        <Rules VisibleName="Rules [legacy]" cssClass="fa fa-check fa-fw" />
         <Settings order="200" cssClass="fa fa-cogs fa-fw">
             <Schedules url="/firewall_schedule.php">
                 <SchedulesEdit url="/firewall_schedule_edit.php*" visibility="hidden"/>
