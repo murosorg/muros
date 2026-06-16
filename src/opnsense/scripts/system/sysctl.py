@@ -38,6 +38,7 @@ import argparse
 import datetime
 import json
 import os
+import platform
 import subprocess
 import sys
 import time
@@ -77,6 +78,29 @@ def emulated_oids():
         vals['kern.smp.cpus'] = str(ncpu)
     except Exception:
         pass
+    try:
+        sockets = {}
+        cur_phys = '0'
+        with open('/proc/cpuinfo') as fh:
+            for line in fh:
+                key = line.split(':', 1)[0].strip()
+                if key in ('model name', 'Hardware', 'Model') and 'hw.model' not in vals:
+                    vals['hw.model'] = line.split(':', 1)[1].strip()
+                elif key == 'physical id':
+                    cur_phys = line.split(':', 1)[1].strip()
+                elif key == 'core id':
+                    sockets.setdefault(cur_phys, set()).add(line.split(':', 1)[1].strip())
+        cores = sum(len(ids) for ids in sockets.values())
+        if cores == 0:
+            cores = os.cpu_count() or 1
+        vals['kern.smp.cores'] = str(cores)
+    except Exception:
+        pass
+    if 'hw.model' not in vals:
+        try:
+            vals['hw.model'] = platform.processor() or platform.machine() or 'CPU'
+        except Exception:
+            vals['hw.model'] = 'CPU'
     return vals
 
 
