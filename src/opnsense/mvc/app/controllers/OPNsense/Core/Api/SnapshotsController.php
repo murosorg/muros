@@ -143,6 +143,12 @@ class SnapshotsController extends ApiControllerBase
     public function searchAction()
     {
         $records = json_decode((new Backend())->configdRun('zfs snapshot list'), true) ?? [];
+        /* On platforms without ZFS boot environments the backend reports a
+         * status object instead of a record list; present an empty set so the
+         * grid renders cleanly rather than raising an error. */
+        if (!is_array($records) || isset($records['status'])) {
+            $records = [];
+        }
         return $this->searchRecordsetBase($records);
     }
 

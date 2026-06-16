@@ -127,6 +127,9 @@ class SystemhealthController extends ApiMutableModelControllerBase
         $result = ['data' => [], 'files' => []];
         $healthList = json_decode((new Backend())->configdRun('health list'), true);
         $interfaces = $this->getInterfacesAction();
+        if (!is_array($healthList)) {
+            $healthList = [];
+        }
         ksort($healthList);
         if (is_array($healthList)) {
             foreach ($healthList as $healthItem => $details) {
