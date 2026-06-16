@@ -323,6 +323,7 @@ function build_nat(SimpleXMLElement $cfg, array $ifaces, array $wanDevs, array $
 {
     $pre = [];
     $post = [];
+    $autoMasq = [];
     $passes = [];
 
     $localNets = [];
@@ -337,7 +338,7 @@ function build_nat(SimpleXMLElement $cfg, array $ifaces, array $wanDevs, array $
     /* automatic / hybrid: masquerade internal networks leaving each WAN. */
     if (($mode === 'automatic' || $mode === 'hybrid') && $wanDevs && $localNets) {
         foreach ($wanDevs as $dev) {
-            $post[] = '        oifname ' . ifname_token($dev) . ' ip saddr ' . fmt_addr_set($localNets)
+            $autoMasq[] = '        oifname ' . ifname_token($dev) . ' ip saddr ' . fmt_addr_set($localNets)
                 . ' counter masquerade comment "auto outbound nat"';
         }
     }
@@ -408,6 +409,52 @@ function build_nat(SimpleXMLElement $cfg, array $ifaces, array $wanDevs, array $
             $passes[] = '        ' . implode(' ', $fp) . ' ct status dnat counter accept comment "port forward pass"';
         }
     }
+
+    /* 1:1 NAT (binat): bidirectional mapping between an external address and
+     * an internal one. Inbound rewrites destination (external -> internal),
+     * outbound rewrites source (internal -> external), plus a forward pass so
+     * the rewritten inbound flow crosses the drop-policy forward hook. Only
+     * single IPv4 hosts are handled for now (subnet netmap and IPv6 NPt are
+     * left on the roadmap). */
+    if (isset($cfg->nat->onetoone)) {
+        foreach ($cfg->nat->onetoone as $r) {
+            if (isset($r->disabled)) {
+                continue;
+            }
+            $dev = $ifaces[trim((string)$r->interface)]['device'] ?? null;
+            if ($dev === null) {
+                continue;
+            }
+            $external = trim((string)$r->external);
+            $internal = resolve_endpoint($r->source ?? null, 'ip', $ifaces, $aliases);
+            if (!filter_var($external, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+                continue;
+            }
+            if ($internal === null || !filter_var($internal, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+                continue;
+            }
+            $peer = resolve_endpoint($r->destination ?? null, 'ip', $ifaces, $aliases);
+
+            $preParts = ['iifname ' . ifname_token($dev), "ip daddr $external"];
+            if ($peer !== null) {
+                $preParts[] = "ip saddr $peer";
+            }
+            $pre[] = '        ' . implode(' ', $preParts) . " dnat to $internal comment \"1:1 nat inbound\"";
+
+            $postParts = ['oifname ' . ifname_token($dev), "ip saddr $internal"];
+            if ($peer !== null) {
+                $postParts[] = "ip daddr $peer";
+            }
+            $post[] = '        ' . implode(' ', $postParts) . " snat to $external comment \"1:1 nat outbound\"";
+
+            $passes[] = "        ip daddr $internal ct status dnat counter accept comment \"1:1 nat pass\"";
+        }
+    }
+
+    /* Specific source NAT (manual outbound rules and 1:1 NAT) must be
+     * evaluated before the automatic masquerade, otherwise the broad
+     * masquerade would claim addresses that should follow a 1:1 mapping. */
+    $post = array_merge($post, $autoMasq);
 
     return ['pre' => $pre, 'post' => $post, 'passes' => $passes];
 }
