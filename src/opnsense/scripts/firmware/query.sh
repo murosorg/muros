@@ -26,40 +26,51 @@
 
 . /usr/local/opnsense/scripts/firmware/config.sh
 
-LIC="BSD2CLAUSE"
-OS="FreeBSD"
-REPO="OPNsense"
 SEP="|||"
+
+# Emit the installed/available package inventory used by the firmware UI.
+#
+# Each line is a flat record of nine fields separated by "|||":
+#   name|||version|||comment|||flatsize|||locked|||automatic|||license|||repository|||origin
+#
+# On Debian the package manager is dpkg/apt, so the data is taken from
+# dpkg-query (installed set) and the apt cache (available upgrades) instead
+# of the FreeBSD pkg/opnsense-update tooling used upstream.
 
 case "${1}" in
 local)
-	read BN BV BS << EOF
-$(opnsense-version -nvs base)
-EOF
+	HOLD=$(apt-mark showhold 2>/dev/null)
+	AUTO=$(apt-mark showauto 2>/dev/null)
 
-	read KN KV KS << EOF
-$(opnsense-version -nvs kernel)
-EOF
-
-	BL=0
-	KL=0
-
-	opnsense-update -Tb || BL=1
-	opnsense-update -Tk || KL=1
-
-cat << EOF
-${BN}${SEP}${BV}${SEP}${OS} userland set${SEP}${BS}${SEP}${BL}${SEP}0${SEP}${LIC}${SEP}${REPO}${SEP}opnsense/base
-${KN}${SEP}${KV}${SEP}${OS} kernel set${SEP}${KS}${SEP}${KL}${SEP}0${SEP}${LIC}${SEP}${REPO}${SEP}opnsense/kernel
-EOF
-
-	${PKG} query "%n|||%v|||%c|||%sh|||%k|||%a|||%L|||%R|||%o"
+	dpkg-query -W -f='${Package}\t${Version}\t${Installed-Size}\t${Section}\t${binary:Summary}\n' 2>/dev/null | \
+	    awk -F'\t' -v sep="${SEP}" -v hold="${HOLD}" -v auto="${AUTO}" '
+	    BEGIN {
+	        n = split(hold, h, "\n"); for (i = 1; i <= n; i++) if (h[i] != "") held[h[i]] = 1;
+	        n = split(auto, a, "\n"); for (i = 1; i <= n; i++) if (a[i] != "") amark[a[i]] = 1;
+	    }
+	    {
+	        name = $1; ver = $2; isize = $3; sect = $4; summary = $5;
+	        # Installed-Size is reported in KiB, the UI expects bytes
+	        size = (isize ~ /^[0-9]+$/) ? isize * 1024 : 0;
+	        locked = (name in held) ? 1 : 0;
+	        automatic = (name in amark) ? 1 : 0;
+	        printf "%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s/%s\n",
+	            name, sep, ver, sep, summary, sep, size, sep, locked, sep,
+	            automatic, sep, "", sep, "Debian", sep, sect, name;
+	    }'
 	;;
 remote)
-	${PKG} update -q && ${PKG} rquery -U "%n|||%v|||%c|||%sh|||0|||0|||%L|||%R|||%o"
+	# Rely on the existing apt cache (no network access here); the dedicated
+	# check/update actions are responsible for refreshing the metadata.
+	apt list --upgradable 2>/dev/null | \
+	    sed -n 's#^\([^/]*\)/\([^ ]*\) \([^ ]*\) .*#\1\t\3\t\2#p' | \
+	    awk -F'\t' -v sep="${SEP}" '{
+	        printf "%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s\n",
+	            $1, sep, $2, sep, "", sep, 0, sep, 0, sep, 0, sep, "", sep, $3, sep, $1;
+	    }'
 	;;
 tiers)
-	# fetching annotations is not as easy to query so always ask for annotations from remote end
-	${PKG} update -q && ${PKG} rquery '%n|||%At|||%Av' | grep '|||product_tier|||'
+	# Plugin tier annotations are not modelled on Debian yet
 	;;
 *)
 	;;
