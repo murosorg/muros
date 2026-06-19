@@ -74,13 +74,25 @@ function legacy_interface_listget($flag = 'all')
 
 function legacy_interface_flags($ifs, $flag, $report_errors = true)
 {
-    /* $flags isn't escaped because it can be an argument list */
-    $cmd = '/sbin/ifconfig ' . escapeshellarg($ifs) . ' ' . $flag;
-
-    exec($cmd . ' 2>&1', $out, $ret);
-    if (!empty($ret) && $report_errors) {
-        legacy_interface_error($cmd);
+    /*
+     * MurOS: only the administrative up/down state maps cleanly to iproute2.
+     * FreeBSD-only tokens (hardware offload such as tso/lro/txcsum/rxcsum, the
+     * stf "link2" flag, bridge member flags) have no ifconfig equivalent here
+     * and are ignored: offload tuning is optional and bridge member flags are
+     * applied by the Linux bridge configuration path.
+     */
+    $state = null;
+    foreach (preg_split('/\s+/', trim((string)$flag)) as $token) {
+        if ($token === 'up' || $token === 'down') {
+            $state = $token;
+        }
     }
+
+    if ($state === null) {
+        return;
+    }
+
+    mwexecf('/usr/sbin/ip link set dev %s %s', [$ifs, $state], !$report_errors);
 }
 
 function legacy_interface_create($ifs, $name = null)
@@ -118,13 +130,13 @@ function legacy_interface_create($ifs, $name = null)
 
 function legacy_interface_destroy($ifs)
 {
-    $cmd = '/sbin/ifconfig ' . escapeshellarg($ifs) . ' destroy';
-
-    exec($cmd . ' 2>&1', $out, $ret);
-    if ($ret) {
-        /* disable error reporting to avoid spurious errors on first configuration */
-        //legacy_interface_error($cmd);
-    }
+    /*
+     * MurOS: tear down a virtual/cloned device with iproute2. Muted because
+     * the device may not exist yet (first configuration) or may be a physical
+     * NIC that cannot be deleted, neither of which is an error here, matching
+     * the FreeBSD behaviour of ignoring `ifconfig destroy` failures.
+     */
+    mwexecf('/usr/sbin/ip link del dev %s', [$ifs], true);
 }
 
 function legacy_interface_setaddress($ifs, $addr, $family = 4)
@@ -149,12 +161,8 @@ function legacy_interface_deladdress($ifs, $addr, $family = 4)
 
 function legacy_interface_mtu($ifs, $mtu)
 {
-    $cmd = '/sbin/ifconfig ' . escapeshellarg($ifs) . ' mtu ' . escapeshellarg($mtu);
-
-    exec($cmd . ' 2>&1', $out, $ret);
-    if ($ret) {
-        legacy_interface_error($cmd);
-    }
+    /* MurOS: set the device MTU with iproute2. */
+    mwexecf('/usr/sbin/ip link set dev %s mtu %s', [$ifs, $mtu]);
 }
 
 function legacy_bridge_member($ifs, $member)
