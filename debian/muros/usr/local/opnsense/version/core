@@ -14,7 +14,7 @@
     "CORE_NEXT": "1.1",
     "CORE_NICKNAME": "Debian",
     "CORE_PACKAGESITE": "https://download.muros.org",
-    "CORE_PKGVERSION": "0.9.4-rc7",
+    "CORE_PKGVERSION": "0.9.6",
     "CORE_PRODUCT": "MurOS",
     "CORE_PYTHON_DOT": "3.13",
     "CORE_SERIES_FW": "1.0",
@@ -22,7 +22,7 @@
     "CORE_SYSLOGNG": "",
     "CORE_UID": "33",
     "CORE_USER": "www-data",
-    "CORE_VERSION": "0.9.4-rc7",
+    "CORE_VERSION": "0.9.6",
     "CORE_WWW": "https://muros.org/",
     "product_abi": "1.0",
     "product_arch": "amd64",
@@ -37,6 +37,6 @@
     "product_nickname": "Debian",
     "product_series": "1.0",
     "product_tier": "1",
-    "product_version": "0.9.4-rc7",
+    "product_version": "0.9.6",
     "product_website": "https://muros.org/"
 }

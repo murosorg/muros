@@ -378,7 +378,7 @@ function core_xmlrpc_sync()
 function core_configure()
 {
     return [
-        'bootup' => ['system_powerd_configure'],
+        'bootup' => ['system_locale_configure', 'system_powerd_configure'],
         'crl' => ['core_trust_crl'],
         /* XXX these are all specialized and try to avoid extra script use */
         'cache_flush' => ['system_cache_flush'],

@@ -15,7 +15,8 @@ Depends: ${misc:Depends},
  php8.4-phalcon,
  python3 (>= 3.11), python3-jinja2, python3-dnspython, python3-ldap3,
  nftables, iproute2, chrony
-Recommends: unbound, openssh-server, openvpn, strongswan, isc-dhcp-server, suricata
+Recommends: unbound, openssh-server
+Suggests: openvpn, strongswan, isc-dhcp-server, kea, suricata, keepalived, conntrackd
 Description: MurOS firewall and routing platform
  MurOS is an OPNsense fork ported to Debian. It provides a web-managed
  stateful firewall (nftables), NAT, interfaces and routing on top of a

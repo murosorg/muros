@@ -63,6 +63,71 @@ function system_powerd_configure($verbose = false)
     service_log("done.\n", $verbose);
 }
 
+function system_locale_configure($verbose = false)
+{
+    global $config;
+
+    /*
+     * MurOS: on FreeBSD every locale is always available, but a Debian system
+     * only carries the locales that have been generated. The web GUI selects
+     * its language by calling setlocale(LC_ALL, "<lang>.UTF-8") and binds the
+     * gettext catalogs to it (see set_language() in authgui.inc); if that
+     * locale was never generated, setlocale() fails and translations as well as
+     * locale-aware formatting silently fall back to C. This function makes sure
+     * the configured GUI language (plus the en_US base) exist by generating
+     * them with localedef when missing. It is idempotent and cheap: an already
+     * present locale is skipped.
+     */
+    $wanted = ['en_US.UTF-8'];
+    if (!empty($config['system']['language'])) {
+        $wanted[] = $config['system']['language'] . '.UTF-8';
+    }
+    foreach (config_read_array('system', 'user', false) as $user) {
+        if (!empty($user['language'])) {
+            $wanted[] = $user['language'] . '.UTF-8';
+        }
+    }
+    $wanted = array_unique($wanted);
+
+    /* canonicalise locale names so "en_US.UTF-8" matches "en_US.utf8" */
+    $normalise = function ($name) {
+        return preg_replace('/[^a-z0-9]/', '', strtolower($name));
+    };
+
+    $present = [];
+    foreach (explode("\n", (string)shell_safe('/usr/bin/locale -a 2>/dev/null')) as $line) {
+        $line = trim($line);
+        if ($line !== '') {
+            $present[$normalise($line)] = true;
+        }
+    }
+
+    $generated = false;
+    foreach ($wanted as $locale) {
+        if (isset($present[$normalise($locale)])) {
+            continue;
+        }
+
+        /* "fr_FR.UTF-8" -> source "fr_FR", charmap "UTF-8" */
+        $parts = explode('.', $locale, 2);
+        $source = $parts[0];
+        $charmap = $parts[1] ?? 'UTF-8';
+
+        if (!$generated) {
+            service_log('Generating locales...', $verbose);
+            $generated = true;
+        }
+
+        if (mwexecf('/usr/bin/localedef -i %s -f %s %s', [$source, $charmap, $locale], true) != 0) {
+            log_msg(sprintf('system_locale_configure: failed to generate locale %s', $locale), LOG_WARNING);
+        }
+    }
+
+    if ($generated) {
+        service_log("done.\n", $verbose);
+    }
+}
+
 function system_sysctl_defaults()
 {
     global $config;

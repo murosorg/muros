@@ -258,6 +258,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             system_host_route($staleroute, null);
         }
 
+        system_locale_configure(); /* MurOS: ensure the chosen GUI language locale exists (Debian) */
         system_timezone_configure(); /* time zone change first */
         system_hostname_configure();
         system_resolver_configure();

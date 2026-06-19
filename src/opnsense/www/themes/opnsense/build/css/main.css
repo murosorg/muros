@@ -7378,69 +7378,72 @@ div[data-for*=help_for] {
 
 /* brand block at the top of the left panel: compact, two rows
    (logo + version, then identity + logout) to avoid empty space */
+/* Sidebar brand block: product logo, version, signed-in user and logout.
+   Kept flat and compact on purpose to match a network appliance console. */
 .muros-brand {
-  padding: 14px 16px 12px 16px;
-  background: #0f1d33;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  overflow: hidden;
+  padding: 18px 18px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 .muros-brand-row {
   display: flex;
-  width: 100%;
   align-items: center;
-  justify-content: space-between;
-  flex-wrap: nowrap;
-  gap: 10px;
+  gap: 9px;
+  min-width: 0;
 }
-.muros-brand .muros-brand-logo { display: inline-flex; line-height: 0; min-width: 0; flex: 0 1 auto; }
-.muros-brand .muros-brand-logo img {
-  height: 30px;
-  max-width: 100%;
+.muros-brand-logo {
+  display: inline-flex;
+  line-height: 0;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.muros-brand-logo img {
+  height: 26px;
   width: auto;
+  max-width: 100%;
   display: block;
 }
 .muros-version {
   font-family: "Courier New", monospace;
-  font-size: 11px;
+  font-size: 10px;
+  letter-spacing: 0.04em;
   line-height: 1;
-  color: #aebbcd;
-  background: #16263f;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  padding: 4px 8px;
-  border-radius: 4px;
-  white-space: nowrap;
+  color: #6f8097;
   flex-shrink: 0;
 }
 .muros-user-row {
   display: flex;
-  width: 100%;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  margin-top: 14px;
 }
 .muros-identity {
-  font-family: "Courier New", monospace;
-  font-size: 13px;
+  font-size: 12px;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.muros-identity .muros-user { color: #e6ebf2; }
-.muros-identity .muros-host { color: #8a99ad; }
-a.muros-logout {
-  color: #9fb0c4 !important;
-  font-size: 13px;
-  flex-shrink: 0;
-  text-decoration: none;
+.muros-identity .muros-user {
+  color: #eef2f7;
+  font-weight: 600;
 }
-a.muros-logout:hover { color: #F5C518 !important; }
-a.muros-logout i { margin-right: 5px; }
-a.muros-logout:hover, a.muros-logout:focus {
-  color: #ffffff !important;
+.muros-identity .muros-host {
+  color: #6f8097;
+}
+a.muros-logout {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  font-size: 12px;
+  color: #8a99ad !important;
+  text-decoration: none;
+  transition: color 0.12s ease;
+}
+a.muros-logout:hover,
+a.muros-logout:focus {
+  color: #F5C518 !important;
   text-decoration: none;
 }
 
