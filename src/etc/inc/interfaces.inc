@@ -151,15 +151,36 @@ function interfaces_vlan_configure($verbose = false)
 
 function _interfaces_vlan_configure($vlan)
 {
-    legacy_interface_flags($vlan['if'], 'up'); /* XXX overreach? */
+    /*
+     * MurOS: VLAN interfaces are created with iproute2 on Linux. Unlike the
+     * FreeBSD clone-then-tag model (ifconfig vlan create + vlandev), a single
+     * "ip link add" both creates the device with an explicit name and applies
+     * the VLAN id and protocol.
+     */
+    $parent = $vlan['if'];
+    $vlanif = !empty($vlan['vlanif']) ? $vlan['vlanif'] : "{$parent}.{$vlan['tag']}";
+    $tag = $vlan['tag'];
+    $pcp = $vlan['pcp'] ?? '';
+    $proto = ($vlan['proto'] ?? '') === '802.1ad' ? '802.1ad' : '802.1q';
 
-    /* destroy is a safety precaution, when configuring via api or gui this function should only be called on new vlans */
-    legacy_interface_destroy($vlan['vlanif']);
-    legacy_interface_create('vlan', $vlan['vlanif']);
+    /* the parent must be administratively up to carry tagged traffic */
+    mwexecf('/usr/sbin/ip link set dev %s up', [$parent]);
 
-    legacy_vlan_tag($vlan['vlanif'], $vlan['if'], $vlan['tag'], $vlan['pcp'], $vlan['proto']);
+    /*
+     * Destroy is a safety precaution: recreating guarantees a clean state when
+     * the tag or protocol changed. Muted because the device usually does not
+     * exist yet on a first configuration.
+     */
+    mwexecf('/usr/sbin/ip link del dev %s', [$vlanif], true);
 
-    legacy_interface_flags($vlan['vlanif'], 'up');
+    mwexecf('/usr/sbin/ip link add link %s name %s type vlan id %s protocol ' . $proto, [$parent, $vlanif, $tag]);
+
+    /* map the configured PCP onto egress priority 0 when requested */
+    if ($pcp !== '') {
+        mwexecf('/usr/sbin/ip link set dev %s type vlan egress-qos-map 0:%s', [$vlanif, $pcp]);
+    }
+
+    mwexecf('/usr/sbin/ip link set dev %s up', [$vlanif]);
 }
 
 function interfaces_wlan_clone($device)
