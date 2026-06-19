@@ -141,22 +141,24 @@ function legacy_interface_destroy($ifs)
 
 function legacy_interface_setaddress($ifs, $addr, $family = 4)
 {
-    $cmd = implode(' ', ['/sbin/ifconfig', escapeshellarg($ifs), $family == 6 ? 'inet6' : 'inet', escapeshellarg($addr), 'alias']);
-
-    exec($cmd . ' 2>&1', $out, $ret);
-    if ($ret) {
-        legacy_interface_error($cmd);
-    }
+    /*
+     * MurOS: add an address (alias) with iproute2. The family is inferred from
+     * the address; a bare address implies a host route (/32 or /128), matching
+     * the FreeBSD `ifconfig ... alias` default. Muted because re-adding an
+     * already present address during an idempotent reconfigure is not fatal.
+     */
+    $dev = $ifs === 'lo0' ? 'lo' : $ifs;
+    mwexecf('/usr/sbin/ip address add %s dev %s', [$addr, $dev], true);
 }
 
 function legacy_interface_deladdress($ifs, $addr, $family = 4)
 {
-    $cmd = implode(' ', ['/sbin/ifconfig', escapeshellarg($ifs), $family == 6 ? 'inet6' : 'inet', escapeshellarg($addr), '-alias']);
-
-    exec($cmd . ' 2>&1', $out, $ret);
-    if ($ret) {
-        legacy_interface_error($cmd);
-    }
+    /*
+     * MurOS: remove an address with iproute2. Muted because the address may
+     * already be gone, which is not an error.
+     */
+    $dev = $ifs === 'lo0' ? 'lo' : $ifs;
+    mwexecf('/usr/sbin/ip address del %s dev %s', [$addr, $dev], true);
 }
 
 function legacy_interface_mtu($ifs, $mtu)
