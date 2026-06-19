@@ -172,6 +172,44 @@ function filter_configure_sync($verbose = false, $load_aliases = true)
     $fobj = new \OPNsense\Core\FileObject('/tmp/rules.debug', 'a+', 0600, LOCK_EX);
 
     /*
+     * MurOS (Debian) data plane is nftables, not pf. Every code path that
+     * reconfigures the firewall (interface apply, general settings, boot,
+     * new WAN IP, NAT, schedules...) funnels through this function, so we
+     * delegate ruleset generation and loading to the same nft pipeline used
+     * by the GUI "Apply" action (nft_build.php -> nft -c -> nft -f). This
+     * keeps a single source of truth for the ruleset and avoids the missing
+     * FreeBSD pfctl/pflog tooling. The legacy pf body below is retained for
+     * reference during the migration but is intentionally unreachable here.
+     */
+    if (isset($config['system']['disablefilter'])) {
+        /* firewall disabled: drop the MurOS ruleset entirely. */
+        mwexecf('/usr/sbin/nft delete table inet muros');
+        service_log("disabled.\n", $verbose);
+    } else {
+        $apply_failed = mwexecfm('/usr/local/opnsense/scripts/firewall/nft_apply.sh');
+        if ($apply_failed) {
+            syslog(LOG_ERR, 'There were error(s) loading the nftables ruleset.');
+            file_put_contents(
+                '/tmp/rules.error',
+                gettext('There were error(s) loading the nftables ruleset.')
+            );
+            service_log("failed.\n", $verbose);
+        } else {
+            @unlink('/tmp/rules.error');
+            service_log("done.\n", $verbose);
+        }
+    }
+
+    unset($fobj);
+    reopenlog();
+
+    if ($load_aliases) {
+        configd_run('template reload OPNsense/Filter');
+    }
+
+    return;
+
+    /*
      * Kickstart dnctl and ipfw (no-op if shaper not configured)
      * to ensure consistent pipe/queue config for pf and service
      * start during bootup.
