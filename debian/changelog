@@ -3,8 +3,12 @@ muros (0.9.6) trixie; urgency=medium
   * Fork (OPNsense-on-Debian) supersedes the legacy FastAPI product.
   * System config now owned by the package: php-fpm pool (no more
     silent reset to max_children=5) and sysctl forwarding.
+  * auth: port local account synchronization to Debian tooling (getent,
+    userdel/groupdel, root/nogroup groups) instead of FreeBSD pw.
+  * themes: restyle the sidebar header (left-aligned logo, version label,
+    compact user and logout row).
 
- -- MurOS <dev@muros.org>  Fri, 19 Jun 2026 20:50:00 +0200
+ -- MurOS <dev@muros.org>  Fri, 19 Jun 2026 21:15:00 +0200
 
 muros (0.9.4~rc7) trixie; urgency=medium
 
