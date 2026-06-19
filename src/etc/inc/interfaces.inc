@@ -538,11 +538,10 @@ function interfaces_gif_configure($device)
 
 function _interfaces_gif_configure($gif)
 {
-    if (!does_interface_exist($gif['gifif'])) {
-        /* Only create when not already there */
-        legacy_interface_create($gif['gifif']);
-    }
-
+    /*
+     * MurOS: GIF tunnels are recreated below with iproute2 once the endpoints
+     * are known, so there is no pre-creation step here.
+     */
     $interface = !empty($gif['if']) ? explode('_vip', $gif['if'])[0] : null;
     $family = is_ipaddrv4($gif['remote-addr']) ? 'inet' : 'inet6';
     /* XXX: remove routing part in 24.7 */
@@ -572,35 +571,57 @@ function _interfaces_gif_configure($gif)
 
     $remote_addr = $gif['remote-addr'] . (strpos($local_addr, '%') === false ? '' : '%' . explode('%', $local_addr)[1]);
 
-    mwexecf('/sbin/ifconfig %s %s tunnel %s %s', [$gif['gifif'], $family, $local_addr, $remote_addr]);
+    /*
+     * MurOS: map the FreeBSD GIF (raw IP-in-IP) onto the matching Linux tunnel
+     * type based on the underlay and overlay families:
+     *   IPv4 underlay + IPv6 overlay -> "sit"   (6in4, proto 41)
+     *   IPv4 underlay + IPv4 overlay -> "ipip"  (4in4, proto 4)
+     *   IPv6 underlay                -> "ip6tnl" with the appropriate mode
+     * The kernel wants plain addresses, so the %scope suffix (routing only) is
+     * stripped from the endpoints.
+     */
+    $overlay_v6 = is_ipaddrv6($gif['tunnel-local-addr']) || is_ipaddrv6($gif['tunnel-remote-addr']);
+    $local_plain = explode('%', $local_addr)[0];
+    $remote_plain = explode('%', $remote_addr)[0];
 
-    if (is_ipaddrv6($gif['tunnel-local-addr']) || is_ipaddrv6($gif['tunnel-remote-addr'])) {
-        /* check if destination is local to source and if not we need the traditional point-to-point setup */
-        if ($gif['tunnel-remote-net'] != '128' && ip_in_subnet($gif['tunnel-remote-addr'], "{$gif['tunnel-local-addr']}/{$gif['tunnel-remote-net']}")) {
-            mwexecf('/sbin/ifconfig %s inet6 %s prefixlen %s', [
-                $gif['gifif'],
-                $gif['tunnel-local-addr'],
-                $gif['tunnel-remote-net'],
-            ]);
-        } else {
-            mwexecf('/sbin/ifconfig %s inet6 %s %s prefixlen 128', [
-                $gif['gifif'],
-                $gif['tunnel-local-addr'],
-                $gif['tunnel-remote-addr'],
-            ]);
-        }
+    if ($family == 'inet') {
+        $link_type = $overlay_v6 ? 'sit' : 'ipip';
+        $extra = '';
     } else {
-        mwexecf('/sbin/ifconfig %s inet6 ifdisabled', [$gif['gifif']]);
-        mwexecf('/sbin/ifconfig %s %s %s netmask %s', [
-            $gif['gifif'],
-            $gif['tunnel-local-addr'],
-            $gif['tunnel-remote-addr'],
-            gen_subnet_mask($gif['tunnel-remote-net']),
-        ]);
+        $link_type = 'ip6tnl';
+        $extra = ' mode ' . ($overlay_v6 ? 'ip6ip6' : 'ipip6');
     }
 
-    $flags = (empty($gif['link1']) ? "-" : "") . "link1 " . (empty($gif['link2']) ? "-" : "") . "link2";
-    legacy_interface_flags($gif['gifif'], $flags);
+    /* recreate so a changed endpoint or tunnel family takes effect */
+    legacy_interface_destroy($gif['gifif']);
+    mwexecf('/usr/sbin/ip link add name %s type %s local %s remote %s' . $extra, [
+        $gif['gifif'],
+        $link_type,
+        $local_plain,
+        $remote_plain,
+    ]);
+
+    /* assign the overlay (tunnel) addresses */
+    $host_len = $overlay_v6 ? '128' : '32';
+    if (
+        $gif['tunnel-remote-net'] != $host_len &&
+        ip_in_subnet($gif['tunnel-remote-addr'], "{$gif['tunnel-local-addr']}/{$gif['tunnel-remote-net']}")
+    ) {
+        /* both ends share an on-link subnet */
+        mwexecf('/usr/sbin/ip address add %s/%s dev %s', [
+            $gif['tunnel-local-addr'],
+            $gif['tunnel-remote-net'],
+            $gif['gifif'],
+        ]);
+    } else {
+        /* classic point-to-point setup */
+        mwexecf('/usr/sbin/ip address add %s peer %s/%s dev %s', [
+            $gif['tunnel-local-addr'],
+            $gif['tunnel-remote-addr'],
+            $host_len,
+            $gif['gifif'],
+        ]);
+    }
 
     legacy_interface_flags($gif['gifif'], 'up');
 
