@@ -65,22 +65,30 @@ function get_vhid_status()
 function wg_start($server, $fhandle, $ifcfgflag = 'up', $reload = false)
 {
     if (!does_interface_exist($server->interface)) {
-        mwexecf('/sbin/ifconfig wg create name %s', [$server->interface]);
-        mwexecf('/sbin/ifconfig %s group wireguard', [$server->interface]);
+        /*
+         * MurOS: WireGuard is a native Linux kernel device created with
+         * iproute2. The FreeBSD "group wireguard" interface group has no kernel
+         * equivalent on Linux.
+         */
+        mwexecf('/usr/sbin/ip link add dev %s type wireguard', [$server->interface]);
         $reload = true;
     }
 
     mwexecf('/usr/bin/wg syncconf %s %s', [$server->interface, $server->cnfFilename]);
 
     foreach ($server->tunneladdress->getValues() as $alias) {
-        $proto = strpos($alias, ':') === false ? "inet" : "inet6";
-        mwexecf('/sbin/ifconfig %s %s %s alias', [$server->interface, $proto, $alias]);
+        /* MurOS: "ip addr add" adds an address for both IPv4 and IPv6 (FreeBSD "alias") */
+        mwexecf('/usr/sbin/ip address add %s dev %s', [$alias, $server->interface]);
     }
     if (!empty((string)$server->mtu)) {
-        mwexecf('/sbin/ifconfig %s mtu %s', [$server->interface, $server->mtu]);
+        mwexecf('/usr/sbin/ip link set dev %s mtu %s', [$server->interface, $server->mtu]);
     }
 
-    mwexecf('/sbin/ifconfig %s %sdebug', [$server->interface->getValue(), $server->debug->getValue() === '1' ? '' : '-']);
+    /*
+     * MurOS: the FreeBSD if_wg "debug" link flag has no direct iproute2
+     * equivalent (Linux WireGuard logging is controlled through the kernel
+     * dynamic-debug facility), so the toggle is intentionally not applied here.
+     */
 
     if (empty((string)$server->disableroutes)) {
         /**
@@ -126,20 +134,21 @@ function wg_start($server, $fhandle, $ifcfgflag = 'up', $reload = false)
         }
         foreach ($routes_to_add as $ipproto => $routes) {
             foreach (array_unique($routes) as $route) {
-                mwexecf('/sbin/route -q -n add -%s %s -interface %s', [$ipproto,  $route, $server->interface]);
+                /* MurOS: iproute2 infers the address family from the prefix */
+                mwexecf('/usr/sbin/ip route replace %s dev %s', [$route, $server->interface]);
             }
         }
     } elseif (!empty((string)$server->gateway)) {
         /* Only bind the gateway ip to the tunnel */
-        $ipprefix = strpos($server->gateway, ":") === false ? "-4" :  "-6";
-        mwexecf('/sbin/route -q -n add %s %s -iface %s', [$ipprefix, $server->gateway, $server->interface]);
+        mwexecf('/usr/sbin/ip route replace %s dev %s', [$server->gateway, $server->interface]);
     }
 
     if ($reload) {
         interfaces_restart_by_device(false, [(string)$server->interface]);
     }
 
-    mwexecf('/sbin/ifconfig %s %s', [$server->interface, $ifcfgflag]);
+    /* MurOS: $ifcfgflag is 'up' or 'down' */
+    mwexecf('/usr/sbin/ip link set dev %s %s', [$server->interface, $ifcfgflag]);
 
     // flush checksum to ease change detection
     fseek($fhandle, 0);
@@ -308,7 +317,8 @@ if (isset($opts['h']) || empty($args) || !in_array($args[0], ['start', 'stop', '
                                 "switching to " . strtoupper($carp_if_flag)
                             );
 
-                            mwexecf('/sbin/ifconfig %s %s', [$node->interface, $carp_if_flag]);
+                            /* MurOS: $carp_if_flag is 'up' or 'down' */
+                            mwexecf('/usr/sbin/ip link set dev %s %s', [$node->interface, $carp_if_flag]);
                         }
                         break;
                 }
