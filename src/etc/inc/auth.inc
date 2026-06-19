@@ -76,8 +76,8 @@ function isAuthLocalIP($http_host)
     /* fetch addresses and store in cache */
     $interface_list_ips = get_configured_ip_addresses();
     file_put_contents($auth_cache, json_encode($interface_list_ips));
-    chown($auth_cache, 'wwwonly'); /* XXX frontend owns file */
-    chgrp($auth_cache, 'wheel'); /* XXX backend can work with it */
+    chown($auth_cache, 'www-data'); /* MurOS: frontend (Debian web user) owns file */
+    chgrp($auth_cache, 'root'); /* MurOS: backend (root/admin group) can work with it */
 
     return $address_in_list($interface_list_ips, $http_host);
 }
@@ -467,7 +467,7 @@ function local_user_set_password(&$user, $password = null)
         !empty($local['password_policy_compliance'])
     ) {
           $process = proc_open(
-              '/usr/local/bin/openssl passwd -6 -stdin',
+              '/usr/bin/openssl passwd -6 -stdin',
               [['pipe', 'r'], ['pipe', 'w']],
               $pipes
           );
@@ -572,7 +572,7 @@ function local_group_set($group, $uids = null)
         mwexecf('/usr/sbin/groupmod -o -g %s %s', [$group_gid, $group_name]);
     }
 
-    mwexecf('/usr/sbin/gpasswd -M %s %s', [$group_members, $group_name]);
+    mwexecf('/usr/bin/gpasswd -M %s %s', [$group_members, $group_name]);
 }
 
 /**
