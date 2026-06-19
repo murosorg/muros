@@ -37,12 +37,29 @@ if __name__ == '__main__':
     ranges = {}
     leases = []
     this_interface = None
-    ifconfig = subprocess.run(['/sbin/ifconfig', '-f', 'inet:cidr,inet6:cidr'], capture_output=True, text=True).stdout
-    for line in ifconfig.split('\n'):
-        if not line.startswith("\t") and line.find(':') > -1:
-            this_interface = line.strip().split(':')[0]
-        elif this_interface is not None and line.startswith("\tinet") and line.find('-->') == -1:
-            ranges[ipaddress.ip_network(line.split()[1], strict=False)] = this_interface
+    # MurOS: build the interface -> network map from iproute2 (Debian) instead
+    # of parsing FreeBSD `ifconfig -f inet:cidr`. Point-to-point addresses
+    # (those carrying a distinct peer) are skipped, as before.
+    addr_json = subprocess.run(
+        ['/usr/sbin/ip', '-j', 'addr', 'show'], capture_output=True, text=True
+    ).stdout
+    try:
+        links = ujson.loads(addr_json or '[]')
+    except ValueError:
+        links = []
+    for link in links:
+        this_interface = link.get('ifname')
+        for addr in link.get('addr_info', []):
+            local = addr.get('local')
+            prefixlen = addr.get('prefixlen')
+            if not local or prefixlen is None:
+                continue
+            if addr.get('address') and addr.get('address') != local:
+                continue
+            try:
+                ranges[ipaddress.ip_network('%s/%s' % (local, prefixlen), strict=False)] = this_interface
+            except ValueError:
+                continue
 
     if os.path.isfile(filename):
         with open(filename, 'r') as leasefile:

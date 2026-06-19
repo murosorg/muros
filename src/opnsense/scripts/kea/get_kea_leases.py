@@ -35,15 +35,33 @@ import ujson
 from lib.kea_ctrl import KeaCtrl
 
 def build_ranges(proto):
+    # MurOS: build the interface -> network map from iproute2 (Debian) instead
+    # of parsing FreeBSD `ifconfig -f inet:cidr`, filtering on the requested
+    # address family ('inet' or 'inet6'). Point-to-point addresses (those
+    # carrying a distinct peer) are skipped, as before.
     ranges = {}
-    this_interface = None
-    addr_prefix = "\tinet6" if proto == 'inet6' else "\tinet "
-    ifconfig = subprocess.run(['/sbin/ifconfig', '-f', 'inet:cidr,inet6:cidr'], capture_output=True, text=True).stdout
-    for line in ifconfig.split('\n'):
-        if not line.startswith("\t") and ':' in line:
-            this_interface = line.strip().split(':')[0]
-        elif this_interface is not None and line.startswith(addr_prefix) and '-->' not in line:
-            ranges[ipaddress.ip_network(line.split()[1], strict=False)] = this_interface
+    addr_json = subprocess.run(
+        ['/usr/sbin/ip', '-j', 'addr', 'show'], capture_output=True, text=True
+    ).stdout
+    try:
+        links = ujson.loads(addr_json or '[]')
+    except ValueError:
+        links = []
+    for link in links:
+        this_interface = link.get('ifname')
+        for addr in link.get('addr_info', []):
+            if addr.get('family') != proto:
+                continue
+            local = addr.get('local')
+            prefixlen = addr.get('prefixlen')
+            if not local or prefixlen is None:
+                continue
+            if addr.get('address') and addr.get('address') != local:
+                continue
+            try:
+                ranges[ipaddress.ip_network('%s/%s' % (local, prefixlen), strict=False)] = this_interface
+            except ValueError:
+                continue
 
     return ranges
 
