@@ -623,6 +623,34 @@ function rule_line(SimpleXMLElement $rule, array $ifaces, array $aliases = []): 
         }
     }
 
+    /* TCP flags. config.xml stores tcpflags1 (flags that must be set) and
+     * tcpflags2 (the mask, i.e. the flags examined), both comma-separated
+     * lowercase names, plus tcpflags_any (match any combination). nft uses
+     * "tcp flags & (mask) == set". Only emitted for plain tcp rules with a
+     * non-empty mask and set, to avoid ambiguous matches. */
+    if ($proto === 'tcp' && !isset($rule->tcpflags_any)) {
+        // pf/OPNsense flag name -> nft flag name (ECE is "ecn" in nft).
+        $flagMap = [
+            'fin' => 'fin', 'syn' => 'syn', 'rst' => 'rst', 'psh' => 'psh',
+            'ack' => 'ack', 'urg' => 'urg', 'ece' => 'ecn', 'cwr' => 'cwr',
+        ];
+        $mapFlags = function (string $csv) use ($flagMap): array {
+            $out = [];
+            foreach (preg_split('/[\s,]+/', strtolower(trim($csv))) as $f) {
+                if ($f !== '' && isset($flagMap[$f]) && !in_array($flagMap[$f], $out, true)) {
+                    $out[] = $flagMap[$f];
+                }
+            }
+            return $out;
+        };
+        $setFlags = $mapFlags((string)$rule->tcpflags1);
+        $maskFlags = $mapFlags((string)$rule->tcpflags2);
+        if (!empty($setFlags) && !empty($maskFlags)) {
+            $parts[] = 'tcp flags & (' . implode('|', $maskFlags) . ') == '
+                . implode('|', $setFlags);
+        }
+    }
+
     $descr = trim((string)$rule->descr);
     $descr = preg_replace('/[^\x20-\x7E]/', '', $descr);
     $descr = str_replace('"', "'", $descr);
