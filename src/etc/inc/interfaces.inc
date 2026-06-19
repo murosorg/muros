@@ -345,6 +345,7 @@ function _interfaces_lagg_configure($lagg)
         return;
     }
 
+    $laggif = $lagg['laggif'];
     $interface_stats = legacy_interfaces_details();
     $members = explode(',', $lagg['members']);
     if (!empty($lagg['primary_member'])) {
@@ -352,25 +353,61 @@ function _interfaces_lagg_configure($lagg)
         $members = array_unique(array_merge([$lagg['primary_member']], $members));
     }
 
-    if (empty($interface_stats[$lagg['laggif']])) {
-        legacy_interface_create($lagg['laggif']);
-    } else {
-        // Already configured, detach child interfaces before attempting to configure.
-        // Prevents vlans to loose parent.
-        if (!empty($interface_stats[$lagg['laggif']]['laggport'])) {
-            foreach (array_keys($interface_stats[$lagg['laggif']]['laggport']) as $laggport) {
-                mwexecf('/sbin/ifconfig %s -laggport %s', [$lagg['laggif'], $laggport]);
+    /*
+     * MurOS: a FreeBSD LAGG maps to a Linux bonding device, where the
+     * aggregation protocol becomes the bond mode.
+     */
+    $mode_map = [
+        'lacp' => '802.3ad',
+        'loadbalance' => 'balance-xor',
+        'failover' => 'active-backup',
+        'roundrobin' => 'balance-rr',
+        'none' => 'active-backup',
+    ];
+    $mode = $mode_map[$lagg['proto']] ?? 'active-backup';
+
+    if (empty($interface_stats[$laggif])) {
+        legacy_interface_create($laggif);
+    }
+
+    /*
+     * The bond mode can only be changed while the device has no members, so
+     * detach any currently enslaved interface first. This mirrors the FreeBSD
+     * detach-then-readd sequence and prevents VLANs stacked on the LAGG from
+     * losing their parent.
+     */
+    $slaves_file = "/sys/class/net/{$laggif}/bonding/slaves";
+    if (is_file($slaves_file)) {
+        foreach (preg_split('/\s+/', trim((string)@file_get_contents($slaves_file))) as $slave) {
+            if ($slave !== '') {
+                mwexecf('/usr/sbin/ip link set dev %s nomaster', [$slave], true);
             }
         }
     }
 
-    // determine mtu value to use, either the provided one for the lagg or smallest of its children
+    /* apply the mode and protocol options now that the bond has no members */
+    mwexecf('/usr/sbin/ip link set dev %s type bond mode %s', [$laggif, $mode]);
+    if ($mode === '802.3ad') {
+        $rate = !empty($lagg['lacp_fast_timeout']) ? 'fast' : 'slow';
+        mwexecf('/usr/sbin/ip link set dev %s type bond lacp_rate %s miimon 100', [$laggif, $rate]);
+    }
+    if (in_array($mode, ['802.3ad', 'balance-xor'])) {
+        $hash_tokens = explode(',', $lagg['lagghash'] ?? 'l2,l3,l4');
+        if (in_array('l4', $hash_tokens)) {
+            $hash = 'layer3+4';
+        } elseif (in_array('l3', $hash_tokens)) {
+            $hash = 'layer2+3';
+        } else {
+            $hash = 'layer2';
+        }
+        mwexecf('/usr/sbin/ip link set dev %s type bond xmit_hash_policy %s', [$laggif, $hash]);
+    }
+
+    /* determine the mtu to use: explicit value or the smallest of the members */
     $mtu = null;
     if (!empty($lagg['mtu'])) {
-        // mtu provided for lagg
         $mtu = $lagg['mtu'];
     } else {
-        // min() mtu of children
         foreach ($members as $member) {
             if (!empty($interface_stats[$member]['mtu']) && ($mtu == null || $interface_stats[$member]['mtu'] < $mtu)) {
                 $mtu = $interface_stats[$member]['mtu'];
@@ -378,36 +415,27 @@ function _interfaces_lagg_configure($lagg)
         }
     }
 
+    /* enslave the members; Linux requires a device to be down before it joins */
     foreach ($members as $member) {
         if (!empty($interface_stats[$member])) {
-            /*
-             * XXX A LAGG does not allow to set the MTU on its ports individually
-             * so we would rather set the MTU on the LAGG after adding all ports.
-             * Thus we should avoid runtime entanglement of MTU of ports to find
-             * the smallest one since they already follow the LAGG setting despite
-             * showing something else in ifconfig and defaulting to 1500 from the
-             * LAGG side anyway.
-             */
-            legacy_interface_mtu($member, $mtu);
             _interfaces_hardware($member);
+            legacy_interface_flags($member, 'down');
+            mwexecf('/usr/sbin/ip link set dev %s master %s', [$member, $laggif]);
+        }
+    }
+
+    /* a bond enforces a single mtu across all members, so set it on the bond */
+    if (!empty($mtu)) {
+        legacy_interface_mtu($laggif, $mtu);
+    }
+
+    foreach ($members as $member) {
+        if (!empty($interface_stats[$member])) {
             legacy_interface_flags($member, 'up');
-            mwexecf('/sbin/ifconfig %s laggport %s', [$lagg['laggif'], $member]);
         }
     }
 
-    mwexecf('/sbin/ifconfig %s laggproto %s', [$lagg['laggif'], $lagg['proto']]);
-    if (in_array($lagg['proto'], ['lacp', 'loadbalance'])) {
-        foreach (['lacp_fast_timeout', 'use_flowid', 'lacp_strict'] as $attr) {
-            $attr_proto = strpos($attr, 'lacp_') !== false ? 'lacp' : $lagg['proto'];
-            if (isset($lagg[$attr]) && $attr_proto == $lagg['proto']) {
-                mwexecf('/sbin/ifconfig %s %s%s', [$lagg['laggif'], empty($lagg[$attr]) ? '-' : '', $attr]);
-            }
-        }
-        $configured_hash = !empty($lagg['lagghash']) ? $lagg['lagghash'] : 'l2,l3,l4';
-        mwexecf('/sbin/ifconfig %s lagghash %s', [$lagg['laggif'], $configured_hash]);
-    }
-
-    legacy_interface_flags($lagg['laggif'], 'up');
+    legacy_interface_flags($laggif, 'up');
 }
 
 function interfaces_gre_configure($device)
