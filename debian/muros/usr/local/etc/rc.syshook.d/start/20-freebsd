@@ -1,0 +1,4 @@
+#!/bin/sh
+
+# start up the configured services
+/usr/local/etc/rc.freebsd start

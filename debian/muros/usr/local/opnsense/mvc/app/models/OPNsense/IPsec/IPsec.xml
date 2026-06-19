@@ -1,0 +1,233 @@
+<model>
+    <mount>//OPNsense/IPsec</mount>
+    <version>1.0.5</version>
+    <description>IPsec settings</description>
+    <items>
+        <general>
+            <enabled type="LegacyLinkField">
+                <Source>ipsec.enable</Source>
+            </enabled>
+            <preferred_oldsa type="BooleanField">
+                <Default>0</Default>
+                <Required>Y</Required>
+            </preferred_oldsa>
+            <disablevpnrules type="BooleanField">
+                <Default>0</Default>
+                <Required>Y</Required>
+            </disablevpnrules>
+            <passthrough_networks type="NetworkField">
+                <AsList>Y</AsList>
+                <WildcardEnabled>N</WildcardEnabled>
+            </passthrough_networks>
+            <user_source type="AuthenticationServerField">
+                <Multiple>Y</Multiple>
+            </user_source>
+            <local_group type="AuthGroupField"/>
+        </general>
+        <charon>
+            <max_ikev1_exchanges type="IntegerField">
+                <MinimumValue>0</MinimumValue>
+                <MaximumValue>65536</MaximumValue>
+                <ValidationMessage>Maximum IKEv1 phase 2 exchanges should be a positive integer number.</ValidationMessage>
+            </max_ikev1_exchanges>
+            <threads type="IntegerField">
+                <Default>16</Default>
+                <MinimumValue>1</MinimumValue>
+                <MaximumValue>65536</MaximumValue>
+                <Required>Y</Required>
+            </threads>
+            <ikesa_table_size type="IntegerField">
+                <Default>32</Default>
+                <MinimumValue>1</MinimumValue>
+                <MaximumValue>65536</MaximumValue>
+                <Required>Y</Required>
+            </ikesa_table_size>
+            <ikesa_table_segments type="IntegerField">
+                <Default>4</Default>
+                <MinimumValue>1</MinimumValue>
+                <MaximumValue>65536</MaximumValue>
+                <Required>Y</Required>
+            </ikesa_table_segments>
+            <init_limit_half_open type="IntegerField">
+                <Default>1000</Default>
+                <MinimumValue>1</MinimumValue>
+                <MaximumValue>65536</MaximumValue>
+                <Required>Y</Required>
+            </init_limit_half_open>
+            <ignore_acquire_ts type="BooleanField">
+                <Default>1</Default>
+                <Required>Y</Required>
+            </ignore_acquire_ts>
+            <install_routes type="BooleanField"/>
+            <cisco_unity type="BooleanField"/>
+            <make_before_break type="BooleanField">
+                <Default>0</Default>
+                <Required>Y</Required>
+            </make_before_break>
+            <retransmit_tries type="IntegerField"/>
+            <retransmit_timeout type="NumericField"/>
+            <retransmit_base type="NumericField"/>
+            <retransmit_jitter type="IntegerField"/>
+            <retransmit_limit type="IntegerField"/>
+            <reqid_base type="IntegerField"/>
+            <syslog>
+                <daemon>
+                    <ike_name type="BooleanField">
+                        <Default>1</Default>
+                        <Required>Y</Required>
+                    </ike_name>
+                    <log_level type="BooleanField">
+                        <Default>0</Default>
+                        <Required>Y</Required>
+                    </log_level>
+                    <app type=".\CharonLogLevelField"/>
+                    <asn type=".\CharonLogLevelField"/>
+                    <cfg type=".\CharonLogLevelField"/>
+                    <chd type=".\CharonLogLevelField"/>
+                    <dmn type=".\CharonLogLevelField"/>
+                    <enc type=".\CharonLogLevelField"/>
+                    <esp type=".\CharonLogLevelField"/>
+                    <ike type=".\CharonLogLevelField"/>
+                    <imc type=".\CharonLogLevelField"/>
+                    <imv type=".\CharonLogLevelField"/>
+                    <imv type=".\CharonLogLevelField"/>
+                    <job type=".\CharonLogLevelField"/>
+                    <knl type=".\CharonLogLevelField"/>
+                    <lib type=".\CharonLogLevelField"/>
+                    <mgr type=".\CharonLogLevelField"/>
+                    <net type=".\CharonLogLevelField"/>
+                    <pts type=".\CharonLogLevelField"/>
+                    <tls type=".\CharonLogLevelField"/>
+                    <tnc type=".\CharonLogLevelField"/>
+                </daemon>
+            </syslog>
+            <plugins>
+                <attr>
+                    <subnet type="NetworkField">
+                        <NetMaskRequired>Y</NetMaskRequired>
+                        <AsList>Y</AsList>
+                    </subnet>
+                    <split-include type="NetworkField">
+                        <NetMaskRequired>Y</NetMaskRequired>
+                        <AsList>Y</AsList>
+                    </split-include>
+                    <!-- UNITY_DEF_DOMAIN -->
+                    <x_28674 type="TextField"/>
+                    <x_28675 type="TextField"/>
+                    <x_28672 type="TextField"/>
+                    <x_28673 type="BooleanField"/>
+                    <x_28679 type="OptionField">
+                        <OptionValues>
+                            <o1 value="1">1 (768 bits)</o1>
+                            <o2 value="2">2 (1024 bits)</o2>
+                            <o5 value="5">5 (1536 bits)</o5>
+                            <o14 value="14">14 (2048 bits)</o14>
+                            <o15 value="15">15 (3072 bits)</o15>
+                            <o16 value="16">16 (4096 bits)</o16>
+                            <o17 value="17">17 (6144 bits)</o17>
+                            <o18 value="18">18 (8192 bits)</o18>
+                            <o19 value="19">19 (NIST EC 256 bits)</o19>
+                            <o20 value="20">20 (NIST EC 384 bits)</o20>
+                            <o21 value="21">21 (NIST EC 521 bits)</o21>
+                            <o22 value="22">22 (1024(sub 160) bits)</o22>
+                            <o23 value="23">23 (2048(sub 224) bits)</o23>
+                            <o24 value="24">24 (2048(sub 256) bits)</o24>
+                            <o28 value="28">28 (Brainpool EC 256 bits)</o28>
+                            <o29 value="29">29 (Brainpool EC 384 bits)</o29>
+                            <o30 value="30">30 (Brainpool EC 512 bits)</o30>
+                            <o31 value="31">31 (Elliptic Curve 25519)</o31>
+                        </OptionValues>
+                    </x_28679>
+                    <dns type="NetworkField">
+                        <NetmaskAllowed>N</NetmaskAllowed>
+                        <AsList>Y</AsList>
+                    </dns>
+                    <nbns type="NetworkField">
+                        <NetmaskAllowed>N</NetmaskAllowed>
+                        <AsList>Y</AsList>
+                    </nbns>
+                </attr>
+                <eap-radius>
+                    <servers type="AuthenticationServerField">
+                        <Multiple>Y</Multiple>
+                        <filters>
+                            <type>/^(radius)$/</type>
+                        </filters>
+                    </servers>
+                    <accounting type="BooleanField"/>
+                    <class_group type="BooleanField"/>
+                </eap-radius>
+                <xauth-pam>
+                    <pam_service type="TextField">
+                        <Required>Y</Required>
+                        <Default>ipsec</Default>
+                    </pam_service>
+                    <session type="BooleanField">
+                        <Required>Y</Required>
+                        <Default>0</Default>
+                    </session>
+                    <trim_email type="BooleanField">
+                        <Required>Y</Required>
+                        <Default>1</Default>
+                    </trim_email>
+                </xauth-pam>
+            </plugins>
+        </charon>
+        <keyPairs>
+            <keyPair type="ArrayField">
+                <name type="TextField">
+                    <Required>Y</Required>
+                </name>
+                <keyType type="OptionField">
+                    <Required>Y</Required>
+                    <Default>rsa</Default>
+                    <OptionValues>
+                        <rsa>RSA</rsa>
+                        <ecdsa>ECDSA</ecdsa>
+                    </OptionValues>
+                </keyType>
+                <publicKey type="TextField">
+                    <Required>Y</Required>
+                </publicKey>
+                <privateKey type="TextField"/>
+                <keySize type="IntegerField"/>
+                <keyFingerprint type="TextField"/>
+            </keyPair>
+        </keyPairs>
+        <preSharedKeys>
+            <preSharedKey type="ArrayField">
+                <ident type="TextField">
+                    <Required>Y</Required>
+                    <Mask>/^([a-zA-Z0-9@\.\:\-_]*)/u</Mask>
+                    <ValidationMessage>The identifier contains invalid characters.</ValidationMessage>
+                    <Constraints>
+                        <check001>
+                            <ValidationMessage>Another entry with the same identifier already exists.</ValidationMessage>
+                            <type>UniqueConstraint</type>
+                            <addFields>
+                                <field1>remote_ident</field1>
+                            </addFields>
+                        </check001>
+                    </Constraints>
+                </ident>
+                <remote_ident type="TextField">
+                    <Mask>/^([a-zA-Z0-9@\.\:\-_]*)/u</Mask>
+                    <ValidationMessage>The identifier contains invalid characters.</ValidationMessage>
+                    <Constraints>
+                        <reference>ident.check001</reference>
+                    </Constraints>
+                </remote_ident>
+                <keyType type="OptionField">
+                    <Required>Y</Required>
+                    <Default>PSK</Default>
+                    <OptionValues>
+                        <PSK/>
+                        <EAP/>
+                    </OptionValues>
+                </keyType>
+                <Key type="TextField"/>
+                <description type="DescriptionField"/>
+            </preSharedKey>
+        </preSharedKeys>
+    </items>
+</model>

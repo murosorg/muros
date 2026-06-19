@@ -1,0 +1,23 @@
+<model>
+    <mount>//OPNsense/Firewall/Lvtemplate</mount>
+    <version>0.0.1</version>
+    <description>Firewall Live View filter templates</description>
+    <items>
+        <templates>
+            <template type="ArrayField">
+                <name type="TextField">
+                    <Required>Y</Required>
+                    <Mask>/^.{1,255}$/u</Mask>
+                    <ValidationMessage>Should be a string between 1 and 255 characters.</ValidationMessage>
+                </name>
+                <or type="BooleanField">
+                    <Default>0</Default>
+                    <Required>Y</Required>
+                </or>
+                <filters type="CSVListField">
+                    <Required>Y</Required>
+                </filters>
+            </template>
+        </templates>
+    </items>
+</model>

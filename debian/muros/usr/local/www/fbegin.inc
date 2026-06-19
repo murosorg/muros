@@ -1,0 +1,167 @@
+<?php
+
+/*
+ * Copyright (C) 2014-2015 Deciso B.V.
+ * Copyright (C) 2012 Jim Pingle <jimp@pfsense.org>
+ * Copyright (C) 2007-2008 Scott Ullrich <sullrich@gmail.com>
+ * Copyright (C) 2005-2006 Colin Smith <ethethlay@gmail.com>
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *
+ * 1. Redistributions of source code must retain the above copyright notice,
+ *    this list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
+ * AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+ * AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY,
+ * OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ */
+
+$aclObj = new \OPNsense\Core\ACL();
+
+?>
+
+
+<main class="page-content col-sm-9 col-sm-push-3 col-lg-10 col-lg-push-2">
+    <aside id="navigation" class="page-side col-xs-12 col-sm-3 col-lg-2 hidden-xs">
+        <div class="muros-brand">
+            <div class="muros-brand-row">
+                <a class="muros-brand-logo" href="/index.php">
+                    <img src="<?= cache_safe(get_themed_filename('/images/default-logo.svg')) ?>" alt="MurOS"/>
+                </a>
+                <span class="muros-version">v<?= html_safe(product::getInstance()->version()) ?></span>
+            </div>
+            <div class="muros-user-row">
+                <span class="muros-identity"><span class="muros-user"><?= html_safe(explode('@', $_SESSION['Username'] ?? '')[0]) ?></span> <span class="muros-host">@<?= html_safe($config['system']['hostname'] ?? '') ?></span></span>
+                <a class="muros-logout" href="/index.php?logout"><i class="fa fa-sign-out"></i> Logout</a>
+            </div>
+        </div>
+        <div class="row">
+            <nav class="page-side-nav">
+                <div id="mainmenu" class="panel" style="border:0px" >
+                    <div class="panel list-group" style="border:0px">
+<?php
+                          foreach($menuSystem as $topMenuItem): ?>
+<?php
+                          if (count($topMenuItem->Children) >= 1 && $topMenuItem->Url == ''): ?>
+                            <a href="#<?=$topMenuItem->Id;?>" class="<?= $topMenuItem->LinkClass; ?>" data-toggle="collapse" data-parent="#mainmenu"><span class="<?=$topMenuItem->CssClass;?> __iconspacer"></span><span style="word-break: keep-all"><?= html_safe($topMenuItem->VisibleName) ?></span></a>
+                            <div class="collapse <?=$topMenuItem->Selected ? 'active-menu in' :'';?>" id="<?=$topMenuItem->Id;?>">
+<?php
+                            foreach($topMenuItem->Children as $subMenuItem): ?>
+<?php
+                              if ($subMenuItem->Url == '' ):?>
+                               <a href="#<?=$topMenuItem->Id;?>_<?=$subMenuItem->Id;?>" class="<?= $subMenuItem->LinkClass; ?>"  data-toggle="collapse" data-parent="#<?=$topMenuItem->Id;?>" aria-expanded="<?=$subMenuItem->Selected ? "true" : "false";?>">
+                                  <div style="display: table;width: 100%;">
+                                    <div style="display: table-row">
+                                      <div style="display: table-cell"><?= html_safe($subMenuItem->VisibleName) ?></div>
+                                        <div style="display: table-cell; text-align:right; vertical-align:middle;"><span class="<?=$subMenuItem->CssClass;?>"></span></div>
+                                      </div>
+                                  </div>
+                               </a>
+                               <div class="collapse <?=$subMenuItem->Selected ? "active-menu in" :'';?>" id="<?=$topMenuItem->Id;?>_<?=$subMenuItem->Id;?>">
+<?php
+                                  foreach ($subMenuItem->Children as $subsubMenuItem):?>
+<?php
+                                    if ($subsubMenuItem->IsExternal == "Y"):?>
+                                            <a href="<?=$subsubMenuItem->Url;?>" target="_blank" rel="noopener noreferrer" class="<?= $subsubMenuItem->LinkClass; ?>"><?= $subsubMenuItem->VisibleName ?></a>
+<?php
+                                    elseif ($aclObj->isPageAccessible($_SESSION['Username'],$subsubMenuItem->Url)):?>
+                                            <a href="<?=$subsubMenuItem->Url;?>" class="<?= $subsubMenuItem->LinkClass; ?>"><?= $subsubMenuItem->VisibleName ?></a>
+<?php
+                                    endif;
+                                  endforeach;?>
+                                </div>
+<?php
+                              elseif ($subMenuItem->IsExternal == "Y" ):?>
+                                <a href="<?=$subMenuItem->Url;?>" target="_blank" rel="noopener noreferrer" class="<?= $subMenuItem->LinkClass; ?>" aria-expanded="<?=$subMenuItem->Selected ? 'true' : 'false';?>">
+                                  <div style="display: table;width: 100%;">
+                                    <div style="display: table-row">
+                                      <div style="display: table-cell"><?= html_safe($subMenuItem->VisibleName) ?></div>
+                                        <div style="display: table-cell; text-align:right; vertical-align:middle;"><span class="<?=$subMenuItem->CssClass;?>"></span></div>
+                                      </div>
+                                  </div>
+                                </a>
+<?php
+                              elseif ($aclObj->isPageAccessible($_SESSION['Username'],$subMenuItem->Url)):?>
+                                <a href="<?=$subMenuItem->Url;?>" class="<?= $subMenuItem->LinkClass; ?>">
+                                  <div style="display: table;width: 100%;">
+                                    <div style="display: table-row">
+                                      <div style="display: table-cell"><?= html_safe($subMenuItem->VisibleName) ?></div>
+                                        <div style="display: table-cell; text-align:right; vertical-align:middle;"><span class="<?=$subMenuItem->CssClass;?>"></span></div>
+                                    </div>
+                                  </div>
+                                </a>
+
+<?php
+                              endif;?>
+<?php
+                            endforeach; ?>
+                            </div>
+<?php
+                          else: ?>
+<?php
+                              if ($topMenuItem->IsExternal == "Y" ):?>
+                                <a href="<?=$topMenuItem->Url;?>" target="_blank" rel="noopener noreferrer" class="<?= $topMenuItem->LinkClass; ?>" data-parent="#mainmenu">
+                                    <span class="<?=$topMenuItem->CssClass;?> __iconspacer"></span><?= html_safe($topMenuItem->VisibleName) ?>
+                                </a>
+<?php
+                              elseif ($aclObj->isPageAccessible($_SESSION['Username'],$topMenuItem->Url)):?>
+                                <a href="<?=$topMenuItem->Url;?>" class="<?= $topMenuItem->LinkClass; ?>" data-parent="#mainmenu">
+                                    <span class="<?=$topMenuItem->CssClass;?> __iconspacer"></span><?= html_safe($topMenuItem->VisibleName) ?>
+                                </a>
+
+<?php
+                              endif;?>
+<?php
+                        endif;?>
+<?php
+                        endforeach; ?>
+                    </div>
+                </div>
+            </nav>
+        </div>
+    </aside>
+  <div class="row">
+    <header class="page-content-head">
+      <div class="container-fluid">
+        <ul class="list-inline">
+          <li><h1><?= html_safe(gentitle($menuBreadcrumbs)) ?></h1></li>
+          <li class="btn-group-container">
+            <form method="post">
+              <?php
+              if (isset($service_hook)) {
+                $ssvc = json_decode(configdp_run('service list', [$service_hook]), true);
+                if (!empty($ssvc[0])) {
+                  echo service_control_icon($ssvc[0]);
+                  echo service_control_links($ssvc[0]);
+                }
+              } ?>
+
+              <?php if (isset($widgetCollection)): ?>
+                <a href="#" id="updatepref" style="display:none" onclick="return updatePref();" class="btn btn-primary"><?=gettext("Save Settings");?></a>
+                <button id="add_widget_btn" type="button" class="btn btn-default" data-toggle="modal" data-target="#modal_widgets"><i class="fa fa-plus-circle fa-fw"></i> <?= gettext('Add widget') ?></button>
+                <select class="selectpicker" data-width="120px" id="column_count">
+                    <option value="1" <?=$pconfig['column_count'] == "1" ? 'selected="selected"' : '';?>><?= gettext('1 column');?></option>
+                    <option value="2" <?=$pconfig['column_count'] == "2" ? 'selected="selected"' : '';?>><?= sprintf(gettext('%s columns'), '2') ?></option>
+                    <option value="3" <?=$pconfig['column_count'] == "3" ? 'selected="selected"' : '';?>><?= sprintf(gettext('%s columns'), '3') ?></option>
+                    <option value="4" <?=$pconfig['column_count'] == "4" ? 'selected="selected"' : '';?>><?= sprintf(gettext('%s columns'), '4') ?></option>
+                    <option value="6" <?=$pconfig['column_count'] == "6" ? 'selected="selected"' : '';?>><?= sprintf(gettext('%s columns'), '6') ?></option>
+                </select>
+              <?php endif; ?>
+             </form>
+          </li>
+        </ul>
+      </div>
+    </header>

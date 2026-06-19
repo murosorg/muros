@@ -1,0 +1,7 @@
+OPNsense: {
+  fingerprints: "/usr/local/etc/pkg/fingerprints/OPNsense",
+  url: "https://download.muros.org/${ABI}/1.0/latest",
+  signature_type: "fingerprints",
+  priority: 11,
+  enabled: yes
+}

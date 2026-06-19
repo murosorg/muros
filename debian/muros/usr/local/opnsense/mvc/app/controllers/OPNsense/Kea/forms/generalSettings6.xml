@@ -1,0 +1,150 @@
+<form>
+    <field>
+        <type>header</type>
+        <label>Service</label>
+    </field>
+    <field>
+        <id>dhcpv6.general.enabled</id>
+        <label>Enabled</label>
+        <type>checkbox</type>
+        <help>Enable DHCPv6 server.</help>
+    </field>
+    <field>
+        <id>dhcpv6.general.manual_config</id>
+        <label>Manual config</label>
+        <type>checkbox</type>
+        <advanced>true</advanced>
+        <help>Disable configuration file generation and manage the file (/usr/local/etc/kea/kea-dhcp6.conf) manually.</help>
+    </field>
+    <field>
+        <type>header</type>
+        <label>General settings</label>
+    </field>
+    <field>
+        <id>dhcpv6.general.interfaces</id>
+        <label>Interfaces</label>
+        <type>select_multiple</type>
+        <help>Select interfaces to listen on.</help>
+    </field>
+    <field>
+        <id>dhcpv6.general.service_sockets_max_retries</id>
+        <label>Socket retries</label>
+        <type>text</type>
+        <hint>5</hint>
+        <advanced>true</advanced>
+        <help>Sometimes interfaces can be slow to come up or be unavailable temporarily. This option defines how many times KEA should retry the socket binding.</help>
+    </field>
+    <field>
+        <id>dhcpv6.general.service_sockets_retry_wait_time</id>
+        <label>Socket retry wait time</label>
+        <type>text</type>
+        <hint>5000</hint>
+        <advanced>true</advanced>
+        <help>Defines the wait time in milliseconds between socket retry attempts.</help>
+    </field>
+    <field>
+        <id>dhcpv6.general.valid_lifetime</id>
+        <label>Valid lifetime</label>
+        <type>text</type>
+        <help>The valid life time of the leases given out by the server in seconds.</help>
+    </field>
+    <field>
+        <id>dhcpv6.general.decline_probation_period</id>
+        <label>Decline Probation Period</label>
+        <type>text</type>
+        <hint>600</hint>
+        <advanced>true</advanced>
+        <help>Defines how long an address that has been detected as duplicate via DHCPDECLINE will be prevented to be given out to other clients.</help>
+    </field>
+    <field>
+        <id>dhcpv6.general.mac_sources</id>
+        <label>MAC sources</label>
+        <type>select_multiple</type>
+        <help>The DHCPv6 protocol does not provide any completely reliable way to retrieve hardware addresses of clients. To mitigate that issue, a number of mechanisms are available. Each of these mechanisms works in certain cases, but may not in others. Whether the mechanism works in a particular deployment is somewhat dependent on the network topology and the technologies used. Please note that this influences PD route installation, since the source MAC address of the client is required to target the link-local route. It also influences MAC based reservations.</help>
+    </field>
+    <field>
+        <id>dhcpv6.general.fwrules</id>
+        <label>Firewall rules</label>
+        <type>checkbox</type>
+        <help>Automatically add a basic set of firewall rules to allow dhcp traffic, more fine grained controls can be offered manually when disabling this option.</help>
+    </field>
+    <field>
+        <type>header</type>
+        <label>Lease Expiration</label>
+        <collapse>true</collapse>
+    </field>
+    <field>
+        <id>dhcpv6.lexpire.hold_reclaimed_time</id>
+        <label>Affinity lifetime</label>
+        <type>text</type>
+        <help>Defines in seconds for how long a returning client will be able to keep the same lease.</help>
+    </field>
+    <field>
+        <id>dhcpv6.lexpire.reclaim_timer_wait_time</id>
+        <label>Reclamation delay</label>
+        <type>text</type>
+        <hint>10</hint>
+        <help>The interval in seconds between the completion of the previous reclamation cycle and the start of the next one.</help>
+    </field>
+    <field>
+        <id>dhcpv6.lexpire.flush_reclaimed_timer_wait_time</id>
+        <label>Reclamation initiation</label>
+        <type>text</type>
+        <hint>25</hint>
+        <advanced>true</advanced>
+        <help>This parameter controls the server wait time in seconds between each lease reclamation procedure.</help>
+    </field>
+    <field>
+        <id>dhcpv6.lexpire.max_reclaim_time</id>
+        <label>Maximum Reclamation time</label>
+        <type>text</type>
+        <hint>10</hint>
+        <advanced>true</advanced>
+        <help>Defines an upper limit in milliseconds to the length of time a lease reclamation procedure may take. Use "0" to disable the time limit.</help>
+    </field>
+    <field>
+        <id>dhcpv6.lexpire.max_reclaim_leases</id>
+        <label>Maximum reclamation leases</label>
+        <type>text</type>
+        <hint>100</hint>
+        <advanced>true</advanced>
+        <help>Defines the maximum number of reclaimed leases that can be processed at one time. Use "0" to set it to unlimited</help>
+    </field>
+    <field>
+        <id>dhcpv6.lexpire.unwarned_reclaim_cycles</id>
+        <label>Cleanup circles</label>
+        <type>text</type>
+        <hint>5</hint>
+        <advanced>true</advanced>
+        <help>This parameter specifies how many consecutive clean-up cycles must end with remaining leases to be processed before a warning is printed.</help>
+    </field>
+    <field>
+        <type>header</type>
+        <label>High Availability</label>
+        <collapse>true</collapse>
+    </field>
+    <field>
+        <id>dhcpv6.ha.enabled</id>
+        <label>Enabled</label>
+        <type>checkbox</type>
+        <help>Enable High availability hook, requires the Control Agent to be enabled as well.</help>
+    </field>
+    <field>
+        <id>dhcpv6.ha.this_server_name</id>
+        <label>This server name</label>
+        <type>text</type>
+        <help>The name of this server, should match with one of the entries in the HA peers.
+        Leave empty to use this machines hostname
+        </help>
+    </field>
+    <field>
+        <id>dhcpv6.ha.max_unacked_clients</id>
+        <label>Max Unacked clients</label>
+        <type>text</type>
+        <help>
+        This specifies the number of clients which send messages to the partner but appear to not receive any response.
+        A higher value needs a busier environment in order to consider a member down, when set to 0,
+        any network disruption will cause a failover to happen.
+        </help>
+    </field>
+</form>

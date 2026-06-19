@@ -1,0 +1,102 @@
+<model>
+    <mount>:memory:</mount>
+    <version>1.0.0</version>
+    <description>Initial setup wizard</description>
+    <items>
+        <hostname type="HostnameField">
+            <IsDNSName>N</IsDNSName>
+            <IpAllowed>N</IpAllowed>
+            <Required>Y</Required>
+        </hostname>
+        <domain type="HostnameField">
+            <IsDNSName>N</IsDNSName>
+            <IpAllowed>N</IpAllowed>
+            <Required>Y</Required>
+        </domain>
+        <language type="JsonKeyValueStoreField">
+            <ConfigdPopulateAct>system list locales</ConfigdPopulateAct>
+            <Required>Y</Required>
+        </language>
+        <dns_servers type="NetworkField">
+            <NetMaskAllowed>N</NetMaskAllowed>
+            <AsList>Y</AsList>
+        </dns_servers>
+        <dnsallowoverride type="BooleanField">
+            <Default>1</Default>
+            <Required>Y</Required>
+        </dnsallowoverride>
+        <unbound>
+            <enabled type="BooleanField">
+                <Required>Y</Required>
+            </enabled>
+            <dnssec type="BooleanField">
+                <Required>Y</Required>
+            </dnssec>
+            <dnssecstripped type="BooleanField">
+                <Required>Y</Required>
+            </dnssecstripped>
+        </unbound>
+        <timezone type="JsonKeyValueStoreField">
+            <ConfigdPopulateAct>system list timezones</ConfigdPopulateAct>
+            <Required>Y</Required>
+        </timezone>
+        <interfaces>
+            <wan>
+                <!--disable is only set manually, we always assume the intention is to enable wan-->
+                <disable type="BooleanField"/>
+                <ipv4_type type="OptionField">
+                    <Required>Y</Required>
+                    <Default>dhcp</Default>
+                    <OptionValues>
+                        <dhcp>DHCP</dhcp>
+                        <static>Static</static>
+                        <pppoe>PPPoE</pppoe>
+                    </OptionValues>
+                </ipv4_type>
+                <spoofmac type="MacAddressField"/>
+                <mtu type="IntegerField">
+                    <MinimumValue>576</MinimumValue>
+                    <MaximumValue>65535</MaximumValue>
+                </mtu>
+                <mss type="IntegerField">
+                    <MinimumValue>576</MinimumValue>
+                    <MaximumValue>65535</MaximumValue>
+                </mss>
+                <ipaddr type="NetworkField">
+                    <NetMaskRequired>Y</NetMaskRequired>
+                    <ValidationMessage>Please specify a valid address and cidr mask to use.</ValidationMessage>
+                </ipaddr>
+                <gateway type="NetworkField">
+                    <NetMaskAllowed>N</NetMaskAllowed>
+                </gateway>
+                <dhcphostname type="HostnameField">
+                    <IsDNSName>Y</IsDNSName>
+                    <IpAllowed>N</IpAllowed>
+                </dhcphostname>
+                <pppoe_username type="TextField"/>
+                <pppoe_password type="TextField"/>
+                <pppoe_provider type="TextField"/>
+                <blockpriv type="BooleanField"/>
+                <blockbogons type="BooleanField"/>
+            </wan>
+            <lan>
+                <ipaddr type="NetworkField">
+                    <NetMaskRequired>Y</NetMaskRequired>
+                    <ValidationMessage>Please specify a valid address and cidr mask to use.</ValidationMessage>
+                </ipaddr>
+                <disable type="BooleanField"/>
+                <configure_dhcp type="BooleanField">
+                    <Required>Y</Required>
+                    <Default>1</Default>
+                </configure_dhcp>
+            </lan>
+        </interfaces>
+        <deployment_type>
+            <multiwan type="BooleanField"/>
+            <dhcp_dns_registration type="BooleanField"/>
+            <maxthreads type="BooleanField"/>
+        </deployment_type>
+        <password type="TextField"/>
+        <password_confirm type="TextField"/>
+    </items>
+</model>

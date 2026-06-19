@@ -1,0 +1,11 @@
+{#
+  macro physical_interface, return physical interface by name (e.g. lan -> em0)
+#}
+{% macro physical_interface(name) -%}
+{% if helpers.exists('interfaces.'+name+'.if')
+%}{{
+      helpers.getNodeByTag('interfaces.'+name+'.if')
+}}{%
+else %}{{name}}{%
+endif
+%}{%- endmacro %}

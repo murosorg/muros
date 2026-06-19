@@ -1,0 +1,26 @@
+<acl>
+   <page-wireguard-config>
+      <name>VPN: WireGuard: Configuration</name>
+      <patterns>
+         <pattern>ui/wireguard/*</pattern>
+         <pattern>api/wireguard/server/*</pattern>
+         <pattern>api/wireguard/client/*</pattern>
+         <pattern>api/wireguard/general/*</pattern>
+         <pattern>api/wireguard/service/*</pattern>
+      </patterns>
+   </page-wireguard-config>
+   <page-wireguard-diagnostics>
+      <name>VPN: WireGuard: Status</name>
+      <patterns>
+         <pattern>ui/wireguard/diagnostics/*</pattern>
+         <pattern>api/wireguard/service/*</pattern>
+      </patterns>
+   </page-wireguard-diagnostics>
+   <page-wireguard-logs>
+      <name>VPN: WireGuard: Log</name>
+      <patterns>
+         <pattern>ui/diagnostics/log/core/wireguard/*</pattern>
+         <pattern>api/diagnostics/log/core/wireguard/*</pattern>
+      </patterns>
+   </page-wireguard-logs>
+</acl>

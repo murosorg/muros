@@ -1,0 +1,18 @@
+Package: muros
+Version: 0.9.4~rc7
+Architecture: amd64
+Maintainer: MurOS <dev@muros.org>
+Installed-Size: 34377
+Depends: lighttpd, php8.4-fpm, php8.4-cli, php8.4-ctype, php8.4-curl, php8.4-xml, php8.4-gd, php8.4-mbstring, php8.4-bcmath, php8.4-ldap, php8.4-sqlite3, php8.4-phalcon, python3 (>= 3.11), python3-jinja2, python3-dnspython, python3-ldap3, nftables, iproute2, chrony
+Recommends: unbound, openssh-server, openvpn, strongswan, isc-dhcp-server, suricata
+Section: net
+Priority: optional
+Homepage: https://muros.org/
+Description: MurOS firewall and routing platform
+ MurOS is an OPNsense fork ported to Debian. It provides a web-managed
+ stateful firewall (nftables), NAT, interfaces and routing on top of a
+ standard Debian base, using systemd, apt and iproute2.
+ .
+ The whole system configuration is owned by this package, so appliance
+ defaults (php-fpm pool sizing, kernel forwarding) do not drift back to
+ distribution defaults.

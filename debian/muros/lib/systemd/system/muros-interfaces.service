@@ -1,0 +1,17 @@
+# MurOS interface configuration (iproute2).
+# Applies the addressing defined in /conf/config.xml to the assigned data
+# interfaces. The management interface stays under systemd-networkd.
+[Unit]
+Description=MurOS interface configuration (iproute2)
+Documentation=https://github.com/ecritel/muros
+After=systemd-networkd.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/php /usr/local/opnsense/scripts/interfaces/apply_linux.php
+ExecReload=/usr/bin/php /usr/local/opnsense/scripts/interfaces/apply_linux.php
+
+[Install]
+WantedBy=multi-user.target

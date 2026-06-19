@@ -1,0 +1,8 @@
+#!/bin/sh
+
+# shutdown syshook / plugin scripts
+/usr/local/etc/rc.syshook stop
+
+/sbin/shutdown -op now
+
+while :; do sleep 1; done

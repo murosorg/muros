@@ -1,0 +1,127 @@
+{#
+ # Copyright (c) 2014-2026 Deciso B.V.
+ # All rights reserved.
+ #
+ # Redistribution and use in source and binary forms, with or without modification,
+ # are permitted provided that the following conditions are met:
+ #
+ # 1. Redistributions of source code must retain the above copyright notice,
+ #    this list of conditions and the following disclaimer.
+ #
+ # 2. Redistributions in binary form must reproduce the above copyright notice,
+ #    this list of conditions and the following disclaimer in the documentation
+ #    and/or other materials provided with the distribution.
+ #
+ # THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ # INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
+ # AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+ # AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY,
+ # OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ # SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ # INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ # POSSIBILITY OF SUCH DAMAGE.
+ #}
+
+{#
+ # Generate input dialog, uses the following parameters (as associative array):
+ #
+ # fields          :   list of field type objects, see form_input_tr tag for details
+ # id              :   form id, used as unique id for this modal form. inner form to place data is called frm_[id]
+ #                     save button is identified by btn_[id]_save
+ # label           :   dialog label
+ #}
+
+{% set base_dialog_id=id %}
+
+<div class="modal fade" id="{{base_dialog_id}}" tabindex="-1" role="dialog" aria-labelledby="{{base_dialog_id}}Label">
+    <div class="modal-backdrop fade in"></div>
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <button type="button" class="close" data-dismiss="modal" aria-label="{{ lang._('Close') }}"><span aria-hidden="true">&times;</span></button>
+                <h4 class="modal-title" id="{{base_dialog_id}}Label">{{label}}</h4>
+            </div>
+            <div class="modal-body">
+                <form id="frm_{{base_dialog_id}}">
+                {% for section in fields['sections'] %}
+                  <div class="table-responsive {{section['style']|default('')}}">
+                    <table class="table table-striped table-condensed" style="table-layout: fixed; width: 100%;">
+                        <colgroup>
+                        {% if msgzone_width is defined %}
+                            <col class="col-md-3"/>
+                            <col class="col-md-{{ 12 - 3 - msgzone_width }}"/>
+                            <col class="col-md-{{ msgzone_width }}"/>
+                        {% else %}
+                            <col style="width: 25%;" />
+                            <col style="width: 40%;" />
+                            <col style="width: 35%;" />
+                        {% endif %}
+                        </colgroup>
+                        {% if section['type'] %}
+                        <thead {% if section['static']|default('false')=='false' %} style="cursor: pointer;"{% endif %}>
+                        <tr{% if section['advanced']|default('false')=='true' %} data-advanced="true"{% endif %}>
+                            <th colspan="3">
+                                <div style="padding-bottom: 5px; padding-top: 5px; font-size: 16px;">
+                                    {% if section['static']|default('false')=='false' %}
+                                    {% if section['collapse']|default('false')=='true' %}
+                                    <i class="fa fa-angle-right" aria-hidden="true"></i>
+                                    {% else %}
+                                    <i class="fa fa-angle-down" aria-hidden="true"></i>
+                                    {% endif %}
+                                    &nbsp;
+                                    {% endif %}
+                                    <b>{{section['label']}}</b>
+                                </div>
+                            </th>
+                        </tr>
+                        </thead>
+                        {% endif %}
+                        <tbody class="collapsible">
+                        {%  if not section['type'] and (fields['advanced']|default(false) or fields['help']|default(false)) %}
+                        <tr>
+                            <td>{% if fields['advanced']|default(false) %}<a href="#"><i class="fa fa-toggle-off text-danger" id="show_advanced_formDialog{{base_dialog_id}}"></i></a> <small>{{ lang._('advanced mode') }}</small>{% endif %}</td>
+                            <td colspan="2" style="text-align:right;"></td>
+                        </tr>
+                        {% endif %}
+                        {% for field in section['children']%}
+                            {% if field['type'] == 'subheader' %}
+                                <tr{% if field['advanced']|default('false') == 'true' %} data-advanced="true"{% endif %}>
+                                    <td colspan="3">
+                                        <div style="padding-bottom: 5px; padding-top: 5px; font-size: 16px; padding-left: 5px;">
+                                            <i class="fa fa-ellipsis-v" aria-hidden="true"></i>
+                                            &nbsp;
+                                            <b>{{ field['label'] }}</b>
+                                        </div>
+                                    </td>
+                                </tr>
+                            {% elseif field['type'] != 'ignore' %}
+                              {{ partial("layout_partials/form_input_tr", field)}}
+                            {% endif %}
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                  </div>
+                {% endfor %}
+                </form>
+            </div>
+            <div class="modal-footer">
+                {% if hasSaveBtn|default('true') == 'true' %}
+                <button type="button" class="btn btn-default" data-dismiss="modal">{{ lang._('Cancel') }}</button>
+                <button type="button" class="btn btn-primary" id="btn_{{base_dialog_id}}_save">{{ lang._('Save') }} <i id="btn_{{base_dialog_id}}_save_progress" class=""></i></button>
+                {% else %}
+                <button type="button" class="btn btn-default" data-dismiss="modal">{{ lang._('Close') }}</button>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+{# Ensure all fields stay the same width relative to each other inside the modal #}
+<style>
+    .modal-dialog .bootstrap-select:not(.bs-container),
+    .modal-dialog .tokenize ul.tokens-container {
+        width: 100% !important;
+    }
+</style>

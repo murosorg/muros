@@ -1,0 +1,267 @@
+#!/bin/sh
+#
+# Copyright (c) 2021-2023 Franco Fichtner <franco@opnsense.org>
+# Copyright (c) 2003 Kenneth R Westerback <krw@openbsd.org>
+#
+# Permission to use, copy, modify, and distribute this software for any
+# purpose with or without fee is hereby granted, provided that the above
+# copyright notice and this permission notice appear in all copies.
+#
+# THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+# WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+# MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+# ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+# WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+# ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+# OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+IFCONFIG="/sbin/ifconfig -n"
+LOGGER="/usr/bin/logger -s -p user.notice -t dhclient dhclient-script:"
+
+#
+# Helper functions that implement common actions.
+#
+
+delete_old_address()
+{
+	eval "$IFCONFIG $interface inet -alias $old_ip_address $medium"
+}
+
+add_new_address()
+{
+	eval "$IFCONFIG $interface \
+		inet $new_ip_address \
+		netmask $new_subnet_mask \
+		broadcast $new_broadcast_address \
+		$medium"
+
+	$LOGGER "New IP Address ($interface): $new_ip_address"
+	$LOGGER "New Subnet Mask ($interface): $new_subnet_mask"
+	$LOGGER "New Broadcast Address ($interface): $new_broadcast_address"
+	$LOGGER "New Routers ($interface): $new_routers"
+
+	if [ -n "$new_routers" ] && [ "$new_routers" != "255.255.255.255" ]; then
+		/usr/local/sbin/ifctl -i ${interface} -4rd -a ${new_routers}
+	fi
+}
+
+delete_old_alias()
+{
+	if [ -n "$alias_ip_address" ]; then
+		$IFCONFIG $interface inet -alias $alias_ip_address > /dev/null 2>&1
+	fi
+}
+
+add_new_alias()
+{
+	if [ -n "$alias_ip_address" ]; then
+		$IFCONFIG $interface inet alias $alias_ip_address netmask \
+		    $alias_subnet_mask
+	fi
+}
+
+fill_classless_routes()
+{
+	set $1
+	while [ $# -ge 5 ]; do
+		if [ $1 -eq 0 ]; then
+			route="default"
+		elif [ $1 -le 8 ]; then
+			route="$2.0.0.0/$1"
+			shift
+		elif [ $1 -le 16 ]; then
+			route="$2.$3.0.0/$1"
+			shift; shift
+		elif [ $1 -le 24 ]; then
+			route="$2.$3.$4.0/$1"
+			shift; shift; shift
+		else
+			route="$2.$3.$4.$5/$1"
+			shift; shift; shift; shift
+		fi
+		shift
+		router="$1.$2.$3.$4"
+		classless_routes="$classless_routes $route $router"
+		shift; shift; shift; shift
+	done
+}
+
+delete_old_routes()
+{
+	if [ -n "$old_classless_routes" ]; then
+		fill_classless_routes "$old_classless_routes"
+		set $classless_routes
+		while [ $# -gt 1 ]; do
+			route delete "$1" "$2"
+			shift; shift
+		done
+		return 0;
+	fi
+
+	if [ -n "$old_static_routes" ]; then
+		set $old_static_routes
+		while [ $# -gt 1 ]; do
+			route delete "$1" "$2"
+			shift; shift
+		done
+	fi
+
+	/usr/local/sbin/ifctl -i ${interface} -4rd
+
+	arp -an -i $interface | \
+	    sed -n -e 's/^.*(\(.*\)) at .*$/arp -d \1/p' | \
+	    sh >/dev/null 2>&1
+}
+
+add_new_routes()
+{
+	# RFC 3442: If the DHCP server returns both a Classless Static
+	# Routes option and a Router option, the DHCP client MUST ignore
+	# the Router option.
+	#
+	# DHCP clients that support this option (Classless Static Routes)
+	# MUST NOT install the routes specified in the Static Routes
+	# option (option code 33) if both a Static Routes option and the
+	# Classless Static Routes option are provided.
+
+	if [ -n "$new_classless_routes" ]; then
+		fill_classless_routes "$new_classless_routes"
+		$LOGGER "New Classless Static Routes ($interface): $classless_routes"
+		set $classless_routes
+		while [ $# -gt 1 ]; do
+			if [ "0.0.0.0" = "$2" ]; then
+				route add "$1" -iface "$interface"
+			else
+				route add "$1" "$2"
+			fi
+			shift; shift
+		done
+		return
+	fi
+
+	for router in $new_routers; do
+		/usr/local/sbin/ifctl -i ${interface} -4rd -a ${router}
+
+		# 2nd and subsequent default routers error out, so explicitly
+		# stop processing the list after the first one.
+		break
+	done
+
+	if [ -n "$new_static_routes" ]; then
+		$LOGGER "New Static Routes ($interface): $new_static_routes"
+		set $new_static_routes
+		while [ $# -gt 1 ]; do
+			route add $1 $2
+			if [ -z "$(/usr/local/sbin/ifctl -i ${interface} -4r)" ]; then
+				/usr/local/sbin/ifctl -i ${interface} -4rd -a ${2}
+			fi
+			shift; shift
+		done
+	fi
+}
+
+add_new_resolv_conf()
+{
+	$LOGGER "Creating resolv.conf"
+
+	ARGS="-i ${interface} -4nd"
+	for nameserver in ${new_domain_name_servers}; do
+		ARGS="${ARGS} -a ${nameserver}"
+	done
+	/usr/local/sbin/ifctl ${ARGS}
+
+	/usr/local/sbin/ifctl -i ${interface} -4sd ${new_domain_name:+"-a ${new_domain_name}"}
+
+	return 0
+}
+
+#
+# Start of active code.
+#
+
+$LOGGER "Reason $reason on $interface executing"
+
+case $reason in
+MEDIUM)
+	eval "$IFCONFIG $interface $medium"
+	sleep 1
+	;;
+
+PREINIT)
+	delete_old_alias
+	eval "$IFCONFIG $interface up"
+	/usr/local/sbin/ifctl -i ${interface} -4rd
+	;;
+
+ARPCHECK|ARPSEND)
+	;;
+
+BOUND|RENEW|REBIND|REBOOT)
+	if [ -n "$new_host_name" ]; then
+		$LOGGER "New Hostname ($interface): $new_host_name"
+	fi
+
+	changes="no"
+	if [ -n "$old_ip_address" ]; then
+		if [ -n "$alias_ip_address" -a "$old_ip_address" != "$alias_ip_address" ]; then
+			delete_old_alias
+			changes="yes"
+		fi
+		if [ "$old_ip_address" != "$new_ip_address" ]; then
+			delete_old_address
+			delete_old_routes
+			changes="yes"
+		fi
+	fi
+	if [ "$reason" = BOUND ] || \
+	   [ "$reason" = REBOOT ] || \
+	   [ -z "$old_ip_address" ] || \
+	   [ "$old_ip_address" != "$new_ip_address" ]; then
+		add_new_address
+		add_new_routes
+		changes="yes"
+	fi
+	if [ -n "$alias_ip_address" -a "$new_ip_address" != "$alias_ip_address" ]; then
+		add_new_alias
+		changes="yes"
+	fi
+	add_new_resolv_conf
+	if [ "$changes" = "yes" ] ; then
+		/usr/local/sbin/configctl -d interface newip $interface force
+	fi
+	;;
+
+EXPIRE|FAIL)
+	delete_old_alias
+	if [ -n "$old_ip_address" ]; then
+		delete_old_address
+		delete_old_routes
+	fi
+	add_new_alias
+	;;
+
+TIMEOUT)
+	delete_old_alias
+	add_new_address
+	sleep 1
+	if [ -n "$new_routers" ]; then
+		$LOGGER "New Routers ($interface): $new_routers"
+		set "$new_routers"
+		if ping -q -c 1 -t 1 "$1"; then
+			if [ "$new_ip_address" != "$alias_ip_address" ]; then
+				add_new_alias
+			fi
+			add_new_routes
+			add_new_resolv_conf
+			/usr/local/sbin/configctl -d interface newip $interface force
+			exit 0
+		fi
+	fi
+	eval "$IFCONFIG $interface inet -alias $new_ip_address $medium"
+	delete_old_routes
+	/usr/local/sbin/configctl -d interface newip $interface
+	exit 1
+	;;
+esac
+
+exit 0

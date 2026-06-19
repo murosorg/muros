@@ -1,0 +1,359 @@
+{#
+ # Copyright (c) 2023 Deciso B.V.
+ # All rights reserved.
+ #
+ # Redistribution and use in source and binary forms, with or without modification,
+ # are permitted provided that the following conditions are met:
+ #
+ # 1. Redistributions of source code must retain the above copyright notice,
+ #    this list of conditions and the following disclaimer.
+ #
+ # 2. Redistributions in binary form must reproduce the above copyright notice,
+ #    this list of conditions and the following disclaimer in the documentation
+ #    and/or other materials provided with the distribution.
+ #
+ # THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ # INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
+ # AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+ # AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY,
+ # OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ # SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ # INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ # POSSIBILITY OF SUCH DAMAGE.
+ #}
+
+<script>
+    $( document ).ready(function() {
+        function createTable(data) {
+            let table = $('<table class="table table-condensed">');
+            let headerRow = $('<tr>');
+            table.append(headerRow);
+
+            // Create table headers
+            for (let key in data) {
+                if (data.hasOwnProperty(key)) {
+                    headerRow.append($('<th>').text(key));
+                }
+            }
+
+            // Create table rows
+            let dataRow = $('<tr>');
+            for (let key in data) {
+                if (data.hasOwnProperty(key)) {
+                    let value = data[key];
+                    if (Array.isArray(value)) {
+                        // If the value is an array, join the elements with a newline
+                        value = value.join('<br>');
+                    }
+                    dataRow.append($('<td>').html(value));
+                }
+            }
+            table.append(dataRow);
+
+            return table;
+        }
+
+        function format_linerate(value) {
+            if (!isNaN(value) && value > 0) {
+                let fileSizeTypes = ["", "K", "M", "G", "T", "P", "E", "Z", "Y"];
+                let ndx = Math.floor(Math.log(value) / Math.log(1000) );
+                if (ndx > 0) {
+                    return  (value / Math.pow(1000, ndx)).toFixed(2) + ' ' + fileSizeTypes[ndx] + 'bit/s';
+                } else {
+                    return value.toFixed(2).toString();
+                }
+            } else {
+                return "";
+            }
+        }
+
+        function iterate_ips(obj) {
+            let $elements = $('<div>').css({
+                'whiteSpace': 'normal',
+                'lineHeight': '1.2'
+            });
+            obj.forEach(function (ip) {
+                $span = $('<span></span><br/>').text(ip['ipaddr'] + ' ');
+                if ('vhid' in ip) {
+                    const titleLines = [
+                        `${ip.status} (freq. ${ip.advbase}/${ip.advskew})`
+                    ];
+
+                    if (ip.peer) {
+                        titleLines.push(ip.peer, ip.peer6);
+                    }
+
+                    const $carp = $('<span>', {
+                        text: `vhid ${ip.vhid}`,
+                        css: { cursor: 'pointer' },
+                        'data-toggle': 'tooltip',
+                        'data-html': true
+                    })
+                        .addClass('badge badge-pill')
+                        .css('background-color', ip.status === 'MASTER' ? 'green' : 'primary')
+                        .prop('title', titleLines.join('<br/>'));
+
+                    $span.append($carp);
+                }
+                $elements.append($span);
+            });
+            return $elements.prop('outerHTML');
+        }
+
+        $("#grid-overview").UIBootgrid(
+            {
+                search: '/api/interfaces/overview/interfaces_info',
+                commands: {
+                    interface_reload: {
+                        filter: (cell) => {
+                            const data = cell.getData();
+                            return 'link_type' in data && ["dhcp", "pppoe", "pptp", "l2tp", "ppp"].includes(data.link_type);
+                        },
+                        method: (event, cell) => {
+                            const data = cell.getData();
+                            const $element = $(cell.getElement()).find('.command-interface_reload');
+                            $element.remove('i').html('<i class="fa fa-spinner fa-spin"></i>');
+                            ajaxCall('/api/interfaces/overview/reload_interface/' + data.identifier, {}, function (data, status) {
+                                /* delay slightly to allow the interface to come up */
+                                setTimeout(function() {
+                                    $element.remove('i').html('<i class="fa fa-fw fa-refresh"></i>');
+                                    $("#grid-overview").bootgrid('reload');
+                                }, 1000);
+                            });
+                        },
+                        classname: 'fa fa-fw fa-refresh',
+                        title: "{{ lang._('Reload') }}"
+                    },
+                    settings: {
+                        filter: (cell) => {
+                            const data = cell.getData();
+                            return 'identifier' in data && data.identifier && 'config' in data && data.config && !data.config.internal_dynamic;
+                        },
+                        method: (event, cell) => {
+                            window.location.href = `/interfaces.php?if=${cell.getData().identifier}`;
+                        },
+                        classname: 'fa fa-fw fa-cog',
+                        title: "{{ lang._('Settings') }}"
+                    },
+                    firewall_rules: {
+                        filter: (cell) => {
+                            const data = cell.getData();
+                            return 'identifier' in data && data.identifier && data.enabled;
+                        },
+                        method: (event, cell) => {
+                            window.location.href = `/ui/firewall/filter/#interface=${cell.getData().identifier}`;
+                        },
+                        classname: 'fa fa-fw fa-fire',
+                        title: "{{ lang._('Firewall Rules') }}"
+                    },
+                    interface_info: {
+                        method: (event, cell) => {
+                            ajaxGet('/api/interfaces/overview/get_interface/' + cell.getData().device, {}, function(data, status) {
+                                data = data['message'];
+                                let $table = $('<table class="table table-bordered table-condensed table-hover table-striped"></table>');
+                                let $table_body = $('<tbody/>');
+
+                                for (let key in data) {
+                                    let $row = $('<tr/>');
+                                    let value = data[key]['value'];
+                                    if (key === 'line rate') {
+                                        value = format_linerate(value.split(" ")[0]);
+                                    }
+                                    if (key === 'ipv4' || key === 'ipv6') {
+                                        value = iterate_ips(value);
+                                    }
+
+                                    if (!'translation' in data[key]) {
+                                        continue;
+                                    }
+                                    key = data[key]['translation'];
+                                    $row.append($('<td/>').text(key));
+                                    if (typeof value === 'string' || Array.isArray(value)) {
+                                        value = value.toString().split(",").join("<br/>");
+                                    } else if (typeof value === 'object' && value !== null) {
+                                        // skip any deeper nested structures
+                                        let skip = false;
+                                        for (let key in value) {
+                                            if (typeof value[key] === 'object' && value !== null && !Array.isArray(value[key])) {
+                                                skip = true;
+                                                break;
+                                            }
+                                        }
+
+                                        if (skip) {
+                                            continue;
+                                        }
+
+                                        $table_sub = createTable(value);
+                                        value = $table_sub.prop('outerHTML');
+                                    }
+                                    $row.append($('<td/>').html(value));
+                                    $table_body.append($row);
+                                }
+
+                                $table.append($table_body);
+                                $('[data-toggle="tooltip"]').tooltip({container: 'body', html:true});
+                                BootstrapDialog.show({
+                                    title: data['description']['value'],
+                                    message: $table.prop('outerHTML'),
+                                    type: BootstrapDialog.TYPE_INFO,
+                                    draggable: true,
+                                    cssClass: 'details-dialog',
+                                    buttons: [{
+                                        label: "{{ lang._('Close') }}",
+                                        action: function (dialogRef) {
+                                            dialogRef.close();
+                                        }
+                                    }]
+                                });
+                            });
+                        },
+                        classname: 'fa fa-fw fa-search',
+                        title: "{{ lang._('Details') }}"
+                    }
+                },
+                options: {
+                    selection: false,
+                    formatters: {
+                        "interface": function (column, row) {
+                            let descr = row.description;
+                            if (row.identifier) {
+                                descr += ' (' + row.identifier + ')';
+                            }
+                            return descr;
+                        },
+                        "vlan": function (column, row) {
+                            if (row.vlan_tag) {
+                                let $tooltip = $('<span></span>').attr('class', 'bootgrid-tooltip').text(row.vlan_tag);
+                                $tooltip.attr('data-toggle', 'tooltip');
+                                let standard = row.vlan.proto && row.vlan.proto == "802.1q" ? "QinQ" : "VLAN";
+                                let parent = row.vlan.parent ? row.vlan.parent : 'none';
+                                $tooltip.attr('title', standard + ' ' + row.vlan_tag + ' / Parent: ' + parent);
+                                return $tooltip.prop('outerHTML');
+                            }
+                            return '';
+                        },
+                        "status": function (column, row) {
+                            let connected = row.status == 'up' ? 'text-success' : 'text-danger';
+                            let status = row.status;
+                            if (!row.enabled) {
+                                status += ' (disabled)';
+                            }
+
+                            return '<i class="fa fa-plug ' + connected + '" title="' + status + '" data-toggle="tooltip"></i>';
+                        },
+                        "ipv4": function (column, row) {
+                            if (row.ipv4) {
+                                return iterate_ips(row.ipv4);
+                            }
+
+                            return '';
+                        },
+                        "ipv6": function (column, row) {
+                            if (row.ipv6) {
+                                return iterate_ips(row.ipv6);
+                            }
+
+                            return '';
+                        },
+                        "gateways": function (column, row) {
+                            let $elements = $('<div></div>');
+                            if (row.gateways) {
+                                row.gateways.forEach(function (gw) {
+                                    let $span = $('<span></span><br/>').text(gw);
+                                    $elements.append($span);
+                                });
+                            }
+                            return $elements.prop('outerHTML');
+                        },
+                    }
+                }
+            }
+        );
+
+        $("#export-wrapper").detach().appendTo('#grid-overview-header > .row > .actionBar > .btn-group');
+
+        $("#export").click(function () {
+            $('<a></a>').attr('href', '/api/interfaces/overview/export').get(0).click();
+        });
+    });
+</script>
+
+<style>
+    .route-content {
+        white-space: pre-line;
+        text-overflow: ellipsis;
+        overflow: hidden;
+    }
+
+    .route-expand {
+        display: none;
+    }
+
+    .bootgrid-table {
+        table-layout: auto;
+    }
+
+    .bootgrid-table td {
+        text-align: center;
+        vertical-align: middle;
+    }
+
+    .commands-td {
+        text-align: right;
+        vertical-align: middle;
+    }
+
+    .command {
+        margin-left: 0.3em;
+    }
+
+    .bootgrid-table th {
+        text-align: center;
+        vertical-align: middle;
+    }
+
+    .details-dialog .modal-dialog{
+        position: relative;
+        display: table;
+        overflow-y: auto;
+        overflow-x: auto;
+        width: auto;
+        min-width: 600px;
+    }
+
+    .details-dialog .modal-body {
+        height: 60vh;
+        overflow-y: auto;
+    }
+</style>
+
+<div class="tab-content content-box">
+    <div id="export-wrapper" class="btn-group">
+        <button id="export" class="btn btn-default" data-toggle="tooltip" title="" type="button" data-original-title="Download overview (json)">
+            <span class="fa fa-cloud-download"></span>
+        </button>
+    </div>
+    <table id="grid-overview" class="table table-bordered table-condensed table-hover table-striped table-responsive">
+        <thead>
+            <tr>
+                <th data-column-id="status" data-width="5em" data-formatter="status" data-type="string">{{ lang._('Status') }}</th>
+                <th data-column-id="description" data-formatter="interface" data-type="string">{{ lang._('Interface') }}</th>
+                <th data-column-id="device" data-identifier="true" data-width="5em" data-type="string">{{ lang._('Device') }}</th>
+                <th data-column-id="vlan_tag" data-formatter="vlan" data-type="string" data-width="3em">{{ lang._('VLAN') }}</th>
+                <th data-column-id="link_type" data-type="string">{{ lang._('Link Type') }}</th>
+                <th data-column-id="ipv4" data-formatter="ipv4" data-type="string">{{ lang._('IPv4') }}</th>
+                <th data-column-id="ipv6" data-formatter="ipv6" data-type="string">{{ lang._('IPv6') }}</th>
+                <th data-column-id="gateways" data-formatter="gateways" data-type="string">{{ lang._('Gateway') }}</th>
+                <th data-column-id="routes" data-formatter="expand" data-type="string">{{ lang._('Routes') }}</th>
+                <th data-column-id="commands" data-width="125" data-formatter="commands" data-sortable="false">{{ lang._('Commands') }}</th>
+            </tr>
+        </thead>
+        <tbody>
+        </tbody>
+        <tfoot>
+        </tfoot>
+    </table>
+</div>

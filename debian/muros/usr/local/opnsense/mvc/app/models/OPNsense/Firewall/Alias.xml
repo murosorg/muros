@@ -1,0 +1,112 @@
+<model>
+    <mount>//OPNsense/Firewall/Alias</mount>
+    <version>1.0.1</version>
+    <description>Firewall aliases</description>
+    <items>
+        <geoip>
+            <url type="UrlField"/>
+        </geoip>
+        <aliases>
+            <alias type=".\AliasField">
+                <enabled type="BooleanField">
+                    <Default>1</Default>
+                    <Required>Y</Required>
+                </enabled>
+                <name type=".\AliasNameField">
+                    <Required>Y</Required>
+                    <Constraints>
+                        <check001>
+                            <ValidationMessage>An alias with this name already exists.</ValidationMessage>
+                            <type>UniqueConstraint</type>
+                        </check001>
+                    </Constraints>
+                </name>
+                <type type="OptionField">
+                    <Required>Y</Required>
+                    <Default>alert</Default>
+                    <OptionValues>
+                        <host>Host(s)</host>
+                        <network>Network(s)</network>
+                        <port>Port(s)</port>
+                        <url>URL (IPs)</url>
+                        <urltable>URL Table (IPs)</urltable>
+                        <urljson>URL Table in JSON format (IPs)</urljson>
+                        <geoip>GeoIP</geoip>
+                        <networkgroup>Network group</networkgroup>
+                        <mac>MAC address</mac>
+                        <asn>BGP ASN</asn>
+                        <dynipv6host>Dynamic IPv6 Host</dynipv6host>
+                        <authgroup>OpenVPN group</authgroup>
+                        <internal>Internal (automatic)</internal>
+                        <external>External (advanced)</external>
+                    </OptionValues>
+                    <Constraints>
+                        <check001>
+                            <reference>interface.check001</reference>
+                        </check001>
+                    </Constraints>
+                </type>
+                <path_expression type="TextField"/>
+                <proto type="OptionField">
+                    <Multiple>Y</Multiple>
+                    <OptionValues>
+                        <IPv4/>
+                        <IPv6/>
+                    </OptionValues>
+                </proto>
+                <interface type="InterfaceField">
+                    <Constraints>
+                        <check001>
+                            <ValidationMessage>IPv6 Dynamic Host require an interface to track.</ValidationMessage>
+                            <type>SetIfConstraint</type>
+                            <field>type</field>
+                            <check>dynipv6host</check>
+                        </check001>
+                    </Constraints>
+                </interface>
+                <counters type="BooleanField"/>
+                <updatefreq type="NumericField">
+                    <ValidationMessage>Days and hours should be numeric values or left empty.</ValidationMessage>
+                </updatefreq>
+                <content type=".\AliasContentField"/>
+                <password type="TextField"/>
+                <username type="TextField"/>
+                <authtype type="OptionField">
+                    <OptionValues>
+                        <Basic/>
+                        <Bearer/>
+                        <Header/>
+                    </OptionValues>
+                </authtype>
+                <expire type="IntegerField">
+                    <MinimumValue>60</MinimumValue>
+                    <MaximumValue>999999999</MaximumValue>
+                </expire>
+                <categories type="ModelRelationField">
+                    <Model>
+                        <rulesets>
+                            <source>OPNsense.Firewall.Category</source>
+                            <items>categories.category</items>
+                            <display>name</display>
+                        </rulesets>
+                    </Model>
+                    <Multiple>Y</Multiple>
+                    <ValidationMessage>Related category not found.</ValidationMessage>
+                </categories>
+                <current_items type="IntegerField" volatile="true"/>
+                <last_updated type="TextField" volatile="true"/>
+                <eval_nomatch type="IntegerField" volatile="true"/>
+                <eval_match type="IntegerField" volatile="true"/>
+                <in_block_p type="IntegerField" volatile="true"/>
+                <in_block_b type="IntegerField" volatile="true"/>
+                <in_pass_p type="IntegerField" volatile="true"/>
+                <in_pass_b type="IntegerField" volatile="true"/>
+                <out_block_p type="IntegerField" volatile="true"/>
+                <out_block_b type="IntegerField" volatile="true"/>
+                <out_pass_p type="IntegerField" volatile="true"/>
+                <out_pass_b type="IntegerField" volatile="true"/>
+                <description type="DescriptionField"/>
+            </alias>
+        </aliases>
+    </items>
+</model>

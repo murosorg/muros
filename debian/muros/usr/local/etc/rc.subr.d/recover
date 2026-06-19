@@ -1,0 +1,330 @@
+#!/usr/local/bin/php
+<?php
+
+/*
+ * Copyright (c) 2015-2023 Franco Fichtner <franco@opnsense.org>
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
+ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
+ */
+
+/*
+ * XXX
+ *
+ * Only use native PHP functions to ensure recovery as much as possible
+ * which avoids file inclusion and is especially true for passthru() and
+ * exec() use here.
+ */
+
+$etc_group = <<<EOF
+wheel:*:0:root
+daemon:*:1:
+kmem:*:2:
+sys:*:3:
+tty:*:4:
+operator:*:5:root
+mail:*:6:
+bin:*:7:
+news:*:8:
+man:*:9:
+games:*:13:
+ftp:*:14:
+staff:*:20:
+sshd:*:22:
+smmsp:*:25:
+mailnull:*:26:
+guest:*:31:
+video:*:44:
+realtime:*:47:
+idletime:*:48:
+bind:*:53:
+unbound:*:59:
+proxy:*:62:
+authpf:*:63:
+_pflogd:*:64:
+_dhcp:*:65:
+uucp:*:66:
+dialer:*:68:
+network:*:69:
+audit:*:77:
+www:*:80:
+u2f:*:116:
+ntpd:*:123:
+_ypldap:*:160:
+hast:*:845:
+tests:*:977:
+nogroup:*:65533:
+nobody:*:65534:
+
+EOF;
+
+$etc_master_passwd = <<<EOF
+root::0:0::0:0:Charlie &:/root:/bin/csh
+toor:*:0:0::0:0:Bourne-again Superuser:/root:
+installer:*:0:0::0:0:Installer Superuser:/root:/usr/sbin/nologin
+daemon:*:1:1::0:0:Owner of many system processes:/root:/usr/sbin/nologin
+operator:*:2:5::0:0:System &:/:/usr/sbin/nologin
+bin:*:3:7::0:0:Binaries Commands and Source:/:/usr/sbin/nologin
+tty:*:4:65533::0:0:Tty Sandbox:/:/usr/sbin/nologin
+kmem:*:5:65533::0:0:KMem Sandbox:/:/usr/sbin/nologin
+games:*:7:13::0:0:Games pseudo-user:/:/usr/sbin/nologin
+news:*:8:8::0:0:News Subsystem:/:/usr/sbin/nologin
+man:*:9:9::0:0:Mister Man Pages:/usr/share/man:/usr/sbin/nologin
+sshd:*:22:22::0:0:Secure Shell Daemon:/var/empty:/usr/sbin/nologin
+smmsp:*:25:25::0:0:Sendmail Submission User:/var/spool/clientmqueue:/usr/sbin/nologin
+mailnull:*:26:26::0:0:Sendmail Default User:/var/spool/mqueue:/usr/sbin/nologin
+bind:*:53:53::0:0:Bind Sandbox:/:/usr/sbin/nologin
+unbound:*:59:59::0:0:Unbound DNS Resolver:/var/unbound:/usr/sbin/nologin
+proxy:*:62:62::0:0:Packet Filter pseudo-user:/nonexistent:/usr/sbin/nologin
+_pflogd:*:64:64::0:0:pflogd privsep user:/var/empty:/usr/sbin/nologin
+_dhcp:*:65:65::0:0:dhcp programs:/var/empty:/usr/sbin/nologin
+uucp:*:66:66::0:0:UUCP pseudo-user:/var/spool/uucppublic:/usr/local/libexec/uucp/uucico
+pop:*:68:6::0:0:Post Office Owner:/nonexistent:/usr/sbin/nologin
+auditdistd:*:78:77::0:0:Auditdistd unprivileged user:/var/empty:/usr/sbin/nologin
+www:*:80:80::0:0:World Wide Web Owner:/nonexistent:/usr/sbin/nologin
+ntpd:*:123:123::0:0:NTP Daemon:/var/db/ntp:/usr/sbin/nologin
+_ypldap:*:160:160::0:0:YP LDAP unprivileged user:/var/empty:/usr/sbin/nologin
+hast:*:845:845::0:0:HAST unprivileged user:/var/empty:/usr/sbin/nologin
+tests:*:977:977::0:0:Unprivileged user for tests:/nonexistent:/usr/sbin/nologin
+nobody:*:65534:65534::0:0:Unprivileged user:/nonexistent:/usr/sbin/nologin
+
+EOF;
+
+$etc_shells = <<<EOF
+# List of acceptable shells for chpass(1).
+# Ftpd will not allow users to connect who are not using
+# one of these shells.
+
+
+EOF;
+
+$known_shells = [
+    '/bin/csh',
+    '/bin/sh',
+    '/bin/tcsh',
+    '/usr/local/bin/bash',
+    '/usr/local/bin/scponly',
+    '/usr/local/bin/zsh',
+    '/usr/local/sbin/opnsense-installer',
+    '/usr/local/sbin/opnsense-shell',
+];
+
+foreach ($known_shells as $shell) {
+    if (file_exists($shell)) {
+        $etc_shells .= "{$shell}\n";
+    }
+}
+
+$etc_ttys = <<<EOF
+#
+#	@(#)ttys	5.1 (Berkeley) 4/17/89
+#
+# This file specifies various information about terminals on the system.
+# It is used by several different programs.  Common entries for the
+# various columns include:
+#
+# name  The name of the terminal device.
+#
+# getty The program to start running on the terminal.  Typically a
+#       getty program, as the name implies.  Other common entries
+#       include none, when no getty is needed, and xdm, to start the
+#       X Window System.
+#
+# type The initial terminal type for this port.  For hardwired
+#      terminal lines, this will contain the type of terminal used.
+#      For virtual consoles, the correct type is typically xterm.
+#      Other common values include dialup for incoming modem ports, and
+#      unknown when the terminal type cannot be predetermined.
+#
+# status Must be on or off.  If on, init will run the getty program on
+#        the specified port.  If the word "secure" appears, this tty
+#        allows root login.
+#
+# name	getty				type	status		comments
+#
+# If console is marked "insecure", then init will ask for the root password
+# when going to single-user mode.
+console	none				unknown	off secure
+#
+ttyv0	"/usr/libexec/getty Pc"		xterm	onifexists secure
+# Virtual terminals
+ttyv1	"/usr/libexec/getty Pc"		xterm	onifexists secure
+ttyv2	"/usr/libexec/getty Pc"		xterm	onifexists secure
+ttyv3	"/usr/libexec/getty Pc"		xterm	onifexists secure
+ttyv4	"/usr/libexec/getty Pc"		xterm	onifexists secure
+ttyv5	"/usr/libexec/getty Pc"		xterm	onifexists secure
+ttyv6	"/usr/libexec/getty Pc"		xterm	onifexists secure
+ttyv7	"/usr/libexec/getty Pc"		xterm	onifexists secure
+ttyv8	"/usr/local/bin/xdm -nodaemon"	xterm	off secure
+# Serial terminals
+# The 'dialup' keyword identifies dialin lines to login, fingerd etc.
+ttyu0	"/usr/libexec/getty 3wire"	vt100	onifconsole secure
+ttyu1	"/usr/libexec/getty 3wire"	vt100	onifconsole secure
+ttyu2	"/usr/libexec/getty 3wire"	vt100	onifconsole secure
+ttyu3	"/usr/libexec/getty 3wire"	vt100	onifconsole secure
+# Dumb console
+dcons	"/usr/libexec/getty std.9600"	vt100	off secure
+# Xen Virtual console
+xc0	"/usr/libexec/getty Pc"		xterm	onifconsole secure
+# RISC-V HTIF console
+rcons	"/usr/libexec/getty std.9600"	vt100	onifconsole secure
+
+EOF;
+
+$php_ini = <<<EOF
+; File generated via recovery
+output_buffering = "0"
+allow_url_fopen = "0"
+expose_php = Off
+enable_dl = Off
+implicit_flush = true
+magic_quotes_gpc = Off
+max_execution_time = 300
+max_input_time = 1800
+max_input_vars = 5000
+memory_limit = 1G
+register_argc_argv = On
+register_long_arrays = Off
+variables_order = "GPCS"
+file_uploads = On
+upload_tmp_dir = /var/lib/php/tmp
+upload_max_filesize = 200M
+max_file_uploads = 5
+post_max_size = 200M
+html_errors = Off
+zlib.output_compression = Off
+zlib.output_compression_level = 1
+include_path = "/usr/local/etc/inc:/usr/local/www:/usr/local/opnsense/mvc:/usr/local/opnsense/contrib:/usr/local/share/pear:/usr/local/share"
+ignore_repeated_errors = on
+error_reporting = E_ALL ^ (E_WARNING | E_NOTICE | E_DEPRECATED | E_STRICT | E_CORE_WARNING | E_COMPILE_WARNING)
+display_errors=on
+display_startup_errors=off
+log_errors=on
+error_log=/var/lib/php/tmp/PHP_errors.log
+date.timezone="Etc/UTC"
+session.save_path=/var/lib/php/sessions
+
+EOF;
+
+function recover_ports()
+{
+    $actions = ['pre-install', 'post-install'];
+
+    exec('/usr/local/sbin/pkg-static query -e \'%#U > 0 || %#G > 0\' %n', $pkgs);
+
+    if ($pkgs[0] == '') {
+        return;
+    }
+
+    $tempname = tempnam('/tmp', 'recover.');
+    $tempfile = fopen($tempname, 'w');
+    $luacount = 0;
+
+    foreach ($pkgs as $pkg) {
+        $raw = exec('/usr/local/sbin/pkg-static info --raw --raw-format json-compact ' . escapeshellarg($pkg));
+        $info = json_decode($raw, true);
+        foreach ($actions as $action) {
+            if (!empty($info['scripts'][$action])) {
+                ftruncate($tempfile, 0);
+                rewind($tempfile);
+                fwrite($tempfile, $info['scripts'][$action] . PHP_EOL);
+                passthru('/bin/sh ' . escapeshellarg($tempname));
+            }
+            if (!empty($info['lua_scripts'][$action])) {
+                $luacount += count($info['lua_scripts'][$action]);
+            }
+        }
+    }
+
+    if ($luacount) {
+        echo "===> Unhandled LUA scripts ($luacount) were found." . PHP_EOL;
+    }
+
+    fclose($tempfile);
+    unlink($tempname);
+}
+
+function recover_rebuild()
+{
+    passthru('/usr/sbin/pwd_mkdb -p /etc/master.passwd');
+    passthru('/usr/sbin/pwd_mkdb /etc/master.passwd');
+    passthru('/bin/sync');
+}
+
+function recover_base($etc_group, $etc_master_passwd, $etc_shells, $etc_ttys, $php_ini)
+{
+    $partial_restore = [
+        '/etc/group' => $etc_group,
+        '/etc/master.passwd' => $etc_master_passwd,
+    ];
+
+    exec('/usr/sbin/pw userdel installer 2> /dev/null');
+
+    foreach ($partial_restore as $file => $content) {
+        if (!file_exists($file) || filesize($file) === 0) {
+            echo "===> Restoring $file\n";
+            file_put_contents($file, $content);
+        }
+    }
+
+    echo "===> Restoring /etc/shells\n";
+    file_put_contents('/etc/shells', $etc_shells);
+
+    echo "===> Restoring /etc/ttys\n";
+    file_put_contents('/etc/ttys', $etc_ttys);
+
+    echo "===> Restoring php.ini files\n";
+    file_put_contents('/usr/local/etc/php.ini', $php_ini);
+    file_put_contents('/usr/local/lib/php.ini', $php_ini);
+
+    recover_rebuild();
+}
+
+function recover_pkg()
+{
+    recover_ports();
+    recover_rebuild();
+
+    echo "===> Restoring critical core files\n";
+
+    foreach (['/usr/local/etc/bogons', '/usr/local/etc/bogonsv6'] as $file) {
+        if (!file_exists($file) || filesize($file) === 0) {
+            @copy("{$file}.sample", $file);
+        }
+    }
+}
+
+$stage = isset($argv[1]) ? $argv[1] : 'both';
+
+switch ($stage) {
+    case 'base':
+        recover_base($etc_group, $etc_master_passwd, $etc_shells, $etc_ttys, $php_ini);
+        break;
+    case 'pkg':
+        recover_pkg();
+        break;
+    default:
+        recover_base($etc_group, $etc_master_passwd, $etc_shells, $etc_ttys, $php_ini);
+        recover_pkg();
+        break;
+}

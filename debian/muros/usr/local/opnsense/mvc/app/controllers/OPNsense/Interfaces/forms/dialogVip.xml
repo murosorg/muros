@@ -1,0 +1,169 @@
+<form>
+    <field>
+        <id>vip.mode</id>
+        <label>Mode</label>
+        <type>dropdown</type>
+        <help>Proxy ARP cannot be bound to by anything running on the firewall, such as IPsec, OpenVPN, etc. In most cases an IP alias should be used.</help>
+        <grid_view>
+            <sequence>6</sequence>
+        </grid_view>
+    </field>
+    <field>
+        <id>vip.interface</id>
+        <label>Interface</label>
+        <type>dropdown</type>
+        <grid_view>
+            <sequence>5</sequence>
+        </grid_view>
+    </field>
+    <field>
+        <id>vip.network</id>
+        <label>Network / Address</label>
+        <type>text</type>
+        <help>Provide an address and subnet to use. (e.g 192.168.0.1/24)</help>
+        <grid_view>
+            <column-id>address</column-id>
+            <sequence>1</sequence>
+        </grid_view>
+    </field>
+    <field>
+        <id>vip.gateway</id>
+        <label>Gateway</label>
+        <type>text</type>
+        <help>For some interface types a gateway is required to configure an IP Alias (ppp/pppoe/tun), leave this field empty for all other interface types.</help>
+        <advanced>true</advanced>
+        <grid_view>
+            <visible>false</visible>
+            <sequence>7</sequence>
+        </grid_view>
+    </field>
+    <field>
+        <id>vip.peer</id>
+        <label>Peer (ipv4)</label>
+        <type>text</type>
+        <style>mode mode_carp</style>
+        <hint>224.0.0.18</hint>
+        <help>
+            Destination address to use when announcing, defaults to multicast,
+            but can be configured as unicast address when multicast can not be used (for example with cloud providers)
+        </help>
+        <grid_view>
+            <mode>carp</mode>
+            <formatter>modeFormatter</formatter>
+            <visible>false</visible>
+            <sequence>8</sequence>
+        </grid_view>
+    </field>
+    <field>
+        <id>vip.peer6</id>
+        <label>Peer (ipv6)</label>
+        <type>text</type>
+        <style>mode mode_carp</style>
+        <hint>ff02::12</hint>
+        <help>
+            Destination address to use when announcing, defaults to multicast,
+            but can be configured as unicast address when multicast can not be used (for example with cloud providers)
+        </help>
+        <grid_view>
+            <mode>carp</mode>
+            <formatter>modeFormatter</formatter>
+            <visible>false</visible>
+            <sequence>9</sequence>
+        </grid_view>
+    </field>
+    <field>
+      <id>vip.noexpand</id>
+      <label>Disable Expansion</label>
+      <type>checkbox</type>
+      <help>Disable expansion of this entry into IPs on NAT lists (e.g. 192.168.1.0/24 expands to 256 entries.</help>
+      <style>mode mode_proxyarp</style>
+      <grid_view>
+        <type>boolean</type>
+        <mode>proxyarp</mode>
+        <formatter>modeFormatter</formatter>
+        <visible>false</visible>
+        <sequence>10</sequence>
+      </grid_view>
+    </field>
+    <field>
+      <id>vip.nobind</id>
+      <label>Deny service binding</label>
+      <type>checkbox</type>
+      <help>Assigning services to the virtual IP's interface will automatically include this address. Check to prevent binding to this address instead.</help>
+      <style>mode mode_carp mode_ipalias</style>
+      <grid_view>
+        <type>boolean</type>
+        <mode>carp ipalias</mode>
+        <formatter>modeFormatter</formatter>
+        <visible>false</visible>
+        <sequence>11</sequence>
+      </grid_view>
+    </field>
+    <field>
+        <id>vip.password</id>
+        <label>Password</label>
+        <type>password</type>
+        <style>mode mode_carp</style>
+        <help>Enter the VHID group password.</help>
+        <grid_view>
+            <ignore>true</ignore>
+        </grid_view>
+    </field>
+    <field>
+        <id>vip.vhid</id>
+        <label>VHID Group</label>
+        <type>text</type>
+        <style>mode mode_carp mode_ipalias</style>
+        <help>Enter the VHID group that the machines will share.</help>
+        <grid_view>
+            <mode>carp ipalias</mode>
+            <column-id>vhid_txt</column-id>
+            <formatter>modeFormatter</formatter>
+            <sequence>2</sequence>
+            <width>8em</width>
+        </grid_view>
+    </field>
+    <field>
+        <id>vip.advbase</id>
+        <label>Advbase</label>
+        <type>text</type>
+        <style>mode mode_carp</style>
+        <help>Specifies the base of the advertisement interval in seconds. The acceptable values are 1 to 255.</help>
+        <grid_view>
+            <ignore>true</ignore>
+        </grid_view>
+    </field>
+    <field>
+        <id>vip.advskew</id>
+        <label>Advskew</label>
+        <type>text</type>
+        <style>mode mode_carp advanced</style>
+        <help>
+          Specifies the skew to add to the base advertisement interval to make one host advertise slower than another host.
+          It is specified in 1/256 of seconds.  The acceptable values are 0 to 254.
+        </help>
+        <grid_view>
+            <ignore>true</ignore>
+        </grid_view>
+    </field>
+    <field>
+        <id>vip.nosync</id>
+        <label>No XMLRPC Sync</label>
+        <type>checkbox</type>
+        <help>Exclude this item from HA synchronization. Enable manually for the same item on both master and backup to prevent changes, deletions, or syncing. If this setting is removed from the backup but kept on the master, the item will be deleted on the backup during synchronization. Useful for Unicast CARP: after initial sync, enable this and adjust Unicast IPs. Additional IP aliases in the same VHID group can then sync without overwriting their parent CARP VIP.</help>
+        <style>mode mode_carp mode_ipalias</style>
+        <grid_view>
+            <type>boolean</type>
+            <mode>carp ipalias</mode>
+            <formatter>modeFormatter</formatter>
+            <visible>false</visible>
+        </grid_view>
+    </field>
+    <field>
+        <id>vip.descr</id>
+        <label>Description</label>
+        <type>text</type>
+        <help>You may enter a description here for your reference (not parsed).</help>
+        <sequence>12</sequence>
+    </field>
+</form>

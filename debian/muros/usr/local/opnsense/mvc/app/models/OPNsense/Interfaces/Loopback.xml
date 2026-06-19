@@ -1,0 +1,15 @@
+<model>
+    <mount>//OPNsense/Interfaces/loopbacks</mount>
+    <version>1.0.0</version>
+    <description>Loopback configuration</description>
+    <items>
+        <loopback type="ArrayField">
+            <deviceId type="AutoNumberField">
+                <Required>Y</Required>
+            </deviceId>
+            <description type="DescriptionField">
+                <Required>Y</Required>
+            </description>
+        </loopback>
+    </items>
+</model>

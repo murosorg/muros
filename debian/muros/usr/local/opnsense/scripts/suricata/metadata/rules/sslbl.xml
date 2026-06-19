@@ -1,0 +1,26 @@
+<?xml version="1.0"?>
+<ruleset>
+    <location url="https://sslbl.abuse.ch/blacklist/" prefix="abuse.ch"/>
+    <files>
+        <file url="https://sslbl.abuse.ch/blacklist/sslblacklist_tls_cert.rules"
+              description="SSL Fingerprint Blacklist"
+              documentation_url="https://sslbl.abuse.ch/blacklist/"
+        >abuse.ch.sslblacklist.rules</file>
+        <file url="https://sslbl.abuse.ch/blacklist/sslipblacklist.rules"
+              description="SSL IP Blacklist"
+              documentation_url="https://sslbl.abuse.ch/blacklist/"
+        >abuse.ch.sslipblacklist.rules</file>
+        <file url="https://feodotracker.abuse.ch/downloads/feodotracker.rules"
+              description="Feodo Tracker"
+              documentation_url="https://feodotracker.abuse.ch/blocklist/"
+        >abuse.ch.feodotracker.rules</file>
+        <file url="https://urlhaus.abuse.ch/downloads/suricata-ids/"
+              description="URLhaus"
+              documentation_url="https://urlhaus.abuse.ch/"
+        >abuse.ch.urlhaus.rules</file>
+        <file url="https://threatfox.abuse.ch/downloads/threatfox_suricata.rules"
+              description="ThreatFox"
+              documentation_url="https://threatfox.abuse.ch/"
+        >abuse.ch.threatfox.rules</file>
+    </files>
+</ruleset>

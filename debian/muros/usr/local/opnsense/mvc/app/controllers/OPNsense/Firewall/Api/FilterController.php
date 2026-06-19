@@ -1,0 +1,422 @@
+<?php
+
+/*
+ * Copyright (C) 2020-2025 Deciso B.V.
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *
+ * 1. Redistributions of source code must retain the above copyright notice,
+ *    this list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
+ * AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+ * AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY,
+ * OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ */
+namespace OPNsense\Firewall\Api;
+
+use OPNsense\Base\UserException;
+use OPNsense\Core\Config;
+use OPNsense\Core\Backend;
+use OPNsense\Firewall\Alias;
+use OPNsense\Firewall\Category;
+use OPNsense\Firewall\Filter;
+use OPNsense\Firewall\Group;
+use OPNsense\Firewall\Util;
+
+class FilterController extends FilterBaseController
+{
+    protected static $categorysource = "rules.rule";
+
+    /* cache properties */
+    private array $legacy_fieldmap = [];
+
+    /**
+     * @return array cached fieldmapping for legacy data
+     */
+    private function getLegacyFieldMap()
+    {
+        if (empty($this->legacy_fieldmap)) {
+            $this->legacy_fieldmap = ['category' => [], 'interface' => []];
+            foreach ((new Category())->categories->category->iterateItems() as $key => $category) {
+                $this->legacy_fieldmap['category'][$key] = (string)$category->name;
+            }
+            foreach ((Config::getInstance()->object())->interfaces->children() as $key => $ifdetail) {
+                $descr = !empty($ifdetail->descr) ? $ifdetail->descr : strtoupper($key);
+                $this->legacy_fieldmap['interface'][$key] = $descr;
+            }
+            $this->legacy_fieldmap['%action'] = [
+                'block' => gettext('Block'),
+                'pass' => gettext('Pass'),
+                'reject' => gettext('Reject'),
+            ];
+            $this->legacy_fieldmap['%direction'] = [
+                'in' => gettext('In'),
+                'out' => gettext('Out'),
+                'any' => gettext('Any'),
+            ];
+            $this->legacy_fieldmap['%ipprotocol'] = [
+                'inet' => gettext('IPv4'),
+                'inet6' => gettext('IPv6'),
+                'inet46' => '', /* XXX remove when filter.lib.inc use is removed */
+            ];
+        }
+
+        return $this->legacy_fieldmap;
+    }
+
+    /**
+     * Retrieves and merges firewall rules from model and internal sources, then paginates them.
+     *
+     * @return array The final paginated, merged result.
+     */
+    public function searchRuleAction()
+    {
+        $categories = $this->request->get('category');
+        $show_all = !empty($this->request->get('show_all'));
+        if (!$this->request->has('interface')) {
+            // ALL rules
+            $interfaces = null;
+        } else {
+            // interface param may be empty
+            $interfaces = array_filter(explode(',', (string)$this->request->get('interface')), 'strlen');
+
+            if (!empty($interfaces)) {
+                /* add groups which contain the selected interface when looking at full impact */
+                foreach ((new Group())->ifgroupentry->iterateItems() as $groupItem) {
+                    if (array_intersect($interfaces, $groupItem->members->getValues())) {
+                        $interfaces[] = $groupItem->ifname->getValue();
+                    }
+                }
+            }
+        }
+        /* extract all mvc records so we can filter and sort all at once */
+        $allrules = [];
+        foreach ($this->getModel()->rules->rule->iterateItems() as $key => $node) {
+            $allrules[] = array_merge(['uuid' => $key], $node->getNodeContent());
+        }
+
+        if ($show_all) {
+            /* only query stats when fill info is requested */
+            $rule_stats = json_decode((new Backend())->configdRun('filter rule stats'), true) ?? [];
+        } else {
+            $rule_stats = [];
+        }
+
+        $filter_funct_rs = function (&$record) use ($categories, $interfaces, $rule_stats) {
+            /* Filter criteria */
+            $r_categories = !empty($record['categories']) ? array_map('trim', explode(',', $record['categories'])) : [];
+            $is_cat = empty($categories) || array_intersect($r_categories, $categories);
+            $rule_interfaces = array_filter(explode(',', $record['interface'] ?? ''));
+            if ($interfaces === null || (empty($record['interface']))) {
+                /* ALL interfaces always matches, when inspecting, also show rules that apply to all */
+                $is_if = true; // ALL interfaces or floating always matches
+            } elseif (!empty($record['interfacenot'])) {
+                /* Inverted interface, show where applicable when inspecting */
+                $is_if = !array_intersect($rule_interfaces, $interfaces ?? []);
+            } elseif (empty($interfaces) && (count($rule_interfaces) != 1 || !empty($record['interfacenot']))) {
+                /* Floating, multiple interfaces selected */
+                $is_if = true;
+            } else {
+                /* Interfaces overlap, when inspecting all overlaps are relevant, otherwise only exact matches */
+                $is_if = array_intersect($rule_interfaces, $interfaces ?? []) && (
+                    count($rule_interfaces) == 1
+                ) && empty($record['interfacenot']);
+            }
+
+            if (!$is_cat || !$is_if) {
+                return false; /* not reached */
+            }
+
+            /* translate/convert legacy fields before returning, similar to mvc handling */
+            if (!empty($record['legacy'])) {
+                foreach ($this->getLegacyFieldMap() as $topic => $data) {
+                    if (!empty($record[$topic])) {
+                        $tmp = [];
+                        foreach (explode(',', $record[$topic]) as $item) {
+                            $tmp[] = $data[$item] ?? $item;
+                        }
+                        $record[$topic] = implode(',', $tmp);
+                    }
+                }
+            }
+
+            /* Formatting */
+
+            /* always merge stats when found */
+            if (!empty($record['uuid']) && !empty($rule_stats[$record['uuid']])) {
+                $record = array_merge($record, $rule_stats[$record['uuid']]);
+            }
+
+            /* frontend can format categories with colors */
+            $record['category_colors'] = $this->getCategoryColors($r_categories);
+
+            /* frontend can format aliases with an alias icon */
+            foreach (['source_net','source_port','destination_net','destination_port'] as $field) {
+                if (!empty($record[$field])) {
+                    $record["alias_meta_{$field}"] = $this->getNetworks($record[$field]);
+                }
+            }
+
+            return true;
+        };
+
+        /* always fetch internal and legacy rules, automatic rules have their own category that is always visible */
+        $allrules = array_merge(
+            $allrules,
+            json_decode((new Backend())->configdRun('filter list non_mvc_rules'), true) ?? []
+        );
+
+        $search_clauses = [];
+        $backend = new Backend();
+        foreach (preg_split('/\s+/', (string)$this->request->getPost('searchPhrase', null, '')) as $token) {
+            // XXX: ideally this should get its own parameter and not reuse show_all
+            if ($show_all && Util::isIpAddress($token)) {
+                $tmp = json_decode($backend->configdpRun('filter find_table_references', [$token]), true) ?? [];
+                $aliases = [$token];
+                if (is_array($tmp) && !empty($tmp['matches'])) {
+                    $aliases = array_merge($aliases, $tmp['matches']);
+                }
+                $search_clauses[] = $aliases;
+            } else {
+                $search_clauses[] = $token;
+            }
+        }
+        $result = $this->searchRecordsetBase(
+            $allrules,
+            null,
+            "sort_order",
+            $filter_funct_rs,
+            SORT_NATURAL | SORT_FLAG_CASE,
+            $search_clauses
+        );
+
+        return $result;
+    }
+
+    public function setRuleAction($uuid)
+    {
+        return $this->setBase("rule", "rules.rule", $uuid);
+    }
+
+    public function addRuleAction()
+    {
+        return $this->addBase("rule", "rules.rule");
+    }
+
+    public function getRuleAction($uuid = null)
+    {
+        $result = $this->getBase('rule', 'rules.rule', $uuid);
+
+        if ($this->request->get('fetchmode') === 'copy' && !empty($result['rule'])) {
+            /* copy mode, generate new sequence at the end */
+            $max = 0;
+            foreach ($this->getModel()->rules->rule->iterateItems() as $rule) {
+                $max = max($rule->sequence->asInt(), $max);
+            }
+            $result['rule']['sequence'] = $max + 100;
+        }
+
+        return $result;
+    }
+
+    public function delRuleAction($uuid)
+    {
+        return $this->delBase("rules.rule", $uuid);
+    }
+
+    public function toggleRuleAction($uuid, $enabled = null)
+    {
+        return $this->toggleBase("rules.rule", $uuid, $enabled);
+    }
+
+    public function toggleRuleLogAction($uuid, $log)
+    {
+        return $this->toggleRuleLogBase($uuid, $log, 'rules.rule');
+    }
+
+    /**
+     * iterate rules for a prio_group, yield this record and the next in line (if any)
+     */
+    protected function ittrRules($prio_group)
+    {
+        $prev_record = null;
+        foreach ($this->getModel()->rules->rule->sortedBy(['prio_group', 'sequence']) as $record) {
+            if ($record->prio_group->isEqual($prio_group)) {
+                yield ['this' => $record, 'prev' => $prev_record];
+                $prev_record = $record;
+            } elseif ($prev_record !== null) {
+                /* last of selected group */
+                break;
+            }
+        }
+    }
+
+    /**
+     * Moves the selected rule so that it appears immediately before the target rule.
+     *
+     * Uses integer gap numbering to update the sequence for only the moved rule.
+     * Rules will be renumbered within the selected range to prevent movements causing overlaps,
+     * but try to keep the changes as minimal as possible.
+     *
+     * Floating, Group, and Interface rules cannot be moved before another.
+     *
+     * @param string $selected_uuid The UUID of the rule to be moved.
+     * @param string $target_uuid   The UUID of the target rule (the rule before which the selected rule is to be placed).
+     * @return array Returns ["status" => "ok"] on success, throws a userexception otherwise.
+     */
+    public function moveRuleBeforeAction($selected_uuid, $target_uuid)
+    {
+        if (!$this->request->isPost()) {
+            return ["status" => "error", "message" => gettext("Invalid request method")];
+        }
+        /* validate */
+        $target_node = $this->getModel()->getNodeByReference('rules.rule.' . $target_uuid);
+        $selected_node = $this->getModel()->getNodeByReference('rules.rule.' . $selected_uuid);
+        if ($target_node === null || $selected_node === null) {
+            throw new UserException(
+                gettext("Either source or destination is not a rule managed with this component"),
+                gettext("Filter")
+            );
+        } elseif (!$selected_node->prio_group->isEqual($target_node->prio_group)) {
+            /* types don't match */
+            $typeNames = [
+                '2' => gettext("Floating"),
+                '3' => gettext("Group"),
+                '4' => gettext("Interface")
+            ];
+            $selectedType = $typeNames[substr($selected_node->prio_group, 0, 1)] ?? gettext("Unknown");
+            $targetType   = $typeNames[substr($target_node->prio_group, 0, 1)] ?? gettext("Unknown");
+            throw new UserException(
+                sprintf(
+                    gettext("Cannot move '%s Rule' before '%s Rule'."),
+                    $selectedType,
+                    $targetType
+                ),
+                gettext("Filter")
+            );
+        } elseif ($selected_uuid === $target_uuid) {
+            throw new UserException(gettext("Cannot move to the same spot."), gettext("Filter"));
+        }
+        /* move the rule and optionally reorganize*/
+        $step_size = 50;
+        $new_key = null;
+        foreach ($this->ittrRules($target_node->prio_group) as $item) {
+            $uuid = $item['this']->getAttribute('uuid');
+            if ($target_uuid === $uuid) {
+                $prev_sequence = (($item['prev']?->sequence->asFloat()) ?? 1);
+                $distance = $item['this']->sequence->asFloat() - $prev_sequence;
+                if ($distance > 2) {
+                    $new_key = intdiv($distance, 2) + $prev_sequence;
+                    break;
+                } else {
+                    $new_key = $item['prev'] === null ? 1 : ($prev_sequence + $step_size);
+                    $item['this']->sequence = (string)($new_key + $step_size);
+                }
+            } elseif ($new_key !== null) {
+                if ($item['this']->sequence->asFloat() < $item['prev']?->sequence->asFloat()) {
+                    $item['this']->sequence = (string)($item['prev']?->sequence->asFloat() + $step_size);
+                }
+            }
+        }
+        if ($new_key !== null) {
+            $selected_node->sequence = (string)$new_key;
+            $this->save();
+        }
+
+        return ["status" => "ok"];
+    }
+
+    /**
+     * return interface options
+     */
+    public function getInterfaceListAction()
+    {
+        $result = [
+            'floating' => [
+                'label' => gettext('Floating'),
+                'icon' => 'fa fa-layer-group fa-fw text-primary',
+                'items' => [],
+            ],
+            'groups' => [
+                'label' => gettext('Groups'),
+                'icon' => 'fa fa-sitemap fa-fw text-warning',
+                'items' => [],
+            ],
+            'interfaces' => [
+                'label' => gettext('Interfaces'),
+                'icon' => 'fa fa-ethernet fa-fw text-info',
+                'items' => [],
+            ],
+            'any' => [
+                'label' => gettext('Any'),
+                'icon' => 'fa fa-globe-europe fa-fw',
+                'items' => [],
+            ],
+        ];
+
+        // Helper to build item
+        $makeItem = fn($value, $label, $type) => [
+            'value' => $value,
+            'label' => $label,
+            'type' => $type
+        ];
+
+        // Floating
+        $result['floating']['items'][] = $makeItem('__floating', gettext('Floating'), 'floating');
+
+        // Groups + Interfaces
+        foreach (Config::getInstance()->object()->interfaces->children() as $key => $intf) {
+            // XXX: Loopback excluded since no rules should be on there
+            if ($key == 'lo0') {
+                continue;
+            }
+            $descr = !empty($intf->descr) ? (string)$intf->descr : strtoupper($key);
+            $type = (string)$intf->type == 'group' ? 'group' : 'interface';
+            $result["{$type}s"]['items'][] = $makeItem($key, $descr, $type);
+        }
+
+        // All rules
+        $result['any']['items'][] = $makeItem('__any', gettext('All rules'), 'any');
+
+        foreach ($result as &$section) {
+            usort($section['items'], fn($a, $b) => strnatcasecmp($a['label'], $b['label']));
+        }
+
+        return $result;
+    }
+
+    // XXX: as shaper1/2 don't have functional keys, we can only export uuid's here
+    public function downloadRulesAction()
+    {
+        return $this->downloadRulesBase('rules.rule', ['sort_order', 'prio_group'], ['overload']);
+    }
+
+    public function uploadRulesAction()
+    {
+        return $this->uploadRulesBase('rules.rule', ['sort_order', 'prio_group'], ['overload']);
+    }
+
+    public function flushInspectCacheAction()
+    {
+        if (!$this->request->isPost()) {
+            return ['status' => 'error', 'message' => gettext('Invalid request method')];
+        }
+
+        (new Backend())->configdRun('!filter rule stats');
+
+        return ['status' => 'ok'];
+    }
+}

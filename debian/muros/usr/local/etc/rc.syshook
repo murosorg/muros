@@ -1,0 +1,77 @@
+#!/bin/sh
+
+# Copyright (c) 2015-2018 Franco Fichtner <franco@opnsense.org>
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#
+# 1. Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#
+# 2. Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
+# ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
+# FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+# DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+# OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+# HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+# LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+# OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+# SUCH DAMAGE.
+
+# Scripts are sorted and should adhere to the
+# following rule of thumb: "dd-identifier.level", for
+# core package syshooks generally "20-mycorehook.start"
+# and for plugin packages rather "50-mypluginhook.stop".
+#
+# It could be useful for the user to order scripts
+# or set a higher/lower priority in case some
+# use case requires a slightly different setup.
+#
+# Arguments beyond the syshook level are passed on to
+# the to be executed scripts.
+#
+# The syshook level can be given as a suffix or is implied
+# via the subdirectory used.  For backwards compat the
+# suffix is moved to the new subdirectory during a request.
+
+PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/bin:/usr/local/sbin
+REQUESTS_CA_BUNDLE=/usr/local/etc/ssl/cert.pem
+SYSDIR="/usr/local/etc/rc.syshook.d"
+SYSLEVEL="${1}"
+
+shift
+
+if [ -z "${SYSLEVEL}" ]; then
+	# we don't know of a default
+	exit 1
+fi
+
+if [ ! -d ${SYSDIR}/${SYSLEVEL} ]; then
+	# no dir no fun
+	exit 0
+fi
+
+SYSHOOKS="$(find -s ${SYSDIR}/${SYSLEVEL} -type f})"
+RETURN=0
+
+for _SYSHOOK in ${SYSHOOKS}; do
+	SYSHOOK=${_SYSHOOK##"${SYSDIR}/"}
+	SYSHOOK=${SYSHOOK##"${SYSLEVEL}/"}
+	SYSNAME=${SYSHOOK#??-}
+
+	echo ">>> Invoking ${SYSLEVEL} script '${SYSNAME}'"
+
+	if ! ${_SYSHOOK} "${@}"; then
+		echo ">>> Error in ${SYSLEVEL} script '${SYSHOOK}'"
+		RETURN=1
+	fi
+done
+
+exit ${RETURN}

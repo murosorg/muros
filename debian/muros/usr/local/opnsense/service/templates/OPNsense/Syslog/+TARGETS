@@ -1,0 +1,7 @@
+rc.conf.d:/etc/rc.conf.d/syslog_ng
+newsyslog.conf:/etc/newsyslog.conf
+syslog-ng.conf:/usr/local/etc/syslog-ng.conf
+syslog-ng-destinations.conf:/usr/local/etc/syslog-ng.conf.d/syslog-ng-destinations.conf
+syslog-ng-local.conf:/usr/local/etc/syslog-ng.conf.d/syslog-ng-local.conf
+syslog-ng-lockout.conf:/usr/local/etc/syslog-ng.conf.d/syslog-ng-lockout.conf
+syslog-ng-config-events.conf:/usr/local/etc/syslog-ng.conf.d/syslog-ng-config-events.conf

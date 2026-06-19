@@ -1,0 +1,93 @@
+#!/bin/sh
+
+# Copyright (C) 2019 Deciso B.V.
+# Copyright (c) 2014-2022 Franco Fichtner <franco@opnsense.org>
+# Copyright (c) 2004-2010 Scott Ullrich <sullrich@gmail.com>
+# Copyright (c) 2003-2004 Manuel Kasper <mk@neon1.net>
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#
+# 1. Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#
+# 2. Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
+# ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
+# FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+# DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+# OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+# HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+# LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+# OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+# SUCH DAMAGE.
+
+USE_MFS_VAR=$(grep -c 'use_mfs_var[^_]' /conf/config.xml)
+
+# see if / is writable (aka. not a live media boot)
+if _tmpdir=$(mktemp -d -q /.diskless.XXXXXX); then
+	# only remove the directory
+	rmdir ${_tmpdir}
+else
+	# disable to avoid spurious /var/log mount
+	USE_MFS_VAR=0
+
+	# force the permission of /root to avoid a health audit
+	# error on ISO format that will not have the correct
+	# permission on boot
+	chmod 750 /root
+fi
+
+# ensure default directories in /var
+if ! mtree -deiU -f /etc/mtree/BSD.var.dist -p /var > /dev/null; then
+	echo -n "Error while applying /var mtree specification, trying to continue"
+	sleep 5
+fi
+
+# old config files are stored in this place
+mkdir -p /var/etc
+
+RUNDIRS="
+/var/run
+/var/dhcpd/var/run
+/var/unbound/var/run
+/var/lib/php/cache
+/var/lib/php/sessions
+/var/lib/php/tests
+/var/lib/php/tmp
+"
+
+# Clear all files in this directory to prevent stale state of
+# services.  At one point this also helped to prevent shutdown(8)
+# from dropping "nologin" into the directory, preventing login on
+# the next boot.  However, do not touch the directory tree since
+# packages can add their own directories there and expect them to
+# persist.   We also clear PHP-related subsystems for consistency.
+for RUNDIR in ${RUNDIRS}; do
+	if [ -d ${RUNDIR} ]; then
+		find ${RUNDIR} ! -type d -delete
+	fi
+done
+
+if [ ${USE_MFS_VAR} -ne 0 ]; then
+	MAX_MFS_VAR=$(grep 'max_mfs_var' /conf/config.xml | sed 's/[^>]*>\([^<]*\)<.*/\1/')
+	MAX_MEM_SYS=$(sysctl -n hw.physmem)
+
+	if [ -z "${MAX_MFS_VAR}" ]; then
+		# cap to 50% by default to avoid swapping
+		MAX_MFS_VAR=50
+	fi
+
+	echo -n "Setting up /var/log memory disk..."
+	mount -t tmpfs -o size=$((MAX_MEM_SYS / 100 * MAX_MFS_VAR)) tmpfs /var/log
+	echo "done."
+fi
+
+# prep boog log
+: > /var/log/boot.log
