@@ -76,7 +76,8 @@ function loopback_configure_do($verbose = false, $device = null)
 {
     $cnf = OPNsense\Core\Config::getInstance()->object();
     $configured_interfaces = legacy_interface_listget();
-    $configured_devices = ['lo0']; // lo0 should always be configured
+    /* MurOS: never tear down the kernel loopback ("lo" on Linux, "lo0" on FreeBSD) */
+    $configured_devices = ['lo', 'lo0'];
     $loopbacks = iterator_to_array((new \OPNsense\Interfaces\Loopback())->loopback->iterateItems());
 
     if (!empty($loopbacks)) {
@@ -93,7 +94,9 @@ function loopback_configure_do($verbose = false, $device = null)
         }
 
         if (!in_array($device_name, $configured_interfaces)) {
-            mwexecf('/sbin/ifconfig %s create', [$device_name]);
+            /* MurOS: extra loopback-style devices are dummy interfaces on Linux */
+            mwexecf('/usr/sbin/ip link add %s type dummy', [$device_name], true);
+            mwexecf('/usr/sbin/ip link set dev %s up', [$device_name]);
         }
     }
 
@@ -101,7 +104,7 @@ function loopback_configure_do($verbose = false, $device = null)
     foreach ($configured_interfaces as $intf) {
         if (strpos($intf, "lo") === 0) {
             if (!in_array($intf, $configured_devices)) {
-                mwexecf('/sbin/ifconfig %s destroy', [$intf]);
+                mwexecf('/usr/sbin/ip link del dev %s', [$intf], true);
             }
         }
     }

@@ -95,55 +95,78 @@ function vxlan_configure_do($verbose = false, $device = null)
         }
 
         $configured_devices[] = $device_name;
-        $current_settings = [];
 
-        if (empty($interfaces_details[$device_name])) {
-            // new device
-            mwexecf('/sbin/ifconfig vxlan create name %s', array($device_name));
-            $isChanged = true;
-        } else {
-            $current_settings['vxlanid'] = $interfaces_details[$device_name]['vxlan']['vni'];
-            foreach (['local', 'remote', 'group'] as $target) {
-                if (!empty($interfaces_details[$device_name]['vxlan'][$target])) {
-                    $tmp = explode(':', $interfaces_details[$device_name]['vxlan'][$target]);
-                    $current_settings['vxlan' . $target] = $tmp[0];
-                    $current_settings['vxlan' . $target . 'port'] = $tmp[1];
-                }
-            }
+        /*
+         * MurOS: gather the requested settings. A Linux VXLAN bakes all of its
+         * parameters into the device at creation time, so changing any of them
+         * means recreating the interface (ip link does not allow editing them
+         * in place). The "remote" (unicast) and "group" (multicast) defaults
+         * are mutually exclusive on Linux, so remote takes precedence.
+         */
+        $vni = (string)$vxlan->vxlanid;
+        $local = (string)$vxlan->vxlanlocal;
+        $remote = (string)$vxlan->vxlanremote;
+        $group = (string)$vxlan->vxlangroup;
+        $dstport = !empty((string)$vxlan->vxlanremoteport) ? (string)$vxlan->vxlanremoteport : '4789';
+        if (!empty($remote)) {
+            $group = '';
+        }
+        $parent = '';
+        $intfnm = (string)$vxlan->vxlandev;
+        if (!empty($intfnm) && !empty($cnf->interfaces->$intfnm)) {
+            $parent = (string)$cnf->interfaces->$intfnm->if;
         }
 
-        // gather settings, detect changes
-        $ifcnfcmd = '/sbin/ifconfig %s';
-        $ifcnfcmdp = array($device_name);
-        foreach (
-            [
-            'vxlanid', 'vxlanlocal', 'vxlanremote', 'vxlanlocalport', 'vxlanremoteport', 'vxlangroup', 'vxlandev'
-            ] as $param
-        ) {
-            $value = '';
-            if ($param == 'vxlandev') {
-                $intfnm = (string)$vxlan->$param;
-                if (!empty($cnf->interfaces->$intfnm)) {
-                    $value = (string)$cnf->interfaces->$intfnm->if;
-                }
-            } elseif (str_ends_with($param, 'port')) {
-                $value = !empty((string)$vxlan->$param) ? (string)$vxlan->$param : '4789';
-            } else {
-                $value = (string)$vxlan->$param;
-            }
-            if ($value != '') {
-                $ifcnfcmd .= " {$param} %s ";
-                $ifcnfcmdp[] = $value;
-            }
-            if (isset($current_settings[$param]) && $current_settings[$param] != $value) {
-                // need to bring existing down to apply changes
-                mwexecf('/sbin/ifconfig %s down', [$device_name]);
-                $isChanged = true;
-            }
+        $desired = [
+            'id' => $vni,
+            'local' => $local,
+            'remote' => $remote,
+            'group' => $group,
+            'dev' => $parent,
+            'dstport' => $dstport,
+        ];
+
+        /* read the current settings (if the device exists) to detect changes */
+        $current = [];
+        if (!empty($interfaces_details[$device_name])) {
+            $raw = shell_exec('/usr/sbin/ip -d -j link show ' . escapeshellarg($device_name) . ' 2>/dev/null');
+            $info = json_decode((string)$raw, true)[0]['linkinfo']['info_data'] ?? [];
+            $current = [
+                'id' => isset($info['id']) ? (string)$info['id'] : '',
+                'local' => $info['local'] ?? '',
+                'remote' => $info['remote'] ?? '',
+                'group' => $info['group'] ?? '',
+                'dev' => $info['link'] ?? '',
+                'dstport' => isset($info['port']) ? (string)$info['port'] : '',
+            ];
         }
 
-        if ($isChanged) {
-            mwexecf($ifcnfcmd . ' up', $ifcnfcmdp);
+        if ($current != $desired) {
+            /* (re)create the device with the requested parameters */
+            mwexecf('/usr/sbin/ip link del dev %s', [$device_name], true);
+
+            $fmt = '/usr/sbin/ip link add %s type vxlan id %s';
+            $args = [$device_name, $vni];
+            if (!empty($local)) {
+                $fmt .= ' local %s';
+                $args[] = $local;
+            }
+            if (!empty($remote)) {
+                $fmt .= ' remote %s';
+                $args[] = $remote;
+            } elseif (!empty($group)) {
+                $fmt .= ' group %s';
+                $args[] = $group;
+            }
+            if (!empty($parent)) {
+                $fmt .= ' dev %s';
+                $args[] = $parent;
+            }
+            $fmt .= ' dstport %s';
+            $args[] = $dstport;
+
+            mwexecf($fmt, $args);
+            mwexecf('/usr/sbin/ip link set dev %s up', [$device_name]);
             $changed_devices[] = $device_name;
         }
     }
@@ -152,7 +175,7 @@ function vxlan_configure_do($verbose = false, $device = null)
     foreach ($interfaces_details as $intf => $data) {
         if (strpos($intf, "vxlan") === 0) {
             if (!in_array($intf, $configured_devices)) {
-                mwexecf('/sbin/ifconfig %s destroy', array($intf));
+                mwexecf('/usr/sbin/ip link del dev %s', [$intf], true);
             }
         }
     }
