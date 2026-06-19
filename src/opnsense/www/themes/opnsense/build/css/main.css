@@ -7378,81 +7378,68 @@ div[data-for*=help_for] {
 
 /* brand block at the top of the left panel: compact, two rows
    (logo + version, then identity + logout) to avoid empty space */
-/* Sidebar header: centered product logo with a version label, followed by an
-   account row (avatar, signed-in user/host, logout button). */
+/* Sidebar header: prominent left-aligned logo with a compact single-line
+   account row. Uses horizontal space and keeps the vertical footprint small. */
 .muros-brand {
-  padding: 22px 16px 16px;
-  text-align: center;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  position: relative;
+  margin-left: -15px;
+  padding: 12px 14px 6px 0;
 }
 .muros-brand-logo {
-  display: inline-block;
+  display: block;
   line-height: 0;
 }
 .muros-brand-logo img {
-  height: 34px;
+  height: 46px;
   width: auto;
   max-width: 100%;
+  display: block;
 }
 .muros-version {
   display: block;
-  margin-top: 9px;
+  margin-top: 5px;
   font-family: "Courier New", monospace;
-  font-size: 10px;
-  letter-spacing: 0.08em;
+  font-size: 9px;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: #6f8097;
 }
 .muros-account {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 12px 16px;
+  gap: 7px;
+  margin-left: -15px;
+  padding: 4px 14px 12px 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 12px;
+  white-space: nowrap;
 }
-.muros-account-avatar {
+.muros-account-icon {
   flex: 0 0 auto;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(245, 197, 24, 0.12);
   color: #F5C518;
-  font-size: 15px;
-}
-.muros-account-meta {
-  flex: 1 1 auto;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  line-height: 1.25;
-  text-align: left;
-}
-.muros-account-meta .muros-user {
-  color: #eef2f7;
   font-size: 13px;
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
-.muros-account-meta .muros-host {
-  color: #6f8097;
-  font-size: 11px;
+.muros-account .muros-user {
+  flex: 0 0 auto;
+  color: #eef2f7;
+  font-weight: 600;
+}
+.muros-account .muros-host {
+  flex: 0 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  color: #6f8097;
 }
 a.muros-logout {
   flex: 0 0 auto;
+  margin-left: auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 6px;
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
   color: #8a99ad !important;
   font-size: 14px;
   text-decoration: none;
