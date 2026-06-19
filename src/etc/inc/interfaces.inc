@@ -243,12 +243,15 @@ function _interfaces_bridge_configure($bridge, $ifconfig_details = null)
         $members[$member] = $device;
     }
 
-    if (
-        empty($this_if) || empty($this_if['nd6']) ||
-        in_array('auto_linklocal', $this_if['nd6']['flags']) != !empty($bridge['linklocal'])
-    ) {
-        mwexecf('/sbin/ifconfig %s inet6 %sauto_linklocal', [$bridgeif, !empty($bridge['linklocal']) ? '' : '-']);
-    }
+    /*
+     * MurOS: IPv6 link-local generation. FreeBSD toggles auto_linklocal; the
+     * Linux equivalent is the per-device address generation mode, where "none"
+     * disables the automatic link-local address and "eui64" restores it.
+     */
+    mwexecf('/usr/sbin/ip link set dev %s addrgenmode %s', [
+        $bridgeif,
+        !empty($bridge['linklocal']) ? 'eui64' : 'none',
+    ]);
 
     /* add member interfaces to bridge */
     $current_members = !empty($this_if['members']) ? $this_if['members'] : [];
@@ -268,61 +271,47 @@ function _interfaces_bridge_configure($bridge, $ifconfig_details = null)
         }
     }
 
-    /* compare and apply requested flags tailored for bridge members */
-    foreach (['stp', 'edge', 'autoedge', 'ptp', 'autoptp', 'static', 'private'] as $section) {
-        $section_members = explode(',', $bridge[$section] ?? '');
-        foreach ($members as $member => $device) {
-            $flag = $section == 'static' ? 'sticky' : $section;
-            if (
-                str_starts_with($section, 'auto') && (
-                !isset($current_members[$device]) ||
-                in_array($flag, $current_members[$device]['flags']) == in_array($member, $section_members)
-                )
-            ) {
-                /* in list equals off for tags starting with "auto" */
-                mwexecf('/sbin/ifconfig %s %s %s', [
-                    $bridgeif,
-                    (in_array($member, $section_members) ? '-' : '') . $flag,
-                    $device
-                ]);
-            } elseif (
-                !str_starts_with($section, 'auto') && (
-                !isset($current_members[$device]) ||
-                in_array($flag, $current_members[$device]['flags']) != in_array($member, $section_members)
-                )
-            ) {
-                mwexecf('/sbin/ifconfig %s %s %s', [
-                    $bridgeif,
-                    (!in_array($member, $section_members) ? '-' : '') . $flag,
-                    $device
-                ]);
-            }
-        }
+    /*
+     * MurOS: per-member behaviour. Of the FreeBSD member flags only "private"
+     * has a direct Linux equivalent: port isolation, where isolated ports
+     * cannot forward frames to one another. The remaining FreeBSD member flags
+     * (edge, autoedge, ptp, autoptp, sticky) have no clean iproute2 counterpart
+     * and are intentionally skipped.
+     */
+    $private_members = array_filter(explode(',', $bridge['private'] ?? ''));
+    foreach ($members as $member => $device) {
+        mwexecf('/usr/sbin/ip link set dev %s type bridge_slave isolated %s', [
+            $device,
+            in_array($member, $private_members) ? 'on' : 'off',
+        ]);
     }
 
-    /* SPAN ports require a different handling since they are not allowed to be part of a bridge */
-    $span_device = $span_port = null;
-    if (!empty($bridge['span'])) {
-         $span_device = get_real_interface($bridge['span']);
-         $span_port = $bridge['span'];
+    /*
+     * MurOS: SPAN (port mirroring) on a Linux bridge is not expressed through
+     * the bridge device; it requires a tc mirror setup, which is out of scope
+     * here. The single configurable SPAN port is therefore not applied.
+     */
 
-        if (!isset($current_members[$span_device]) || !in_array('span', $current_members[$span_device]['flags'])) {
-            mwexecf('/sbin/ifconfig %s span %s', [$bridgeif, $span_device]);
-        }
+    /*
+     * MurOS: bridge level properties. Linux stores the STP timers in
+     * centiseconds whereas OPNsense keeps seconds, hence the x100 conversion.
+     * Spanning tree is a bridge-wide toggle on Linux (FreeBSD enables it per
+     * member), so it is turned on whenever any member requests it. The FreeBSD
+     * holdcnt, maxaddr and proto properties have no iproute2 equivalent.
+     */
+    $bridge_opts = [];
+    if (!empty($bridge['fwddelay'])) {
+        $bridge_opts[] = sprintf('forward_delay %d', (int)$bridge['fwddelay'] * 100);
     }
-    foreach ($current_members as $device => $info) {
-        /* remove span port not configured: GUI only supports one but FreeBSD allows multiple */
-        if (in_array('span', $info['flags']) && $device != $span_device) {
-            mwexecf('/sbin/ifconfig %s -span %s', [$bridgeif, $device]);
-        }
+    if (!empty($bridge['maxage'])) {
+        $bridge_opts[] = sprintf('max_age %d', (int)$bridge['maxage'] * 100);
     }
-
-    /* update changed bridge properties */
-    foreach (['maxage', 'fwddelay', 'holdcnt', 'maxaddr', 'timeout', 'proto'] as $prop) {
-        if (!empty($bridge[$prop]) && (empty($this_if[$prop]) ||  $this_if[$prop] != $bridge[$prop])) {
-            mwexecf('/sbin/ifconfig %s %s %s', [$bridgeif, $prop, $bridge[$prop]]);
-        }
+    if (!empty($bridge['timeout'])) {
+        $bridge_opts[] = sprintf('ageing_time %d', (int)$bridge['timeout'] * 100);
     }
+    $stp_enabled = !empty(array_filter(explode(',', $bridge['stp'] ?? '')));
+    $bridge_opts[] = sprintf('stp_state %d', $stp_enabled ? 1 : 0);
+    mwexecf('/usr/sbin/ip link set dev %s type bridge ' . implode(' ', $bridge_opts), [$bridgeif]);
 
     if (empty($this_if['flags']) || !in_array('up', $this_if['flags'])) {
         legacy_interface_flags($bridgeif, 'up');
