@@ -938,7 +938,7 @@ function interface_reset($interface, $ifacecfg = false, $suspend = false)
             /* edge case: bring down a primary GUA, but not a link-local */
             list ($ip6) = _interfaces_primary_address6($interface, $ifconfig_details, false, false);
             if (!empty($ip6)) {
-                mwexecf('/sbin/ifconfig %s inet6 %s delete', [$realifv6, $ip6]);
+                legacy_interface_deladdress($realifv6, $ip6, 6);
             }
         }
     }
@@ -958,7 +958,7 @@ function interface_reset($interface, $ifacecfg = false, $suspend = false)
             /* dhclient will not flush its address ever so do it here */
             list ($ip4) = interfaces_primary_address($interface, $ifconfig_details);
             if (!empty($ip4)) {
-                mwexecf('/sbin/ifconfig %s delete %s', [$device, $ip4]);
+                legacy_interface_deladdress($device, $ip4, 4);
             }
         }
     }
@@ -1585,31 +1585,31 @@ function interface_ipalias_configure($vip)
         return;
     }
 
-    $ifcfrmt = ['/sbin/ifconfig %s %s %s/%s alias'];
-    $ifcargs = [];
-
+    /*
+     * MurOS: an IP alias VIP is simply an additional address on the interface.
+     * Port to iproute2 `ip address add`. The FreeBSD CARP `vhid` binding has no
+     * Linux equivalent (CARP is BSD-only; HA uses keepalived/VRRP) and is
+     * dropped here. A `gateway` (point-to-point peer) maps to the `peer` keyword.
+     */
     if (is_ipaddrv6($vip['subnet'])) {
-        $ifcargs[] = get_real_interface($vip['interface'], 'inet6');
-        $ifcargs[] = 'inet6';
+        $device = get_real_interface($vip['interface'], 'inet6');
     } else {
-        $ifcargs[] = get_real_interface($vip['interface'], 'inet');
-        $ifcargs[] = 'inet';
+        $device = get_real_interface($vip['interface'], 'inet');
     }
-
-    $ifcargs[] = $vip['subnet'];
-    $ifcargs[] = $vip['subnet_bits'];
 
     if (!empty($vip['gateway'])) {
-        $ifcargs[] = $vip['gateway'];
-        $ifcfrmt[] = '%s';
+        mwexecf(
+            '/usr/sbin/ip address add %s peer %s/%s dev %s',
+            [$vip['subnet'], $vip['gateway'], $vip['subnet_bits'], $device],
+            true
+        );
+    } else {
+        legacy_interface_setaddress(
+            $device,
+            sprintf('%s/%s', $vip['subnet'], $vip['subnet_bits']),
+            is_ipaddrv6($vip['subnet']) ? 6 : 4
+        );
     }
-
-    if (!empty($vip['vhid'])) {
-        $ifcargs[] = $vip['vhid'];
-        $ifcfrmt[] = 'vhid %s';
-    }
-
-    mwexecf($ifcfrmt, $ifcargs);
 }
 
 function interface_carp_configure($vip)
@@ -2314,7 +2314,12 @@ function interface_static_configure($interface, $wancfg)
         return;
     }
 
-    mwexecf('/sbin/ifconfig %s inet %s/%s', [$wancfg['if'], $wancfg['ipaddr'], $wancfg['subnet']]);
+    /*
+     * MurOS: assign the primary IPv4 address with iproute2. The interface has
+     * already been flushed by interface_reset() before reaching this point, so
+     * `ip address add` reproduces the FreeBSD `ifconfig inet x/y` behaviour.
+     */
+    legacy_interface_setaddress($wancfg['if'], sprintf('%s/%s', $wancfg['ipaddr'], $wancfg['subnet']), 4);
 }
 
 function interface_static6_configure($interface, $wancfg)
@@ -2323,7 +2328,12 @@ function interface_static6_configure($interface, $wancfg)
         return;
     }
 
-    mwexecf('/sbin/ifconfig %s inet6 %s prefixlen %s no_dad', [$wancfg['if'], $wancfg['ipaddrv6'], $wancfg['subnetv6']]);
+    /*
+     * MurOS: assign the primary IPv6 address with iproute2. The FreeBSD
+     * `no_dad` flag (skip Duplicate Address Detection) maps to the iproute2
+     * `nodad` address flag.
+     */
+    mwexecf('/usr/sbin/ip address add %s/%s nodad dev %s', [$wancfg['ipaddrv6'], $wancfg['subnetv6'], $wancfg['if']], true);
 }
 
 function interfaces_addresses_flush($device, $family = 4, $ifconfig_details = null)
