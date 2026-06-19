@@ -7405,10 +7405,8 @@ div[data-for*=help_for] {
 }
 .muros-version {
   flex: 0 0 auto;
-  font-family: "Courier New", monospace;
-  font-size: 11px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-family: inherit;
+  font-size: 12px;
   color: #6f8097;
 }
 .muros-account {
@@ -7427,6 +7425,8 @@ div[data-for*=help_for] {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  font-family: inherit;
+  font-size: 12px;
 }
 .muros-account .muros-user {
   color: #eef2f7;
@@ -7438,7 +7438,8 @@ div[data-for*=help_for] {
 a.muros-logout {
   flex: 0 0 auto;
   color: #9fb0c4 !important;
-  font-size: 13px;
+  font-family: inherit;
+  font-size: 12px;
   text-decoration: none;
   transition: color 0.12s ease;
 }
