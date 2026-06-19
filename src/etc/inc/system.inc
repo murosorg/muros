@@ -1177,11 +1177,15 @@ function system_kernel_configure($verbose = false)
 
 function system_devd_configure($verbose = false)
 {
+    /*
+     * MurOS: on Debian the device manager is systemd-udevd, which is already
+     * started by systemd before rc.bootup runs. There is no FreeBSD devd to
+     * launch; just make sure udevd is active (best effort) so device events are
+     * processed. The historic post-start sleep is no longer needed.
+     */
     service_log('Starting device manager...', $verbose);
 
-    mwexecf('/sbin/devd');
-    /* historic sleep */
-    sleep(1);
+    mwexecf('/usr/bin/systemctl start systemd-udevd', [], true);
 
     service_log("done.\n", $verbose);
 }
