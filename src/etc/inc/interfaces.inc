@@ -451,11 +451,13 @@ function interfaces_gre_configure($device)
 
 function _interfaces_gre_configure($gre)
 {
-    if (!does_interface_exist($gre['greif'])) {
-        /* Only create when not already there */
-        legacy_interface_create($gre['greif']);
-    }
-
+    /*
+     * MurOS: GRE tunnels are created with iproute2. Unlike FreeBSD, where the
+     * underlay endpoints are set after cloning the device, Linux bakes the
+     * local/remote endpoints into the link itself, so the device is always
+     * (re)created here with the right type: "gre" for an IPv4 underlay,
+     * "ip6gre" for an IPv6 one.
+     */
     $family = is_ipaddrv4($gre['remote-addr']) ? 'inet' : 'inet6';
     if (!empty($gre['ipaddr'])) {
         /* MVC splits content into if and ipaddr fields, legacy input stores the address in "if",
@@ -473,32 +475,41 @@ function _interfaces_gre_configure($gre)
         return null;
     }
 
-    $remote_addr = $gre['remote-addr'] . (strpos($local_addr, '%') === false ? '' : '%' . explode('%', $local_addr)[1]);
+    /* the kernel wants plain addresses; the %scope suffix is for routing only */
+    $local_plain = explode('%', $local_addr)[0];
+    $remote_plain = explode('%', (string)$gre['remote-addr'])[0];
+    $link_type = $family == 'inet' ? 'gre' : 'ip6gre';
 
-    mwexecf('/sbin/ifconfig %s %s tunnel %s %s', [$gre['greif'], $family, $local_addr, $remote_addr]);
+    /* recreate so a changed endpoint or underlay family takes effect */
+    legacy_interface_destroy($gre['greif']);
+    mwexecf('/usr/sbin/ip link add name %s type %s local %s remote %s', [
+        $gre['greif'],
+        $link_type,
+        $local_plain,
+        $remote_plain,
+    ]);
 
-    if (is_ipaddrv6($gre['tunnel-local-addr']) || is_ipaddrv6($gre['tunnel-remote-addr'])) {
-        /* check if destination is local to source and if not we need the traditional point-to-point setup */
-        if ($gre['tunnel-remote-net'] != '128' && ip_in_subnet($gre['tunnel-remote-addr'], "{$gre['tunnel-local-addr']}/{$gre['tunnel-remote-net']}")) {
-            mwexecf('/sbin/ifconfig %s inet6 %s prefixlen %s', [
-                $gre['greif'],
-                $gre['tunnel-local-addr'],
-                $gre['tunnel-remote-net'],
-            ]);
-        } else {
-            mwexecf('/sbin/ifconfig %s inet6 %s %s prefixlen 128', [
-                $gre['greif'],
-                $gre['tunnel-local-addr'],
-                $gre['tunnel-remote-addr'],
-            ]);
-        }
-    } else {
-        mwexecf('/sbin/ifconfig %s inet6 ifdisabled', [$gre['greif']]);
-        mwexecf('/sbin/ifconfig %s %s %s netmask %s', [
+    /* assign the overlay (tunnel) addresses */
+    $overlay_v6 = is_ipaddrv6($gre['tunnel-local-addr']) || is_ipaddrv6($gre['tunnel-remote-addr']);
+    $host_len = $overlay_v6 ? '128' : '32';
+
+    if (
+        $gre['tunnel-remote-net'] != $host_len &&
+        ip_in_subnet($gre['tunnel-remote-addr'], "{$gre['tunnel-local-addr']}/{$gre['tunnel-remote-net']}")
+    ) {
+        /* both ends share an on-link subnet */
+        mwexecf('/usr/sbin/ip address add %s/%s dev %s', [
+            $gre['tunnel-local-addr'],
+            $gre['tunnel-remote-net'],
             $gre['greif'],
+        ]);
+    } else {
+        /* classic point-to-point setup */
+        mwexecf('/usr/sbin/ip address add %s peer %s/%s dev %s', [
             $gre['tunnel-local-addr'],
             $gre['tunnel-remote-addr'],
-            gen_subnet_mask($gre['tunnel-remote-net']),
+            $host_len,
+            $gre['greif'],
         ]);
     }
 
