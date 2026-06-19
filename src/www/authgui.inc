@@ -58,7 +58,18 @@ function set_language()
     putenv('LANG=' . $lang_encoding);
     putenv('LANGUAGE=' . $lang_encoding);
     putenv('LC_ALL=' . $lang_encoding);
-    setlocale(LC_ALL, $lang_encoding);
+
+    /*
+     * MurOS: unlike FreeBSD, a Debian box only has the locales that were
+     * generated (see system_locale_configure()). If the requested locale is
+     * not present setlocale() returns false and the process would stay in the
+     * C locale, breaking UTF-8 aware formatting. Fall back to C.UTF-8 so the
+     * GUI keeps rendering correctly; the gettext catalog is still selected
+     * through the LANGUAGE environment variable above.
+     */
+    if (setlocale(LC_ALL, $lang_encoding) === false) {
+        setlocale(LC_ALL, 'C.UTF-8');
+    }
 
     $textdomain = 'OPNsense';
 

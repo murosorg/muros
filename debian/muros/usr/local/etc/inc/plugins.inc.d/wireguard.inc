@@ -131,8 +131,15 @@ function wireguard_prepare($device)
         @unlink((string)$node->statFilename);
 
         if (!does_interface_exist($device)) {
-            mwexecf('/sbin/ifconfig wg create name %s', $device);
-            mwexecf('/sbin/ifconfig %s group wireguard', $device);
+            /*
+             * MurOS: WireGuard is a native Linux kernel device created with
+             * iproute2. The FreeBSD "group wireguard" interface group has no
+             * kernel equivalent on Linux (rule matching by group is handled in
+             * the ruleset layer), so it is not applied here. The keys and peers
+             * are programmed afterwards by the configd "wireguard configure"
+             * action via the wg(8) tool.
+             */
+            mwexecf('/usr/sbin/ip link add dev %s type wireguard', $device);
         }
 
         return $device;
