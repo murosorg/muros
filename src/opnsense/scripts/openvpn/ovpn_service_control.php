@@ -34,26 +34,27 @@ require_once('interfaces.inc');
 
 function setup_interface($instance)
 {
+    /*
+     * MurOS: on Linux tun/tap devices are created directly with their final
+     * name through iproute2, so the FreeBSD "create a tunX node then rename it"
+     * dance and the "group openvpn" interface group are not needed. For the
+     * data-channel-offload device type we try the ovpn-dco kernel module;
+     * the call is muted because DCO may be unavailable, in which case OpenVPN
+     * creates the device itself when it starts.
+     */
     if (in_array($instance->dev_type, ['tun', 'tap'])) {
-        if (!file_exists("/dev/{$instance->__devnode}")) {
-            mwexecf('/sbin/ifconfig %s create', [$instance->__devnode]);
-        }
         if (!does_interface_exist($instance->__devname)) {
-            mwexecf('/sbin/ifconfig %s name %s', [$instance->__devnode, $instance->__devname]);
-            mwexecf('/sbin/ifconfig %s group openvpn', [$instance->__devname]);
+            mwexecf('/usr/sbin/ip tuntap add dev %s mode %s', [$instance->__devname, $instance->dev_type]);
         }
     } elseif ($instance->dev_type == 'ovpn') {
         if (!does_interface_exist($instance->__devname)) {
-            /**
-             * XXX: DCO uses non standard matching, normally create should use "ifconfig ovpnX create"
-             * ref: https://github.com/opnsense/src/blob/b0130349e8/sys/net/if_ovpn.c#L2392-L2400
-             */
-            mwexecf('/sbin/ifconfig %s create', [$instance->__devname]);
-            mwexecf('/sbin/ifconfig %s group openvpn', [$instance->__devname]);
+            mwexecf('/usr/sbin/ip link add dev %s type ovpn-dco', [$instance->__devname], true);
         }
     }
     /* Make sure the interface is down before handing it over to OpenVPN to prevent locking issues */
-    mwexecf('/sbin/ifconfig %s down', [$instance->__devname]);
+    if (does_interface_exist($instance->__devname)) {
+        mwexecf('/usr/sbin/ip link set dev %s down', [$instance->__devname]);
+    }
 }
 
 function ovpn_start($instance, $fhandle)
@@ -66,7 +67,7 @@ function ovpn_start($instance, $fhandle)
             }
             @mkdir($instance->csoDirectory, 0750, true);
         }
-        if (!mwexecf('/usr/local/sbin/openvpn --config %s', $instance->cnfFilename)) {
+        if (!mwexecf('/usr/sbin/openvpn --config %s', $instance->cnfFilename)) {
             $pid = waitforpid($instance->pidFilename, 10);
             if ($pid) {
                 syslog(LOG_NOTICE, "OpenVPN {$instance->role} {$instance->vpnid} instance started on PID {$pid}.");
