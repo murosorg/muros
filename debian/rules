@@ -1,0 +1,30 @@
+#!/usr/bin/make -f
+
+%:
+	dh $@
+
+override_dh_auto_clean:
+override_dh_auto_configure:
+override_dh_auto_build:
+override_dh_auto_test:
+
+override_dh_auto_install:
+	debian/stage-fs.sh debian/muros
+
+# Appliance package: ships the OPNsense layout under /usr/local on purpose.
+override_dh_usrlocal:
+
+# Keep source file modes (configd ships its own executables).
+override_dh_fixperms:
+
+# Units are placed under /lib/systemd/system by stage-fs.sh.
+override_dh_installsystemd:
+	dh_installsystemd --no-start muros-configd.service
+	dh_installsystemd --no-start muros-firewall.service
+	dh_installsystemd --no-start muros-interface-assign.service
+	dh_installsystemd --no-start muros-interfaces.service
+
+# Large interpreted payload: these steps are irrelevant and slow.
+override_dh_strip:
+override_dh_shlibdeps:
+override_dh_dwz:

@@ -1,0 +1,13 @@
+#!/bin/sh
+set -e
+case "$1" in
+  remove|purge)
+    if dpkg-divert --list /etc/php/8.4/fpm/pool.d/www.conf 2>/dev/null | grep -q muros; then
+      dpkg-divert --package muros --remove --rename \
+        --divert /etc/php/8.4/fpm/pool.d/www.conf.distrib \
+        /etc/php/8.4/fpm/pool.d/www.conf || true
+    fi
+    ;;
+esac
+#DEBHELPER#
+exit 0

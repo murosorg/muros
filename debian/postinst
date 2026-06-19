@@ -1,0 +1,15 @@
+#!/bin/sh
+set -e
+case "$1" in
+  configure)
+    # Take over the php-fpm www pool with the MurOS-sized pool.
+    if [ ! -e /etc/php/8.4/fpm/pool.d/www.conf.distrib ]; then
+      dpkg-divert --package muros --add --rename \
+        --divert /etc/php/8.4/fpm/pool.d/www.conf.distrib \
+        /etc/php/8.4/fpm/pool.d/www.conf || true
+    fi
+    systemctl reload-or-restart php8.4-fpm 2>/dev/null || true
+    ;;
+esac
+#DEBHELPER#
+exit 0

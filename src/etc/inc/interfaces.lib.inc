@@ -174,44 +174,93 @@ function legacy_bridge_member($ifs, $member)
     mwexecf('/usr/sbin/ip link set dev %s master %s', [$member, $ifs]);
 }
 
+function legacy_vlan_info($ifs)
+{
+    /*
+     * MurOS: read the current VLAN parameters (parent device, id, protocol) of
+     * an existing 802.1q/802.1ad device with iproute2. Returns an associative
+     * array (parent, tag, proto) or an empty array when the device is not a
+     * VLAN. Used to recreate a device when a property that Linux fixes at
+     * creation time (id, protocol) needs to change.
+     */
+    $out = [];
+    exec('/usr/sbin/ip -d -j link show ' . escapeshellarg($ifs) . ' 2>/dev/null', $out, $ret);
+    if ($ret != 0) {
+        return [];
+    }
+
+    $data = json_decode(implode('', $out), true);
+    if (empty($data[0]['linkinfo']['info_data']) || ($data[0]['linkinfo']['info_kind'] ?? '') !== 'vlan') {
+        return [];
+    }
+
+    $info = $data[0]['linkinfo']['info_data'];
+    /* iproute2 reports the protocol as 802.1Q / 802.1ad */
+    $proto = strtolower($info['protocol'] ?? '802.1q') === '802.1ad' ? '802.1ad' : '802.1q';
+
+    return [
+        'parent' => $data[0]['link'] ?? '',
+        'tag' => $info['id'] ?? '',
+        'proto' => $proto,
+    ];
+}
+
 function legacy_vlan_tag($ifs, $member, $tag, $pcp, $proto)
 {
-    $cmd = '/sbin/ifconfig ' . escapeshellarg($ifs) . ' vlan ' . escapeshellarg($tag) . ' vlandev ' . escapeshellarg($member) . ' vlanpcp ' . escapeshellarg($pcp) . ' vlanproto ' . escapeshellarg($proto);
+    /*
+     * MurOS: Linux fixes a VLAN device's id and protocol at creation time, so
+     * "tagging" maps to (re)creating the device with iproute2. The parent must
+     * be administratively up to carry tagged traffic. Mirrors the logic of
+     * _interfaces_vlan_configure().
+     */
+    $proto = $proto === '802.1ad' ? '802.1ad' : '802.1q';
 
-    exec($cmd . ' 2>&1', $out, $ret);
-    if ($ret) {
-        legacy_interface_error($cmd);
+    mwexecf('/usr/sbin/ip link set dev %s up', [$member]);
+    mwexecf('/usr/sbin/ip link del dev %s', [$ifs], true);
+
+    if (mwexecf('/usr/sbin/ip link add link %s name %s type vlan id %s protocol ' . $proto, [$member, $ifs, $tag]) != 0) {
+        legacy_interface_error("ip link add link {$member} name {$ifs} type vlan id {$tag}");
+        return;
     }
+
+    if ((string)$pcp !== '') {
+        mwexecf('/usr/sbin/ip link set dev %s type vlan egress-qos-map 0:%s', [$ifs, $pcp]);
+    }
+
+    mwexecf('/usr/sbin/ip link set dev %s up', [$ifs]);
 }
 
 function legacy_vlan_remove_tag($ifs)
 {
-    $cmd = '/sbin/ifconfig ' . escapeshellarg($ifs) . ' -vlandev';
-
-    exec($cmd . ' 2>&1', $out, $ret);
-    if ($ret) {
-        legacy_interface_error($cmd);
-    }
+    /*
+     * MurOS: a Linux VLAN device cannot be re-tagged in place, so removing the
+     * tag means deleting the device. The caller recreates it with the new
+     * parameters via legacy_vlan_tag(). Muted because the device may already be
+     * gone.
+     */
+    mwexecf('/usr/sbin/ip link del dev %s', [$ifs], true);
 }
 
 function legacy_vlan_pcp($ifs, $pcp)
 {
-    $cmd = '/sbin/ifconfig ' . escapeshellarg($ifs) . ' vlanpcp ' . escapeshellarg($pcp);
-
-    exec($cmd . ' 2>&1', $out, $ret);
-    if ($ret) {
-        legacy_interface_error($cmd);
-    }
+    /* MurOS: the PCP (priority) egress map can be altered live with iproute2. */
+    mwexecf('/usr/sbin/ip link set dev %s type vlan egress-qos-map 0:%s', [$ifs, $pcp]);
 }
 
 function legacy_vlan_proto($ifs, $proto)
 {
-    $cmd = '/sbin/ifconfig ' . escapeshellarg($ifs) . ' vlanproto ' . escapeshellarg($proto);
-
-    exec($cmd . ' 2>&1', $out, $ret);
-    if ($ret) {
-        legacy_interface_error($cmd);
+    /*
+     * MurOS: the VLAN protocol is immutable on a Linux device, so changing it
+     * requires recreating the device. Read the current parent and id first,
+     * then rebuild it with the requested protocol.
+     */
+    $info = legacy_vlan_info($ifs);
+    if (empty($info['parent']) || $info['tag'] === '') {
+        legacy_interface_error("legacy_vlan_proto: cannot resolve current VLAN parameters of {$ifs}");
+        return;
     }
+
+    legacy_vlan_tag($ifs, $info['parent'], $info['tag'], '', $proto);
 }
 
 function legacy_interface_stats($ifs = null)
