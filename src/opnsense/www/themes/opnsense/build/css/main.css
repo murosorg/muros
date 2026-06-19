@@ -7379,44 +7379,49 @@ div[data-for*=help_for] {
 /* brand block at the top of the left panel: compact, two rows
    (logo + version, then identity + logout) to avoid empty space */
 .muros-brand {
-  padding: 12px 14px 10px 14px;
+  padding: 16px 16px 14px 16px;
   background: #0f1d33;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   overflow: hidden;
 }
 .muros-brand-row {
   display: flex;
+  width: 100%;
   align-items: center;
   justify-content: space-between;
   flex-wrap: nowrap;
   gap: 8px;
 }
-.muros-brand .muros-brand-logo { display: inline-flex; line-height: 0; min-width: 0; flex: 0 1 auto; }
+.muros-brand .muros-brand-logo { display: inline-flex; line-height: 0; min-width: 0; flex: 0 1 auto; margin-right: auto; }
 .muros-brand .muros-brand-logo img {
-  height: 26px;
+  height: 38px;
   max-width: 100%;
   width: auto;
   display: block;
 }
 .muros-version {
   font-family: "Courier New", monospace;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1;
   color: #aebbcd;
   background: #16263f;
   border: 1px solid rgba(255, 255, 255, 0.12);
-  padding: 3px 7px;
+  padding: 4px 8px;
   border-radius: 4px;
   white-space: nowrap;
   flex-shrink: 0;
+  margin-left: auto;
 }
 .muros-user-row {
   display: flex;
+  width: 100%;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  margin-top: 8px;
+  margin-top: 16px;
 }
+.muros-user-row .muros-identity { margin-right: auto; }
+.muros-user-row a.muros-logout { margin-left: auto; }
 .muros-identity {
   font-family: "Courier New", monospace;
   font-size: 13px;
