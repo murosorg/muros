@@ -1,1 +1,0 @@
-/* Empty placeholder for theme javascript override */

@@ -1,1 +1,0 @@
-wireguard-server.conf:/usr/local/etc/wireguard/wg[OPNsense.wireguard.server.servers.server.%.instance].conf

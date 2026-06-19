@@ -1,15 +1,17 @@
 <aside id="navigation" class="page-side col-xs-12 col-sm-3 col-lg-2 hidden-xs">
     <div class="muros-brand">
-        <div class="muros-brand-row">
-            <a class="muros-brand-logo" href="/">
-                <img src="{{ cache_safe('/ui/themes/%s/build/images/default-logo.svg' | format(theme_name)) }}" alt="MurOS"/>
-            </a>
-            <span class="muros-version">v{{ product_version|default('') }}</span>
-        </div>
-        <div class="muros-user-row">
-            <span class="muros-identity"><span class="muros-user">{{ session_user_display }}</span> <span class="muros-host">@{{ system_hostname }}</span></span>
-            <a class="muros-logout" href="/index.php?logout"><i class="fa fa-sign-out"></i> Logout</a>
-        </div>
+        <a class="muros-brand-logo" href="/">
+            <img src="{{ cache_safe('/ui/themes/%s/build/images/default-logo.svg' | format(theme_name)) }}" alt="MurOS"/>
+        </a>
+        <span class="muros-version">v{{ product_version|default('') }}</span>
+    </div>
+    <div class="muros-account">
+        <span class="muros-account-avatar"><i class="fa fa-user"></i></span>
+        <span class="muros-account-meta">
+            <span class="muros-user">{{ session_user_display }}</span>
+            <span class="muros-host">@{{ system_hostname }}</span>
+        </span>
+        <a class="muros-logout" href="/index.php?logout" title="Logout"><i class="fa fa-power-off"></i></a>
     </div>
     <div class="row">
         <nav class="page-side-nav">

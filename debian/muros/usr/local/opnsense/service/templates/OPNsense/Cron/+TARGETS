@@ -1,2 +1,0 @@
-at.cron:/etc/cron.d/at
-user.cron:/var/cron/tabs/nobody
