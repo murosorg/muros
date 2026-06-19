@@ -486,27 +486,24 @@ function openvpn_reconfigure($mode, $settings, $device_only = false)
     }
 
     if (!does_interface_exist($devname)) {
-        if (in_array($settings['dev_mode'], ['tun', 'tap'])) {
-            if (!file_exists("/dev/{$devnode}")) {
-                mwexecf('/sbin/ifconfig %s create', array($devnode));
-            }
-            mwexecf('/sbin/ifconfig %s name %s', array($devnode, $devname));
-        } else {
-            /**
-             * XXX: DCO uses non standard matching, normally create should use "ifconfig ovpnX create"
-             * ref: https://github.com/opnsense/src/blob/b0130349e8/sys/net/if_ovpn.c#L2392-L2400
-             */
-            mwexecf('/sbin/ifconfig %s create', array($devname));
-        }
-
-        mwexecf('/sbin/ifconfig %s group openvpn', array($devname));
+        /*
+         * MurOS: pre-create the OpenVPN interface with a persistent Linux
+         * tun/tap device under its final name (ovpns<id>/ovpnc<id>). Unlike the
+         * FreeBSD clone-then-rename flow, "ip tuntap add" sets the name in one
+         * step. The FreeBSD "group openvpn" interface group has no Linux kernel
+         * equivalent (rule matching by group is handled in the ruleset layer).
+         * DCO (kernel data-channel offload) device pre-creation is not portable
+         * here, so fall back to a tun device; OpenVPN attaches to it at start.
+         */
+        $tuntap_mode = $settings['dev_mode'] === 'tap' ? 'tap' : 'tun';
+        mwexecf('/usr/sbin/ip tuntap add dev %s mode %s', array($devname, $tuntap_mode));
     }
 
     if ($device_only || isset($settings['disable'])) {
         return $devname;
     }
 
-    mwexecf('/sbin/ifconfig %s down', array($devname));
+    mwexecf('/usr/sbin/ip link set dev %s down', array($devname));
 
     $proto = strtolower($settings['protocol']);
     if (substr($settings['protocol'], 0, 3) == "TCP") {
@@ -975,7 +972,8 @@ function openvpn_delete($mode, &$settings)
 
     killbypid("/var/run/openvpn_{$mode_id}.pid");
 
-    mwexecf('/sbin/ifconfig %s destroy', array($devname));
+    /* MurOS: tear down the persistent tun/tap device with iproute2. */
+    legacy_interface_destroy($devname);
 
     @array_map('unlink', glob("/var/etc/openvpn/{$mode_id}.*"));
 }
