@@ -97,35 +97,36 @@ function legacy_interface_flags($ifs, $flag, $report_errors = true)
 
 function legacy_interface_create($ifs, $name = null)
 {
-    $cmd = '/sbin/ifconfig ' . escapeshellarg($ifs) . ' create';
-    $new = null;
+    /*
+     * MurOS: cloned device classes are created with iproute2. When $name is
+     * given the first argument is the FreeBSD clone class (bridge, lagg, ...);
+     * otherwise the class is derived from the device name (e.g. "lagg0" ->
+     * "lagg"). Only classes with a direct Linux equivalent are created here.
+     * Tunnel-like classes (gre, gif, stf, ipsec) require type-specific
+     * parameters and are handled by their dedicated configuration paths, so
+     * the requested name is returned unchanged to let callers proceed.
+     */
+    $dev = !empty($name) ? $name : $ifs;
+    $class = !empty($name) ? $ifs : preg_replace('/[0-9].*$/', '', $ifs);
 
-    exec($cmd . ' 2>&1', $out, $ret);
-    if ($ret) {
-        legacy_interface_error($cmd);
-        return ($new);
+    $linktype = [
+        'bridge' => 'bridge',
+        'lagg' => 'bond',
+    ][$class] ?? null;
+
+    if ($linktype === null) {
+        /* unsupported clone class: leave creation to a dedicated path */
+        return $dev;
     }
 
-    if (isset($out[0])) {
-        $new = $out[0];
+    /* recreate from a clean state so type or option changes take effect */
+    mwexecf('/usr/sbin/ip link del dev %s', [$dev], true);
+
+    if (mwexecf('/usr/sbin/ip link add name %s type %s', [$dev, $linktype]) != 0) {
+        return null;
     }
 
-    if (!empty($name)) {
-        $cmd = '/sbin/ifconfig ' . escapeshellarg($new) . ' name ' . escapeshellarg($name);
-
-        exec($cmd . ' 2>&1', $out, $ret);
-        if ($ret) {
-            legacy_interface_error($cmd);
-        }
-
-        /* return new name here anyway to force proper device not found errors later */
-        $new = $name;
-    } elseif (empty($new)) {
-        /* we are here but have no name which means it was passed via $ifs instead */
-        $new = $ifs;
-    }
-
-    return ($new);
+    return $dev;
 }
 
 function legacy_interface_destroy($ifs)
@@ -169,12 +170,8 @@ function legacy_interface_mtu($ifs, $mtu)
 
 function legacy_bridge_member($ifs, $member)
 {
-    $cmd = '/sbin/ifconfig ' . escapeshellarg($ifs) . ' addm ' . escapeshellarg($member);
-
-    exec($cmd . ' 2>&1', $out, $ret);
-    if ($ret) {
-        legacy_interface_error($cmd);
-    }
+    /* MurOS: enslave a member device to a Linux bridge ($ifs is the bridge). */
+    mwexecf('/usr/sbin/ip link set dev %s master %s', [$member, $ifs]);
 }
 
 function legacy_vlan_tag($ifs, $member, $tag, $pcp, $proto)
