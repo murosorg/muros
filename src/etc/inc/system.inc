@@ -546,14 +546,17 @@ function system_host_route($host, $gateway)
         return;
     }
 
-    mwexecfm('/sbin/route delete -host -%s %s', [$family, $host]);
+    /* MurOS: host routes are managed with iproute2 (a bare address is a /32 or /128) */
+    $fam = $family == 'inet6' ? '-6' : '-4';
 
     /* this was an explicit delete */
     if ($gateway === null) {
+        mwexecfm("/usr/sbin/ip $fam route del %s", [$host]);
         return;
     }
 
-    mwexecf('/sbin/route add -host -%s %s %s', [$family, $host, $gateway]);
+    /* replace is idempotent and atomically updates a changed next-hop */
+    mwexecf("/usr/sbin/ip $fam route replace %s via %s", [$host, $gateway]);
 }
 
 function system_interface_route($gw, $routes)
@@ -610,8 +613,12 @@ function system_interface_route($gw, $routes)
 
     log_msg("ROUTING: setting {$family} interface route to {$gateway} via {$device}");
 
-    /* never remove interface routes -- we only try to add if missing */
-    mwexecf('/sbin/route add -%s %s -interface %s', [$family, $gateway, $device]);
+    /*
+     * MurOS: an on-link (interface) route to the gateway, used for far/dynamic
+     * gateways. "replace" is idempotent so we never need to remove it first.
+     */
+    $fam = $family == 'inet6' ? '-6' : '-4';
+    mwexecf("/usr/sbin/ip $fam route replace %s dev %s", [$gateway, $device]);
 }
 
 function system_default_route($gw, $routes)
@@ -650,8 +657,18 @@ function system_default_route($gw, $routes)
 
     log_msg("ROUTING: setting {$family} default route to {$gateway}");
 
-    mwexecfm('/sbin/route delete -%s default', [$family]);
-    mwexecf('/sbin/route add -%s default %s', [$family, $gateway]);
+    /*
+     * MurOS: install the default route with iproute2. A link-local IPv6
+     * next-hop carries its scope as "address%device"; Linux expresses this as
+     * "via <address> dev <device>". "replace" updates any existing default.
+     */
+    $fam = $family == 'inet6' ? '-6' : '-4';
+    if (strpos($gateway, '%') !== false) {
+        list($gwaddr, $gwdev) = explode('%', $gateway, 2);
+        mwexecf("/usr/sbin/ip $fam route replace default via %s dev %s", [$gwaddr, $gwdev]);
+    } else {
+        mwexecf("/usr/sbin/ip $fam route replace default via %s", [$gateway]);
+    }
 }
 
 function system_routing_configure($verbose = false, $interface_map = null, $monitor = true, $family = null)
@@ -748,22 +765,26 @@ function system_routing_configure($verbose = false, $interface_map = null, $moni
                 continue;
             }
 
-            $cmd = [exec_safe('-%s', $ipproto)];
+            /*
+             * MurOS: static routes are programmed with iproute2. "replace" is
+             * idempotent (it inserts or updates), so the historical pre-delete
+             * is only required when removing a disabled route.
+             */
+            $fam = $ipproto == 'inet6' ? '-6' : '-4';
+            $network = $rtent['network'];
 
-            switch ($rtent['gateway']) {
-                case 'Null4':
-                case 'Null6':
-                    $cmd[] = '-blackhole';
-                    break;
-                default:
-                    break;
+            /* blackhole pseudo-gateways (Null4/Null6) drop the matching traffic */
+            if (in_array($rtent['gateway'], ['Null4', 'Null6'])) {
+                if (!empty($rtent['disabled'])) {
+                    mwexecfm("/usr/sbin/ip $fam route del %s", [$network]);
+                } else {
+                    mwexecf("/usr/sbin/ip $fam route replace blackhole %s", [$network]);
+                }
+                continue;
             }
 
-            $cmd[] = exec_safe('%s', $rtent['network']);
-
-            /* XXX: get_staticroutes logic works if field is named enabled or disabled. this may be changed to enabled only later. */
             if (!empty($rtent['disabled'])) {
-                mwexecfm('/sbin/route delete ' . implode(' ', $cmd));
+                mwexecfm("/usr/sbin/ip $fam route del %s", [$network]);
                 continue;
             }
 
@@ -771,27 +792,24 @@ function system_routing_configure($verbose = false, $interface_map = null, $moni
             $interfacegw = $gateway['if'];
 
             if (is_ipaddr($gatewayip)) {
-                mwexecfm('/sbin/route delete ' . implode(' ', $cmd));
+                if (!empty($gateway['fargw']) && $gateway['ipprotocol'] != 'inet6') {
+                    /* ensure the gateway itself is reachable on-link first */
+                    mwexecf("/usr/sbin/ip $fam route replace %s dev %s", [$gatewayip, $interfacegw]);
+                }
 
                 if ($ipproto == 'inet' && is_ipaddrv6($gatewayip)) {
-                    $cmd[] = '-inet6'; /* RFC 5549: gateway protocol differs */
+                    /* RFC 5549: an IPv4 destination reached through an IPv6 next-hop */
+                    mwexecf("/usr/sbin/ip $fam route replace %s via inet6 %s dev %s", [$network, $gatewayip, $interfacegw]);
+                } elseif (is_linklocal($gatewayip)) {
+                    /* a link-local next-hop needs the outgoing device */
+                    $gwaddr = explode('%', $gatewayip)[0];
+                    mwexecf("/usr/sbin/ip $fam route replace %s via %s dev %s", [$network, $gwaddr, $interfacegw]);
+                } else {
+                    mwexecf("/usr/sbin/ip $fam route replace %s via %s", [$network, $gatewayip]);
                 }
-
-                if (!empty($gateway['fargw']) && $gateway['ipprotocol'] != 'inet6') {
-                    mwexecfm('/sbin/route delete -%s %s -interface %s ', [$ipproto, $gatewayip, $interfacegw]);
-                    mwexecfm('/sbin/route add -%s %s -interface %s', [$ipproto, $gatewayip, $interfacegw]);
-                } elseif (is_linklocal($gatewayip) && strpos($gatewayip, '%') === false) {
-                    $gatewayip .= "%%{$interfacegw}"; /* XXX workaround for vsprintf() */
-                }
-
-                $cmd[] = exec_safe('%s', $gatewayip);
             } elseif (!empty($interfacegw)) {
-                $cmd[] = exec_safe('-interface %s', $interfacegw);
-
-                mwexecfm('/sbin/route delete ' . implode(' ', $cmd));
+                mwexecf("/usr/sbin/ip $fam route replace %s dev %s", [$network, $interfacegw]);
             }
-
-            mwexecfm('/sbin/route add ' . implode(' ', $cmd));
         }
     }
 
