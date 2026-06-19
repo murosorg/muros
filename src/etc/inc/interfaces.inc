@@ -3926,6 +3926,23 @@ function interfaces_neighbors_configure($interface, $ifconfig_details = null)
     _interfaces_neighbors_configure($ifcfg['if'], $ifconfig_details);
 }
 
+function _neighbor_device_for_ip($ipaddress)
+{
+    /*
+     * MurOS: resolve the egress device for a static neighbor entry from the
+     * connected route, so "ip neigh" can be given the device it requires. Only
+     * directly connected scopes are relevant for static ARP/NDP entries.
+     */
+    $out = [];
+    exec('/usr/sbin/ip -j route get ' . escapeshellarg($ipaddress) . ' 2>/dev/null', $out, $ret);
+    if ($ret != 0) {
+        return '';
+    }
+
+    $data = json_decode(implode('', $out), true);
+    return $data[0]['dev'] ?? '';
+}
+
 function _interfaces_neighbors_configure($device = null, $ifconfig_details = null)
 {
     $subnets = [];
@@ -3954,11 +3971,16 @@ function _interfaces_neighbors_configure($device = null, $ifconfig_details = nul
             }
         }
         if ($found) {
-            // IPv4 [arp] or IPv6 [ndp]
-            if (strpos($node->ipaddress, ":") === false) {
-                mwexecf('/usr/sbin/arp -s %s %s', [$node->ipaddress, $node->etheraddr]);
-            } else {
-                mwexecf('/usr/sbin/ndp -s %s %s', [$node->ipaddress, $node->etheraddr]);
+            /*
+             * MurOS: Linux unifies static ARP and NDP entries under "ip neigh",
+             * which requires the egress device (FreeBSD arp/ndp resolve it from
+             * the routing table). Use the interface in scope when known,
+             * otherwise resolve it from the connected route. A static entry maps
+             * to the "permanent" NUD state.
+             */
+            $ndev = !empty($device) ? $device : _neighbor_device_for_ip((string)$node->ipaddress);
+            if (!empty($ndev)) {
+                mwexecf('/usr/sbin/ip neigh replace %s lladdr %s dev %s nud permanent', [$node->ipaddress, $node->etheraddr, $ndev]);
             }
         }
         $current_neightbors[] = (string)$node->ipaddress;
@@ -3975,10 +3997,9 @@ function _interfaces_neighbors_configure($device = null, $ifconfig_details = nul
     if (empty($device) && is_array($current)) {
         foreach ($current as $item) {
             if (is_string($item) && is_ipaddr($item) && !in_array($item, $current_neightbors)) {
-                if (strpos($item, ":") === false) {
-                    mwexecf('/usr/sbin/arp -d %s', [$item]);
-                } else {
-                    mwexecf('/usr/sbin/ndp -d %s', [$item]);
+                $ndev = _neighbor_device_for_ip($item);
+                if (!empty($ndev)) {
+                    mwexecf('/usr/sbin/ip neigh del %s dev %s', [$item, $ndev], true);
                 }
             }
         }
