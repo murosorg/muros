@@ -469,6 +469,57 @@ function build_nat(SimpleXMLElement $cfg, array $ifaces, array $wanDevs, array $
     return ['pre' => $pre, 'post' => $post, 'passes' => $passes];
 }
 
+/* Translate the comma-separated pf icmp type names stored in config.xml into
+ * an nft type match ("icmp type { ... }" / "icmpv6 type { ... }"). Unknown or
+ * unmappable names are dropped silently so we never emit an invalid keyword.
+ * Returns null when nothing maps, meaning the rule should match every icmp
+ * type (no type clause). */
+function icmp_type_match(string $names, string $family): ?string
+{
+    // pf icmp type name -> nft icmp type name.
+    static $v4 = [
+        'echorep' => 'echo-reply', 'echoreq' => 'echo-request',
+        'unreach' => 'destination-unreachable', 'squench' => 'source-quench',
+        'redir' => 'redirect', 'routeradv' => 'router-advertisement',
+        'routersol' => 'router-solicitation', 'timex' => 'time-exceeded',
+        'paramprob' => 'parameter-problem', 'timereq' => 'timestamp-request',
+        'timerep' => 'timestamp-reply', 'inforeq' => 'info-request',
+        'inforep' => 'info-reply', 'maskreq' => 'address-mask-request',
+        'maskrep' => 'address-mask-reply',
+    ];
+    // pf icmp6 type name -> nft icmpv6 type name.
+    static $v6 = [
+        'unreach' => 'destination-unreachable', 'toobig' => 'packet-too-big',
+        'timex' => 'time-exceeded', 'paramprob' => 'parameter-problem',
+        'echoreq' => 'echo-request', 'echorep' => 'echo-reply',
+        'groupqry' => 'mld-listener-query', 'listqry' => 'mld-listener-query',
+        'grouprep' => 'mld-listener-report', 'listenrep' => 'mld-listener-report',
+        'groupterm' => 'mld-listener-done', 'listendone' => 'mld-listener-done',
+        'routersol' => 'nd-router-solicit', 'routeradv' => 'nd-router-advert',
+        'neighbrsol' => 'nd-neighbor-solicit', 'neighbradv' => 'nd-neighbor-advert',
+        'redir' => 'nd-redirect', 'routrrenum' => 'router-renumbering',
+    ];
+    $map = $family === 'ip6' ? $v6 : $v4;
+    $kw = $family === 'ip6' ? 'icmpv6' : 'icmp';
+
+    $out = [];
+    foreach (preg_split('/[\s,]+/', strtolower(trim($names))) as $name) {
+        if ($name === '' || $name === 'any') {
+            continue;
+        }
+        if (isset($map[$name]) && !in_array($map[$name], $out, true)) {
+            $out[] = $map[$name];
+        }
+    }
+    if (empty($out)) {
+        return null;
+    }
+    if (count($out) === 1) {
+        return "$kw type {$out[0]}";
+    }
+    return "$kw type { " . implode(', ', $out) . ' }';
+}
+
 /* Translate a single <rule> into one nft statement, or null when the rule
  * uses a feature this iteration does not handle yet. */
 function rule_line(SimpleXMLElement $rule, array $ifaces, array $aliases = []): ?string
@@ -504,6 +555,15 @@ function rule_line(SimpleXMLElement $rule, array $ifaces, array $aliases = []): 
         $l4 = 'th';
     } elseif ($proto === 'icmp') {
         $parts[] = $family === 'ip6' ? 'meta l4proto ipv6-icmp' : 'ip protocol icmp';
+        $icmpNames = $family === 'ip6'
+            ? trim((string)$rule->icmp6type)
+            : trim((string)$rule->icmptype);
+        if ($icmpNames !== '') {
+            $icmpMatch = icmp_type_match($icmpNames, $family);
+            if ($icmpMatch !== null) {
+                $parts[] = $icmpMatch;
+            }
+        }
     } elseif ($proto !== '' && $proto !== 'any') {
         /* Other IP protocols (VPN passthrough, routing, multicast...). Map to
          * the IANA protocol number, which `meta l4proto` always accepts, so we
@@ -628,10 +688,14 @@ $out[] = '        ct state established,related accept';
 $out[] = '        ct state invalid counter drop';
 $out[] = '        meta l4proto ipv6-icmp accept comment "IPv6 neighbor discovery"';
 $out[] = '        ip protocol icmp accept';
+// Anti-lockout is emitted before the martian/block-private rules on purpose:
+// when the management interface sits on a private network (a common
+// WAN-on-LAN setup), block-private would otherwise drop new management
+// connections and lock the operator out of the box.
+$out[] = $lockout;
 foreach ($martians as $m) {
     $out[] = $m;
 }
-$out[] = $lockout;
 $out[] = '        jump filter_rules';
 $out[] = '    }';
 $out[] = '';
