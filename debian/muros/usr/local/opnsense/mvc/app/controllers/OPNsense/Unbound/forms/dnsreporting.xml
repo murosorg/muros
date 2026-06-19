@@ -1,8 +1,0 @@
-<form>
-    <field>
-        <id>unbound.general.stats</id>
-        <label>Enabled</label>
-        <type>checkbox</type>
-        <help>Enable Unbound statistics.</help>
-    </field>
-</form>

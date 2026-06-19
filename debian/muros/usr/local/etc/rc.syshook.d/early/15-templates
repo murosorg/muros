@@ -1,4 +1,0 @@
-#!/bin/sh
-
-echo -n "Generating configuration: "
-/usr/local/opnsense/service/template_ctl.py \*
