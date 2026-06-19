@@ -1132,26 +1132,27 @@ function system_kernel_configure($verbose = false)
     service_log('Configuring kernel modules...', $verbose);
 
     /*
-     * Vital kernel modules can go missing on reboot due to
-     * /boot/loader.conf not materialising.  This is still
-     * an UFS problem, despite claims otherwise.  In any case,
-     * load all the modules again to make sure.
-     *
-     * Keep in sync with /usr/local/etc/erc.loader.d/20-modules
+     * MurOS: preload the Linux kernel modules backing the features MurOS
+     * configures. Most of these autoload on first use (iproute2 pulls in
+     * "bridge"/"8021q"/... when a device of that kind is created, and nft pulls
+     * in "nf_tables"), but loading them up front keeps behaviour deterministic
+     * after a reboot. FreeBSD-only modules (carp, if_enc, pf, pflog, pfsync)
+     * have no Linux equivalent and are dropped: packet filtering is handled by
+     * nftables (nf_tables) and there is no /dev/pf to fix permissions on.
      */
     $mods = [
-        'carp',
-        'if_bridge',
-        'if_enc',
-        'if_gif',
-        'if_gre',
-        'if_lagg',
-        'if_tap',
-        'if_tun',
-        'if_vlan',
-        'pf',
-        'pflog',
-        'pfsync',
+        'nf_tables',    /* nftables core (firewall, NAT) */
+        'nft_ct',       /* connection tracking matches */
+        'nf_conntrack', /* stateful tracking */
+        'bridge',       /* if_bridge */
+        '8021q',        /* if_vlan */
+        'bonding',      /* if_lagg */
+        'tun',          /* if_tun / if_tap */
+        'ip_gre',       /* if_gre (IPv4) */
+        'ip6_gre',      /* if_gre (IPv6) */
+        'sit',          /* if_gif (IPv6-in-IPv4) */
+        'ip6_tunnel',   /* if_gif (IPv6 tunnelling) */
+        'wireguard',    /* native WireGuard */
     ];
 
     if (!empty($config['system']['crypto_hardware'])) {
@@ -1167,12 +1168,9 @@ function system_kernel_configure($verbose = false)
     }
 
     foreach ($mods as $mod) {
-        mwexecfm('/sbin/kldload %s', $mod);
+        /* muted: a module compiled into the kernel is unavailable to modprobe but still present */
+        mwexecf('/usr/sbin/modprobe %s', [$mod], true);
     }
-
-    /* we now have /dev/pf, time to fix permissions for proxies */
-    chgrp('/dev/pf', 'proxy');
-    chmod('/dev/pf', 0660);
 
     service_log("done.\n", $verbose);
 }
