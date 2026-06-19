@@ -1,0 +1,6 @@
+#!/bin/sh
+
+echo -n "Starting Cron: "
+configctl cron restart
+
+/usr/local/sbin/configctl -dq syslog archive

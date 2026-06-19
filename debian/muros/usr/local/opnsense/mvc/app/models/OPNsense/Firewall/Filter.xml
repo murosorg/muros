@@ -1,0 +1,664 @@
+<model>
+    <mount>//OPNsense/Firewall/Filter</mount>
+    <version>1.0.5</version>
+    <migration_prefix>MFP</migration_prefix>
+    <description>Firewall rules (new)</description>
+    <items>
+        <general>
+            <snat_mode type=".\SNatModeField" volatile="true">
+                <Required>Y</Required>
+                <Default>automatic</Default>
+                <OptionValues>
+                    <automatic>Automatic Source NAT rule generation</automatic>
+                    <hybrid>Hybrid Source NAT rule generation</hybrid>
+                    <advanced>Manual Source NAT rule generation</advanced>
+                    <disabled>Disable Source NAT rule generation</disabled>
+                </OptionValues>
+            </snat_mode>
+        </general>
+        <rules>
+            <rule type=".\FilterRuleField">
+                <enabled type="BooleanField">
+                    <Default>1</Default>
+                    <Required>Y</Required>
+                </enabled>
+                <statetype type="OptionField">
+                    <Required>Y</Required>
+                    <Default>keep</Default>
+                    <OptionValues>
+                        <keep>keep state</keep>
+                        <sloppy>sloppy state</sloppy>
+                        <modulate>modulate state</modulate>
+                        <synproxy>synproxy state</synproxy>
+                        <none>no state</none>
+                    </OptionValues>
+                </statetype>
+                <state-policy type="OptionField">
+                    <BlankDesc>default</BlankDesc>
+                    <OptionValues>
+                        <if-bound>Bind states to interface</if-bound>
+                        <floating>Floating states</floating>
+                    </OptionValues>
+                </state-policy>
+                <sequence type=".\FilterSequenceField">
+                    <MinimumValue>1</MinimumValue>
+                    <MaximumValue>999999</MaximumValue>
+                    <ValidationMessage>Sequence shall be between 1 and 999999.</ValidationMessage>
+                    <Required>Y</Required>
+                    <Default>1</Default>
+                </sequence>
+                <sort_order type="TextField" volatile="true"/>
+                <prio_group type="TextField" volatile="true"/>
+                <action type="OptionField">
+                    <Required>Y</Required>
+                    <Default>pass</Default>
+                    <OptionValues>
+                        <pass>Pass</pass>
+                        <block>Block</block>
+                        <reject>Reject</reject>
+                    </OptionValues>
+                </action>
+                <quick type="BooleanField">
+                    <Default>1</Default>
+                    <Required>Y</Required>
+                </quick>
+                <interfacenot type="BooleanField">
+                    <Default>0</Default>
+                    <Required>Y</Required>
+                </interfacenot>
+                <interface type="InterfaceField">
+                    <Multiple>Y</Multiple>
+                    <Filters>
+                        <if>/^(?!lo0$).*/</if>
+                    </Filters>
+                    <AllowDynamic>Y</AllowDynamic>
+                </interface>
+                <direction type="OptionField">
+                    <Required>Y</Required>
+                    <Default>in</Default>
+                    <OptionValues>
+                        <in>In</in>
+                        <out>Out</out>
+                        <any>Both</any>
+                    </OptionValues>
+                </direction>
+                <ipprotocol type="OptionField">
+                    <Required>Y</Required>
+                    <Default>inet</Default>
+                    <OptionValues>
+                        <inet>IPv4</inet>
+                        <inet6>IPv6</inet6>
+                        <inet46>any</inet46>
+                    </OptionValues>
+                </ipprotocol>
+                <protocol type="ProtocolField">
+                    <Required>Y</Required>
+                    <Default>any</Default>
+                    <AddOptions>
+                        <opt1 value="TCP/UDP">TCP/UDP</opt1>
+                    </AddOptions>
+                </protocol>
+                <icmptype type="OptionField">
+                    <Multiple>Y</Multiple>
+                    <OptionValues>
+                        <Common>
+                            <echoreq>Echo Request</echoreq>
+                            <echorep>Echo Reply</echorep>
+                            <unreach>Destination Unreachable</unreach>
+                            <redir>Redirect</redir>
+                            <routeradv>Router Advertisement</routeradv>
+                            <routersol>Router Solicitation</routersol>
+                            <timex>Time Exceeded</timex>
+                            <paramprob>Parameter Problem</paramprob>
+                            <timereq>Timestamp</timereq>
+                            <timerep>Timestamp Reply</timerep>
+                            <photuris>Photuris</photuris>
+                        </Common>
+                        <Deprecated>
+                            <squench>Source Quench</squench>
+                            <althost>Alternate Host Address</althost>
+                            <inforeq>Information Request</inforeq>
+                            <inforep>Information Reply</inforep>
+                            <maskreq>Address Mask Request</maskreq>
+                            <maskrep>Address Mask Reply</maskrep>
+                            <trace>Traceroute</trace>
+                            <dataconv>Data conversion problem</dataconv>
+                            <mobredir>Mobile host redirection</mobredir>
+                            <ipv6-where>IPv6 where-are-you</ipv6-where>
+                            <ipv6-here>IPv6 i-am-here</ipv6-here>
+                            <mobregreq>Mobile registration request</mobregreq>
+                            <mobregrep>Mobile registration reply</mobregrep>
+                            <skip>SKIP</skip>
+                        </Deprecated>
+                    </OptionValues>
+                </icmptype>
+                <icmp6type type="OptionField">
+                    <Multiple>Y</Multiple>
+                    <OptionValues>
+                        <unreach value="1">Destination unreachable</unreach>
+                        <toobig value="2">Packet too big</toobig>
+                        <timex value="3">Time exceeded</timex>
+                        <paramprob value="4">Invalid IPv6 header</paramprob>
+                        <echoreq value="128">Echo service request</echoreq>
+                        <echorep value="129">Echo service reply</echorep>
+                        <listqry value="130">Multicast Listener Query</listqry>
+                        <listenrep value="131">Multicast listener report</listenrep>
+                        <listendone value="132">Multicast listener done</listendone>
+                        <routersol value="133">Router solicitation</routersol>
+                        <routeradv value="134">Router advertisement</routeradv>
+                        <neighbrsol value="135">Neighbor solicitation</neighbrsol>
+                        <neighbradv value="136">Neighbor advertisement</neighbradv>
+                        <redir value="137">Shorter route exists</redir>
+                        <routrrenum value="138">Route renumbering</routrrenum>
+                        <niqry value="139">ICMP Node Information Query</niqry>
+                        <nirep value="140">Node information reply</nirep>
+                        <mtraceresp value="200">mtrace response</mtraceresp>
+                        <mtrace value="201">mtrace messages</mtrace>
+                    </OptionValues>
+                </icmp6type>
+                <!-- XXX: should map internally to  'source' => array('network' => $source_net, "not" => true|false) -->
+                <source_net type="NetworkAliasField">
+                    <Default>any</Default>
+                    <Required>Y</Required>
+                    <Multiple>Y</Multiple>
+                </source_net>
+                <source_not type="BooleanField">
+                    <Default>0</Default>
+                    <Required>Y</Required>
+                </source_not>
+                <source_port type="PortField">
+                    <EnableWellKnown>Y</EnableWellKnown>
+                    <EnableRanges>Y</EnableRanges>
+                    <EnableAlias>Y</EnableAlias>
+                    <ValidationMessage>Please specify a valid portnumber, name, alias or range.</ValidationMessage>
+                </source_port>
+                <!-- XXX: should map internally to  'source' => array('destination' => destination_net, "not" => true|false) -->
+                <destination_net type="NetworkAliasField">
+                    <Default>any</Default>
+                    <Required>Y</Required>
+                    <Multiple>Y</Multiple>
+                </destination_net>
+                <destination_not type="BooleanField">
+                    <Default>0</Default>
+                    <Required>Y</Required>
+                </destination_not>
+                <destination_port type="PortField">
+                    <EnableWellKnown>Y</EnableWellKnown>
+                    <EnableRanges>Y</EnableRanges>
+                    <EnableAlias>Y</EnableAlias>
+                    <ValidationMessage>Please specify a valid portnumber, name, alias or range.</ValidationMessage>
+                </destination_port>
+                <divert-to type="JsonKeyValueStoreField">
+                    <ConfigdPopulateAct>filter list diverts</ConfigdPopulateAct>
+                    <ValidationMessage>Specify a valid divert-to target.</ValidationMessage>
+                </divert-to>
+                <gateway type="JsonKeyValueStoreField">
+                    <ConfigdPopulateAct>interface gateways list -g</ConfigdPopulateAct>
+                    <ValidationMessage>Specify a valid gateway from the list matching the networks ip protocol.</ValidationMessage>
+                </gateway>
+                <replyto type="JsonKeyValueStoreField">
+                    <ConfigdPopulateAct>interface gateways list</ConfigdPopulateAct>
+                    <ValidationMessage>Specify a valid gateway from the list matching the networks ip protocol.</ValidationMessage>
+                </replyto>
+                <disablereplyto type="BooleanField">
+                    <Default>0</Default>
+                    <Required>Y</Required>
+                </disablereplyto>
+                <log type="BooleanField">
+                    <Default>0</Default>
+                    <Required>Y</Required>
+                </log>
+                <allowopts type="BooleanField">
+                    <Default>0</Default>
+                    <Required>Y</Required>
+                </allowopts>
+                <nosync type="BooleanField">
+                    <Default>0</Default>
+                    <Required>Y</Required>
+                </nosync>
+                <nopfsync type="BooleanField">
+                    <Default>0</Default>
+                    <Required>Y</Required>
+                </nopfsync>
+                <statetimeout type="IntegerField">
+                    <MinimumValue>1</MinimumValue>
+                    <MaximumValue>2147483647</MaximumValue>
+                </statetimeout>
+                <udp-first type="IntegerField">
+                    <MinimumValue>1</MinimumValue>
+                    <MaximumValue>2147483647</MaximumValue>
+                </udp-first>
+                <udp-multiple type="IntegerField">
+                    <MinimumValue>1</MinimumValue>
+                    <MaximumValue>2147483647</MaximumValue>
+                </udp-multiple>
+                <udp-single type="IntegerField">
+                    <MinimumValue>1</MinimumValue>
+                    <MaximumValue>2147483647</MaximumValue>
+                </udp-single>
+                <max-src-nodes type="IntegerField">
+                    <MinimumValue>1</MinimumValue>
+                    <MaximumValue>2147483647</MaximumValue>
+                </max-src-nodes>
+                <max-src-states type="IntegerField">
+                    <MinimumValue>1</MinimumValue>
+                    <MaximumValue>2147483647</MaximumValue>
+                </max-src-states>
+                <max-src-conn type="IntegerField">
+                    <MinimumValue>1</MinimumValue>
+                    <MaximumValue>2147483647</MaximumValue>
+                </max-src-conn>
+                <max type="IntegerField">
+                    <MinimumValue>1</MinimumValue>
+                    <MaximumValue>2147483647</MaximumValue>
+                </max>
+                <max-src-conn-rate type="IntegerField">
+                    <MinimumValue>1</MinimumValue>
+                    <MaximumValue>4294967</MaximumValue>
+                </max-src-conn-rate>
+                <max-src-conn-rates type="IntegerField">
+                    <MinimumValue>1</MinimumValue>
+                    <MaximumValue>2147483647</MaximumValue>
+                </max-src-conn-rates>
+                <overload type="ModelRelationField">
+                    <Model>
+                        <aliases>
+                            <source>OPNsense.Firewall.Alias</source>
+                            <items>aliases.alias</items>
+                            <display>name</display>
+                            <filters>
+                                <enabled>/^(?!0).*$/</enabled>
+                                <type>/^(?!(port)).*$/</type>
+                            </filters>
+                        </aliases>
+                    </Model>
+                    <ValidationMessage>Alias not found.</ValidationMessage>
+                </overload>
+                <adaptivestart type="IntegerField">
+                    <MinimumValue>0</MinimumValue>
+                    <MaximumValue>2147483647</MaximumValue>
+                </adaptivestart>
+                <adaptiveend type="IntegerField">
+                    <MinimumValue>0</MinimumValue>
+                    <MaximumValue>2147483647</MaximumValue>
+                </adaptiveend>
+                <prio type="OptionField">
+                    <BlankDesc>Any priority</BlankDesc>
+                    <OptionValues>
+                        <opt1 value="1">Background (1, lowest)</opt1>
+                        <opt0 value="0">Best Effort (0, default)</opt0>
+                        <opt2 value="2">Excellent Effort (2)</opt2>
+                        <opt3 value="3">Critical Applications (3)</opt3>
+                        <opt4 value="4">Video (4)</opt4>
+                        <opt5 value="5">Voice (5)</opt5>
+                        <opt6 value="6">Internetwork Control (6)</opt6>
+                        <opt7 value="7">Network Control (7, highest)</opt7>
+                    </OptionValues>
+                </prio>
+                <set-prio type="OptionField">
+                    <BlankDesc>Keep current priority</BlankDesc>
+                    <OptionValues>
+                        <opt1 value="1">Background (1, lowest)</opt1>
+                        <opt0 value="0">Best Effort (0, default)</opt0>
+                        <opt2 value="2">Excellent Effort (2)</opt2>
+                        <opt3 value="3">Critical Applications (3)</opt3>
+                        <opt4 value="4">Video (4)</opt4>
+                        <opt5 value="5">Voice (5)</opt5>
+                        <opt6 value="6">Internetwork Control (6)</opt6>
+                        <opt7 value="7">Network Control (7, highest)</opt7>
+                    </OptionValues>
+                </set-prio>
+                <set-prio-low type="OptionField">
+                    <BlankDesc>Keep current priority</BlankDesc>
+                    <OptionValues>
+                        <opt1 value="1">Background (1, lowest)</opt1>
+                        <opt0 value="0">Best Effort (0, default)</opt0>
+                        <opt2 value="2">Excellent Effort (2)</opt2>
+                        <opt3 value="3">Critical Applications (3)</opt3>
+                        <opt4 value="4">Video (4)</opt4>
+                        <opt5 value="5">Voice (5)</opt5>
+                        <opt6 value="6">Internetwork Control (6)</opt6>
+                        <opt7 value="7">Network Control (7, highest)</opt7>
+                    </OptionValues>
+                </set-prio-low>
+                <tag type="TextField">
+                    <Mask>/^([0-9a-zA-Z.,_\-]){0,512}$/u</Mask>
+                </tag>
+                <tagged type="TextField">
+                    <Mask>/^([0-9a-zA-Z.,_\-]){0,512}$/u</Mask>
+                </tagged>
+                <tcpflags1 type="OptionField">
+                    <Multiple>Y</Multiple>
+                    <OptionValues>
+                        <syn/>
+                        <ack/>
+                        <fin/>
+                        <rst/>
+                        <psh/>
+                        <urg/>
+                        <ece/>
+                        <cwr/>
+                    </OptionValues>
+                </tcpflags1>
+                <tcpflags2 type="OptionField">
+                    <Multiple>Y</Multiple>
+                    <OptionValues>
+                        <syn/>
+                        <ack/>
+                        <fin/>
+                        <rst/>
+                        <psh/>
+                        <urg/>
+                        <ece/>
+                        <cwr/>
+                    </OptionValues>
+                </tcpflags2>
+                <tcpflags_any type="BooleanField"/>
+                <categories type="ModelRelationField">
+                    <Model>
+                        <rulesets>
+                            <source>OPNsense.Firewall.Category</source>
+                            <items>categories.category</items>
+                            <display>name</display>
+                        </rulesets>
+                    </Model>
+                    <Multiple>Y</Multiple>
+                    <ValidationMessage>Related category not found.</ValidationMessage>
+                </categories>
+                <sched type=".\ScheduleField"/>
+                <tos type=".\TosField"/>
+                <shaper1 type="ModelRelationField">
+                    <Model>
+                        <pipes>
+                            <source>OPNsense.TrafficShaper.TrafficShaper</source>
+                            <items>pipes.pipe</items>
+                            <display>description</display>
+                            <filters>
+                                <description>/(.){1,255}/</description>
+                            </filters>
+                        </pipes>
+                        <queues>
+                            <source>OPNsense.TrafficShaper.TrafficShaper</source>
+                            <items>queues.queue</items>
+                            <display>description</display>
+                            <filters>
+                                <description>/(.){1,255}/</description>
+                            </filters>
+                        </queues>
+                    </Model>
+                    <ValidationMessage>Related pipe or queue not found.</ValidationMessage>
+                </shaper1>
+                <shaper2 type="ModelRelationField">
+                    <Model>
+                        <pipes>
+                            <source>OPNsense.TrafficShaper.TrafficShaper</source>
+                            <items>pipes.pipe</items>
+                            <display>description</display>
+                            <filters>
+                                <description>/(.){1,255}/</description>
+                            </filters>
+                        </pipes>
+                        <queues>
+                            <source>OPNsense.TrafficShaper.TrafficShaper</source>
+                            <items>queues.queue</items>
+                            <display>description</display>
+                            <filters>
+                                <description>/(.){1,255}/</description>
+                            </filters>
+                        </queues>
+                    </Model>
+                    <ValidationMessage>Related pipe or queue not found.</ValidationMessage>
+                </shaper2>
+                <description type="DescriptionField"/>
+            </rule>
+        </rules>
+        <snatrules>
+            <rule type=".\SourceNatRuleField">
+                <enabled type="BooleanField">
+                    <Default>1</Default>
+                    <Required>Y</Required>
+                </enabled>
+                <nonat type="BooleanField">
+                    <Default>0</Default>
+                    <Required>Y</Required>
+                </nonat>
+                <nosync type="BooleanField">
+                    <Default>0</Default>
+                    <Required>Y</Required>
+                </nosync>
+                <sequence type=".\FilterSequenceField">
+                    <MinimumValue>1</MinimumValue>
+                    <MaximumValue>999999</MaximumValue>
+                    <ValidationMessage>Sequence shall be between 1 and 999999.</ValidationMessage>
+                    <Required>Y</Required>
+                    <Default>1</Default>
+                </sequence>
+                <sort_order type="TextField" volatile="true"/>
+                <prio_group type="TextField" volatile="true"/>
+                <interface type="InterfaceField">
+                    <Required>Y</Required>
+                    <Default>lan</Default>
+                    <Filters>
+                        <if>/^(?!lo0$).*/</if>
+                    </Filters>
+                    <AllowDynamic>Y</AllowDynamic>
+                </interface>
+                <ipprotocol type="OptionField">
+                    <Required>Y</Required>
+                    <Default>inet</Default>
+                    <OptionValues>
+                        <inet>IPv4</inet>
+                        <inet6>IPv6</inet6>
+                    </OptionValues>
+                </ipprotocol>
+                <protocol type="ProtocolField">
+                    <Required>Y</Required>
+                    <Default>any</Default>
+                    <AddOptions>
+                        <opt1 value="TCP/UDP">TCP/UDP</opt1>
+                    </AddOptions>
+                </protocol>
+                <source_net type="NetworkAliasField">
+                    <Default>any</Default>
+                    <Required>Y</Required>
+                </source_net>
+                <source_not type="BooleanField">
+                    <Default>0</Default>
+                    <Required>Y</Required>
+                </source_not>
+                <source_port type="PortField">
+                    <EnableWellKnown>Y</EnableWellKnown>
+                    <EnableRanges>Y</EnableRanges>
+                    <EnableAlias>Y</EnableAlias>
+                    <ValidationMessage>Please specify a valid portnumber, name, alias or range.</ValidationMessage>
+                </source_port>
+                <destination_net type="NetworkAliasField">
+                    <Default>any</Default>
+                    <Required>Y</Required>
+                </destination_net>
+                <destination_not type="BooleanField">
+                    <Default>0</Default>
+                    <Required>Y</Required>
+                </destination_not>
+                <destination_port type="PortField">
+                    <EnableWellKnown>Y</EnableWellKnown>
+                    <EnableRanges>Y</EnableRanges>
+                    <EnableAlias>Y</EnableAlias>
+                    <ValidationMessage>Please specify a valid portnumber, name, alias or range.</ValidationMessage>
+                </destination_port>
+                <target type="NetworkAliasField">
+                    <Default>wanip</Default>
+                    <Required>Y</Required>
+                </target>
+                <target_port type="PortField">
+                    <EnableWellKnown>Y</EnableWellKnown>
+                    <EnableRanges>Y</EnableRanges>
+                </target_port>
+                <staticnatport type="BooleanField"/>
+                <log type="BooleanField">
+                    <Default>0</Default>
+                    <Required>Y</Required>
+                </log>
+                <categories type="ModelRelationField">
+                    <Model>
+                        <rulesets>
+                            <source>OPNsense.Firewall.Category</source>
+                            <items>categories.category</items>
+                            <display>name</display>
+                        </rulesets>
+                    </Model>
+                    <Multiple>Y</Multiple>
+                    <ValidationMessage>Related category not found.</ValidationMessage>
+                </categories>
+                <tag type="TextField">
+                    <Mask>/^([0-9a-zA-Z.,_\-]){0,512}$/u</Mask>
+                </tag>
+                <tagged type="TextField">
+                    <Mask>/^([0-9a-zA-Z.,_\-]){0,512}$/u</Mask>
+                </tagged>
+                <description type="DescriptionField"/>
+            </rule>
+        </snatrules>
+        <npt>
+            <rule type=".\SourceNatRuleField">
+                <enabled type="BooleanField">
+                    <Default>1</Default>
+                    <Required>Y</Required>
+                </enabled>
+                <log type="BooleanField">
+                    <Default>0</Default>
+                    <Required>Y</Required>
+                </log>
+                <sequence type=".\FilterSequenceField">
+                    <MinimumValue>1</MinimumValue>
+                    <MaximumValue>999999</MaximumValue>
+                    <ValidationMessage>Sequence shall be between 1 and 999999.</ValidationMessage>
+                    <Required>Y</Required>
+                    <Default>1</Default>
+                </sequence>
+                <sort_order type="TextField" volatile="true"/>
+                <prio_group type="TextField" volatile="true"/>
+                <interface type="InterfaceField">
+                    <Required>Y</Required>
+                    <Default>lan</Default>
+                    <Filters>
+                        <if>/^(?!lo0$).*/</if>
+                    </Filters>
+                    <AllowDynamic>Y</AllowDynamic>
+                </interface>
+                <source_net type="NetworkField">
+                    <Required>Y</Required>
+                    <AddressFamily>ipv6</AddressFamily>
+                    <NetMaskRequired>N</NetMaskRequired>
+                    <WildcardEnabled>N</WildcardEnabled>
+                </source_net>
+                <destination_net type="NetworkField">
+                    <AddressFamily>ipv6</AddressFamily>
+                    <NetMaskRequired>N</NetMaskRequired>
+                    <WildcardEnabled>N</WildcardEnabled>
+                    <Constraints>
+                        <check001>
+                            <ValidationMessage>A value is required when not using a track interface.</ValidationMessage>
+                            <type>SetIfConstraint</type>
+                            <field>trackif</field>
+                        </check001>
+                    </Constraints>
+                </destination_net>
+                <trackif type="InterfaceField">
+                    <Constraints>
+                        <check001>
+                            <reference>destination_net.check001</reference>
+                        </check001>
+                    </Constraints>
+                </trackif>
+                <categories type="ModelRelationField">
+                    <Model>
+                        <rulesets>
+                            <source>OPNsense.Firewall.Category</source>
+                            <items>categories.category</items>
+                            <display>name</display>
+                        </rulesets>
+                    </Model>
+                    <Multiple>Y</Multiple>
+                    <ValidationMessage>Related category not found.</ValidationMessage>
+                </categories>
+                <description type="DescriptionField"/>
+            </rule>
+        </npt>
+        <onetoone>
+            <rule type=".\SourceNatRuleField">
+                <enabled type="BooleanField">
+                    <Default>1</Default>
+                    <Required>Y</Required>
+                </enabled>
+                <log type="BooleanField">
+                    <Default>0</Default>
+                    <Required>Y</Required>
+                </log>
+                <sequence type=".\FilterSequenceField">
+                    <MinimumValue>1</MinimumValue>
+                    <MaximumValue>999999</MaximumValue>
+                    <ValidationMessage>Sequence shall be between 1 and 999999.</ValidationMessage>
+                    <Required>Y</Required>
+                    <Default>1</Default>
+                </sequence>
+                <sort_order type="TextField" volatile="true"/>
+                <prio_group type="TextField" volatile="true"/>
+                <interface type="InterfaceField">
+                    <Required>Y</Required>
+                    <Default>wan</Default>
+                    <Filters>
+                        <if>/^(?!lo0$).*/</if>
+                    </Filters>
+                    <AllowDynamic>Y</AllowDynamic>
+                </interface>
+                <type type="OptionField">
+                    <Default>binat</Default>
+                    <Required>Y</Required>
+                    <OptionValues>
+                        <binat>BINAT</binat>
+                        <nat>NAT</nat>
+                    </OptionValues>
+                </type>
+                <source_net type="NetworkAliasField">
+                    <Required>Y</Required>
+                </source_net>
+                <source_not type="BooleanField">
+                    <Default>0</Default>
+                    <Required>Y</Required>
+                </source_not>
+                <destination_net type="NetworkAliasField">
+                    <Required>Y</Required>
+                    <Default>any</Default>
+                </destination_net>
+                <destination_not type="BooleanField">
+                    <Default>0</Default>
+                    <Required>Y</Required>
+                </destination_not>
+                <external type="NetworkField">
+                    <Required>Y</Required>
+                    <WildcardEnabled>N</WildcardEnabled>
+                </external>
+                <natreflection type="OptionField">
+                    <OptionValues>
+                        <default value="">Default</default>
+                        <enable>Enable</enable>
+                        <disable>Disable</disable>
+                    </OptionValues>
+                </natreflection>
+                <categories type="ModelRelationField">
+                    <Model>
+                        <rulesets>
+                            <source>OPNsense.Firewall.Category</source>
+                            <items>categories.category</items>
+                            <display>name</display>
+                        </rulesets>
+                    </Model>
+                    <Multiple>Y</Multiple>
+                    <ValidationMessage>Related category not found.</ValidationMessage>
+                </categories>
+                <description type="DescriptionField"/>
+            </rule>
+        </onetoone>
+    </items>
+</model>

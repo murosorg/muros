@@ -1,0 +1,107 @@
+<form>
+    <field>
+        <label></label>
+        <type>hidden</type>
+        <id>host.tree</id>
+        <grid_view>
+            <sequence>1</sequence>
+            <width>10</width>
+        </grid_view>
+    </field>
+    <field>
+        <id>host.enabled</id>
+        <label>Enabled</label>
+        <type>checkbox</type>
+        <help>Enable the override for this host</help>
+        <grid_view>
+            <width>6em</width>
+            <type>boolean</type>
+            <formatter>rowtoggle</formatter>
+        </grid_view>
+    </field>
+    <field>
+        <id>host.hostname</id>
+        <label>Host</label>
+        <type>text</type>
+        <help>Name of the host, without the domain part. Use "*" to create a wildcard entry.</help>
+    </field>
+    <field>
+        <id>host.domain</id>
+        <label>Domain</label>
+        <type>text</type>
+        <help>Domain of the host, e.g. example.com</help>
+    </field>
+    <field>
+        <id>host.rr</id>
+        <label>Type</label>
+        <type>dropdown</type>
+        <help>Type of resource record, e.g. A or AAAA for IPv4 or IPv6 addresses</help>
+    </field>
+    <field>
+        <id>host.mxprio</id>
+        <label>MX Priority</label>
+        <type>text</type>
+        <help>Priority of MX record, e.g. 10</help>
+        <grid_view>
+            <visible>false</visible>
+        </grid_view>
+    </field>
+    <field>
+        <id>host.mx</id>
+        <label>MX Host</label>
+        <type>text</type>
+        <help>Host name of MX host, e.g. mail.example.com</help>
+        <grid_view>
+            <visible>false</visible>
+        </grid_view>
+    </field>
+    <field>
+        <id>host.server</id>
+        <label>IP address</label>
+        <type>text</type>
+        <help>IP address of the host, e.g. 192.168.100.100 or fd00:abcd::1</help>
+        <grid_view>
+            <formatter>mxformatter</formatter>
+        </grid_view>
+    </field>
+    <field>
+        <id>host.txtdata</id>
+        <label>TXT Data</label>
+        <type>text</type>
+        <grid_view>
+            <visible>false</visible>
+        </grid_view>
+    </field>
+    <field>
+        <id>host.ttl</id>
+        <label>TTL (seconds)</label>
+        <type>text</type>
+        <help>TTL of the host, e.g. 3600</help>
+    </field>
+    <field>
+        <id>host.addptr</id>
+        <label>Add PTR record</label>
+        <type>checkbox</type>
+        <help>Add PTR record for this host, please note there can only be a single active PTR record per target address</help>
+        <grid_view>
+            <type>ignore</type>
+        </grid_view>
+    </field>
+    <field>
+        <id>host.aliases</id>
+        <label>Aliases</label>
+        <type>select_multiple</type>
+        <style>tokenize</style>
+        <allownew>true</allownew>
+        <help>Quickly add or remove aliases</help>
+        <grid_view>
+            <visible>false</visible>
+        </grid_view>
+    </field>
+    <field>
+        <id>host.description</id>
+        <label>Description</label>
+        <type>text</type>
+        <help>You may enter a description here for your reference (not parsed)</help>
+    </field>
+</form>

@@ -1,0 +1,125 @@
+#!/bin/sh
+
+# Copyright (c) 2015-2017 Ad Schellevis <ad@opnsense.org>
+# Copyright (c) 2015-2021 Franco Fichtner <franco@opnsense.org>
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#
+# 1. Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#
+# 2. Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
+# ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
+# FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+# DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+# OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+# HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+# LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+# OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+# SUCH DAMAGE.
+
+RCORDER="rcorder -s nostart -s firstboot"
+
+# check which services to enable
+if [ -f /etc/rc.conf ]; then
+	. /etc/rc.conf
+fi
+if [ -f /etc/rc.conf.local ]; then
+	. /etc/rc.conf.local
+fi
+for RC_CONF in $(find /etc/rc.conf.d -type f); do
+	. ${RC_CONF}
+done
+
+rc_enabled()
+{
+	rc_filename=${1}
+	name=${2}
+	variable=${3}
+
+	# check if service has a name
+	if [ -z "${name}" ]; then
+		echo "Error: no name set in ${rc_filename}"
+		return 1
+	fi
+
+	rcvar=
+
+	# check if service has a variable
+	if [ -z "${variable}" ]; then
+		eval "$(grep "^rcvar[[:blank:]]*=" ${rc_filename})"
+	else
+		rcvar="${name}_${variable}"
+	fi
+
+	if [ -z "${rcvar}" ]; then
+		# FreeBSD does this, leave here for debugging
+		#echo "Error: no rcvar set in $rc_filename"
+		return 1
+	fi
+
+	# check if variable is enabled
+	eval "enabled=\$${rcvar}"
+
+	case "${enabled}" in
+	[Yy][Ee][Ss])
+		return 0
+		;;
+	*)
+		return 1
+		;;
+	esac
+}
+
+rc_filenames="$(${RCORDER} /etc/rc.d/* /usr/local/etc/rc.d/* 2> /dev/null)"
+rc_filenames_defer=
+rc_filenames_reverse=
+rc_filenames_skip=
+
+for rc_filename in ${rc_filenames}; do
+	eval "$(grep "^name[[:blank:]]*=" ${rc_filename})"
+
+	if rc_enabled ${rc_filename} ${name} defer; then
+		rc_filenames_defer="${rc_filenames_defer} ${rc_filename}"
+		rc_filenames=$(echo "${rc_filenames}" | grep -v "^${rc_filename}$")
+	fi
+
+	if rc_enabled ${rc_filename} ${name} skip; then
+		rc_filenames_skip="${rc_filenames_skip} ${rc_filename}"
+		rc_filenames=$(echo "${rc_filenames}" | grep -v "^${rc_filename}$")
+	fi
+done
+
+if [ -z "${1}" ]; then
+	echo "Error: no action argument given"
+	exit 1
+fi
+
+rc_filenames="${rc_filenames} ${rc_filenames_defer}"
+
+if [ "${1}" = "stop" ]; then
+	# process stop in reverse order
+	for rc_filename in ${rc_filenames}; do
+		rc_filenames_reverse="${rc_filename} ${rc_filenames_reverse}"
+	done
+	rc_filenames=${rc_filenames_reverse}
+fi
+
+# pass all commands to script now
+for rc_filename in ${rc_filenames}; do
+	eval "$(grep "^name[[:blank:]]*=" ${rc_filename})"
+
+	if ! rc_enabled ${rc_filename} ${name}; then
+		continue
+	fi
+
+	${rc_filename} ${1}
+done

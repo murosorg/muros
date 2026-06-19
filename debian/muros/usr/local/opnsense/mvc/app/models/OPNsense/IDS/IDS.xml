@@ -1,0 +1,312 @@
+<model>
+    <mount>//OPNsense/IDS</mount>
+    <version>1.1.2</version>
+    <description>Intrusion detection</description>
+    <items>
+        <rules>
+            <rule type=".\PolicyRulesField">
+                <sid type="IntegerField">
+                    <ValidationMessage>Sid should be a number.</ValidationMessage>
+                    <Required>Y</Required>
+                </sid>
+                <enabled type="BooleanField">
+                    <Default>1</Default>
+                    <Required>Y</Required>
+                </enabled>
+                <action type="OptionField">
+                    <Required>Y</Required>
+                    <Default>alert</Default>
+                    <OptionValues>
+                        <alert>Alert</alert>
+                        <drop>Drop</drop>
+                    </OptionValues>
+                </action>
+                <msg type="TextField" volatile="true"/>
+                <source type="TextField" volatile="true"/>
+            </rule>
+        </rules>
+        <policies>
+            <policy type="ArrayField">
+                <enabled type="BooleanField">
+                    <Default>1</Default>
+                    <Required>Y</Required>
+                </enabled>
+                <prio type="IntegerField">
+                    <ValidationMessage>Priority should be a number.</ValidationMessage>
+                    <Required>Y</Required>
+                    <Default>0</Default>
+                </prio>
+                <action type="OptionField">
+                    <Multiple>Y</Multiple>
+                    <OptionValues>
+                        <disable>Disabled</disable>
+                        <alert>Alert</alert>
+                        <drop>Drop</drop>
+                    </OptionValues>
+                </action>
+                <rulesets type="ModelRelationField">
+                    <Model>
+                        <rulesets>
+                            <source>OPNsense.IDS.IDS</source>
+                            <items>files.file</items>
+                            <display>filename</display>
+                            <filters>
+                                <enabled>/1/</enabled>
+                            </filters>
+                        </rulesets>
+                    </Model>
+                    <Multiple>Y</Multiple>
+                    <ValidationMessage>Related ruleset not found.</ValidationMessage>
+                </rulesets>
+                <content type=".\PolicyContentField">
+                    <Multiple>Y</Multiple>
+                    <ValidationMessage>Policy rule not found.</ValidationMessage>
+                </content>
+                <new_action type="OptionField">
+                    <Required>Y</Required>
+                    <Default>alert</Default>
+                    <OptionValues>
+                        <default value="default">Default</default>
+                        <alert>Alert</alert>
+                        <drop>Drop</drop>
+                        <disable>Disable</disable>
+                    </OptionValues>
+                </new_action>
+                <description type="DescriptionField"/>
+            </policy>
+        </policies>
+        <userDefinedRules>
+            <rule type="ArrayField">
+                <!--user defined rules -->
+                <enabled type="BooleanField">
+                    <Default>1</Default>
+                    <Required>Y</Required>
+                </enabled>
+                <source type="NetworkField"/>
+                <destination type="NetworkField"/>
+                <fingerprint type="TextField">
+                    <Mask>/^([0-9a-fA-F:]){59,59}$/u</Mask>
+                    <ValidationMessage>A SSL fingerprint should be a 59 character long hex value.</ValidationMessage>
+                </fingerprint>
+                <description type="DescriptionField">
+                    <Required>Y</Required>
+                </description>
+                <action type="OptionField">
+                    <Required>Y</Required>
+                    <Default>alert</Default>
+                    <OptionValues>
+                        <alert>Alert</alert>
+                        <drop>Drop</drop>
+                        <pass>Pass</pass>
+                    </OptionValues>
+                </action>
+                <bypass type="BooleanField">
+                    <Default>0</Default>
+                    <Required>Y</Required>
+                </bypass>
+            </rule>
+        </userDefinedRules>
+        <files>
+            <file type="ArrayField">
+                <filename type="TextField">
+                    <Required>Y</Required>
+                    <Mask>/^([\t\n\v\f\r\- 0-9a-zA-Z.,_\x{00A0}-\x{FFFF}]){1,255}$/u</Mask>
+                </filename>
+                <enabled type="BooleanField">
+                    <Default>0</Default>
+                    <Required>Y</Required>
+                </enabled>
+            </file>
+        </files>
+        <fileTags>
+            <tag type="ArrayField">
+                <property type="TextField">
+                    <Required>Y</Required>
+                    <Mask>/^([\t\n\v\f\r\- 0-9a-zA-Z.,_\x{00A0}-\x{FFFF}]){1,255}$/u</Mask>
+                </property>
+                <value type="TextField">
+                    <Mask>/^([\t\n\v\f\r\- 0-9a-zA-Z.,_\x{00A0}-\x{FFFF}]){1,255}$/u</Mask>
+                </value>
+            </tag>
+        </fileTags>
+        <general>
+            <enabled type="BooleanField">
+                <Default>0</Default>
+                <Required>Y</Required>
+            </enabled>
+            <mode type="OptionField">
+                <Required>Y</Required>
+                <Default>pcap</Default>
+                <OptionValues>
+                    <pcap>PCAP live mode (IDS)</pcap>
+                    <netmap>Netmap (IPS)</netmap>
+                    <divert>Divert (IPS)</divert>
+                </OptionValues>
+                <ValidationMessage>Please select a valid mode.</ValidationMessage>
+            </mode>
+            <divert_listeners type="IntegerField">
+                <Required>Y</Required>
+                <Default>1</Default>
+                <MinimumValue>1</MinimumValue>
+                <MaximumValue>256</MaximumValue>
+            </divert_listeners>
+            <promisc type="BooleanField">
+                <Default>0</Default>
+                <Required>Y</Required>
+            </promisc>
+            <interfaces type="InterfaceField">
+                <Required>Y</Required>
+                <Default>wan</Default>
+                <Multiple>Y</Multiple>
+                <AddParentDevices>Y</AddParentDevices>
+                <filters>
+                    <enable>/^(?!0).*$/</enable>
+                    <type>/(?s)^((?!group).)*$/</type>
+                </filters>
+            </interfaces>
+            <homenet type="NetworkField">
+                <Required>Y</Required>
+                <Default>192.168.0.0/16,10.0.0.0/8,172.16.0.0/12</Default>
+                <AsList>Y</AsList>
+            </homenet>
+            <defaultPacketSize type="IntegerField">
+                <MinimumValue>82</MinimumValue>
+                <MaximumValue>65535</MaximumValue>
+                <ValidationMessage>Enter a valid packet size.</ValidationMessage>
+            </defaultPacketSize>
+            <UpdateCron type="ModelRelationField">
+                <Model>
+                    <queues>
+                        <source>OPNsense.Cron.Cron</source>
+                        <items>jobs.job</items>
+                        <display>description</display>
+                        <filters>
+                            <origin>/IDS/</origin>
+                        </filters>
+                    </queues>
+                </Model>
+                <ValidationMessage>Related cron not found.</ValidationMessage>
+            </UpdateCron>
+            <AlertLogrotate type="OptionField">
+                <Required>Y</Required>
+                <Default>W0D23</Default>
+                <OptionValues>
+                    <W0D23>Weekly</W0D23>
+                    <D0>Daily</D0>
+                </OptionValues>
+                <ValidationMessage>Please select a valid rotation.</ValidationMessage>
+            </AlertLogrotate>
+            <AlertSaveLogs type="IntegerField">
+                <Required>Y</Required>
+                <Default>4</Default>
+                <MinimumValue>1</MinimumValue>
+                <MaximumValue>1000</MaximumValue>
+                <ValidationMessage>Enter a valid number of logs to save.</ValidationMessage>
+            </AlertSaveLogs>
+            <MPMAlgo type="OptionField">
+                <BlankDesc>Default</BlankDesc>
+                <OptionValues>
+                    <ac>Aho-Corasick</ac>
+                    <ac-ks>Aho-Corasick, "Ken Steele" variant</ac-ks>
+                    <hs>Hyperscan</hs>
+                </OptionValues>
+                <ValidationMessage>Please select a valid pattern matcher algorithm.</ValidationMessage>
+            </MPMAlgo>
+            <detect>
+                <Profile type="OptionField">
+                    <BlankDesc>Default</BlankDesc>
+                    <OptionValues>
+                        <low>Low</low>
+                        <medium>Medium</medium>
+                        <high>High</high>
+                        <custom>Custom</custom>
+                    </OptionValues>
+                    <ValidationMessage>Please select a valid detection profile.</ValidationMessage>
+                </Profile>
+                <toclient_groups type="IntegerField">
+                    <MinimumValue>0</MinimumValue>
+                    <MaximumValue>65535</MaximumValue>
+                    <ValidationMessage>Enter a valid toclient-groups size.</ValidationMessage>
+                </toclient_groups>
+                <toserver_groups type="IntegerField">
+                    <MinimumValue>0</MinimumValue>
+                    <MaximumValue>65535</MaximumValue>
+                    <ValidationMessage>Enter a valid toserver-groups size.</ValidationMessage>
+                </toserver_groups>
+            </detect>
+            <syslog type="BooleanField">
+                <Default>0</Default>
+                <Required>Y</Required>
+            </syslog>
+            <syslog_eve type="BooleanField">
+                <Default>0</Default>
+                <Required>Y</Required>
+            </syslog_eve>
+            <LogPayload type="BooleanField">
+                <Default>0</Default>
+                <Required>Y</Required>
+            </LogPayload>
+            <verbosity type="OptionField">
+                <BlankDesc>DEFAULT (0)</BlankDesc>
+                <OptionValues>
+                    <v>INFO (1)</v>
+                    <vv>PERF (2)</vv>
+                    <vvv>CONFIG (3)</vvv>
+                    <vvvv>DEBUG (4)</vvvv>
+                </OptionValues>
+            </verbosity>
+            <eveLog>
+                <http>
+                    <enable type="BooleanField">
+                        <Default>0</Default>
+                        <Required>Y</Required>
+                    </enable>
+                    <extended type="BooleanField">
+                        <Default>0</Default>
+                        <Required>Y</Required>
+                    </extended>
+                    <dumpAllHeaders type="OptionField">
+                        <OptionValues>
+                            <request>Request</request>
+                            <response>Response</response>
+                            <both>Both</both>
+                        </OptionValues>
+                    </dumpAllHeaders>
+                </http>
+                <tls>
+                    <enable type="BooleanField">
+                        <Default>0</Default>
+                        <Required>Y</Required>
+                    </enable>
+                    <extended type="BooleanField">
+                        <Default>0</Default>
+                        <Required>Y</Required>
+                    </extended>
+                    <sessionResumption type="BooleanField">
+                        <Default>0</Default>
+                        <Required>Y</Required>
+                    </sessionResumption>
+                    <custom type="OptionField">
+                        <Multiple>Y</Multiple>
+                        <OptionValues>
+                            <subject/>
+                            <issuer/>
+                            <session_resumed/>
+                            <serial/>
+                            <fingerprint/>
+                            <sni/>
+                            <version/>
+                            <not_before/>
+                            <not_after/>
+                            <certificate/>
+                            <chain/>
+                            <ja3/>
+                            <ja3s/>
+                            <ja4/>
+                        </OptionValues>
+                    </custom>
+                </tls>
+            </eveLog>
+        </general>
+    </items>
+</model>

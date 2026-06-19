@@ -1,0 +1,249 @@
+<?php
+
+/*
+ * Copyright (C) 2016-2020 Deciso B.V.
+ * Copyright (C) 2016-2018 Franco Fichtner <franco@opnsense.org>
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *
+ * 1. Redistributions of source code must retain the above copyright notice,
+ *    this list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
+ * AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+ * AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY,
+ * OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ */
+
+function pf_services()
+{
+    global $config;
+
+    $services = [];
+
+    if (!isset($config['system']['disablefilter'])) {
+        $services[] = [
+            'description' => gettext('Packet Filter'),
+            'configd' => [
+                'restart' => ['filter reload'],
+            ],
+            'nocheck' => true,
+            'name' => 'pf',
+        ];
+    }
+
+    return $services;
+}
+
+function pf_configure()
+{
+    return [
+        'pfsync' => ['interfaces_pfsync_configure'],
+    ];
+}
+
+function pf_cron()
+{
+    global $config;
+
+    $jobs = [];
+
+    if ((new OPNsense\Firewall\Filter(true))->hasSchedule()) {
+        $jobs[]['autocron'] = ['/usr/bin/logger "reload filter for configured schedules" ; /usr/local/etc/rc.filter_configure', '1,16,31,46'];
+    }
+
+    /* bogons fetch always set in default config.xml */
+    switch ($config['system']['bogons']['interval']) {
+        case 'daily':
+            $jobs[]['autocron'] = ['/usr/local/sbin/configctl -d filter schedule bogons', '1', '3', '*', '*', '*'];
+            break;
+        case 'weekly':
+            $jobs[]['autocron'] = ['/usr/local/sbin/configctl -d filter schedule bogons', '1', '3', '*', '*', '0'];
+            break;
+        case 'monthly':
+        default:
+            $jobs[]['autocron'] = ['/usr/local/sbin/configctl -d filter schedule bogons', '1', '3', '1', '*', '*'];
+            break;
+    }
+
+    $jobs[]['autocron'] = [
+        '/usr/local/bin/flock -n -E 0 -o /tmp/filter_update_tables.lock ' .
+        '/usr/local/opnsense/scripts/filter/update_tables.py --quick',
+        '*'
+    ];
+
+    return $jobs;
+}
+
+function pf_interfaces()
+{
+    $interfaces = [];
+
+    /* add interface groups */
+    foreach (config_read_array('ifgroups', 'ifgroupentry', false) as $ifgen) {
+        $oc = ['enable' => true];
+        $oc['networks'] = [];
+        $oc['if'] = $ifgen['ifname'];
+        $oc['descr'] = $ifgen['ifname'];
+        $oc['virtual'] = true;
+        $oc['type'] = 'group';
+        $interfaces[$ifgen['ifname']] = $oc;
+    }
+
+    return $interfaces;
+}
+
+/**
+ * options we should probably remove from the system at some point, lets make them plugabble before removal
+ * @param $fw
+ */
+function pf_firewall($fw)
+{
+    global $config;
+
+    $defaults = [];
+    $defaults['pass'] = ['type' => 'pass', 'log' => !isset($config['syslog']['nologdefaultpass'])];
+
+    /*
+     *  pass traffic between statically routed subnets and the subnet on the
+     *  interface in question to avoid problems with complicated routing
+     *  topologies
+     */
+    if (isset($config['filter']['bypassstaticroutes']) && count(config_read_array('staticroutes', 'route', false))) {
+        $ifdetails = $fw->getIfconfigDetails();
+        $GatewaysList = $fw->getGateways()->gatewaysIndexedByName(false, true);
+
+        foreach (get_staticroutes() as $route) {
+            /* XXX: get_staticroutes logic works if field is named enabled or disabled. this may be changed to enabled only later. */
+            if (!empty($GatewaysList[$route['gateway']]['interface']) && empty($route['disabled'])) {
+                $gw = $GatewaysList[$route['gateway']];
+                $routeent = explode("/", $route['network']);
+                if (is_ipaddrv4($routeent[0]) && empty($ifdetails[$gw['if']]['ipv4'])) {
+                    continue;
+                } elseif (is_ipaddrv6($routeent[0]) && empty($ifdetails[$gw['if']]['ipv6'])) {
+                    continue;
+                } elseif (!is_ipaddrv4($routeent[0]) && !is_ipaddrv6($routeent[0])) {
+                    continue;
+                }
+
+                $networks = [];
+                $networks[] = ['from' => "({$gw['if']}:network)", 'to' => $route['network']];
+                $networks[] = ['to' => "({$gw['if']}:network)", 'from' => $route['network']];
+                $proto = strpos($route['network'], ":") !== false ? "inet6" : "inet";
+                foreach ($networks as $network) {
+                    $fw->registerFilterRule(
+                        10,
+                        ['interface' => $gw['interface'], 'statetype' => 'sloppy', 'ipprotocol' => $proto,
+                            'protocol' => 'tcp','flags' => 'any', 'from' => $network['from'],
+                            'to' => $network['to'], 'quick' => false,
+                            'descr' => "pass traffic between statically routed subnets",
+                            '#ref' => 'system_advanced_firewall.php#bypassstaticroutes'],
+                        $defaults['pass']
+                    );
+                    $fw->registerFilterRule(
+                        10,
+                        ['interface' => $gw['interface'], 'statetype' => 'sloppy', 'ipprotocol' => $proto,
+                            'from' => $network['from'],'to' => $network['to'], 'quick' => false,
+                            'descr' => "pass traffic between statically routed subnets",
+                            '#ref' => 'system_advanced_firewall.php#bypassstaticroutes'],
+                        $defaults['pass']
+                    );
+                }
+            }
+        }
+    }
+
+    $mdlFilter = new OPNsense\Firewall\Filter();
+
+    foreach ($mdlFilter->rules->rule->sortedBy(['sequence']) as $key => $rule) {
+        $content = $rule->serialize();
+        $content['#ref'] = 'ui/firewall/filter#' . (string)$rule->getAttributes()['uuid'];
+        $fw->registerFilterRule($rule->getPriority(), $content);
+    }
+
+    foreach ($mdlFilter->snatrules->rule->sortedBy(['sequence']) as $key => $rule) {
+         $fw->registerSNatRule(50, $rule->serialize());
+    }
+
+    foreach ($mdlFilter->onetoone->rule->sortedBy(['sequence']) as $key => $rule) {
+        $fw->registerDNatRule(500, $rule->serialize());
+    }
+
+    foreach ($mdlFilter->npt->rule->sortedBy(['sequence']) as $key => $rule) {
+        $fw->registerNptRule(50, $rule->serialize());
+    }
+}
+
+function pf_syslog()
+{
+    $logfacilities = [];
+
+    $logfacilities['firewall'] = ['facility' => ['firewall']];
+    $logfacilities['filter'] = ['facility' => ['filterlog']];
+
+    return $logfacilities;
+}
+
+function pf_xmlrpc_sync()
+{
+    $result = [];
+
+    $result[] = [
+        'description' => gettext('Firewall Groups'),
+        'section' => 'ifgroups.ifgroupentry',
+        'id' => 'ifgroups',
+        'services' => ['pf'],
+    ];
+    $result[] = [
+        'description' => gettext('Firewall Rules'),
+        'help' => gettext('Synchronize the firewall rules to the other HA host.'),
+        'section' => 'filter,OPNsense.Firewall.Filter.rules',
+        'id' => 'rules',
+        'services' => ['pf'],
+    ];
+    $result[] = [
+        'description' => gettext('Firewall Schedules'),
+        'help' => gettext('Synchronize the firewall schedules to the other HA host.'),
+        'section' => 'schedules',
+        'id' => 'schedules',
+        'services' => ['pf'],
+    ];
+    $result[] = [
+        'description' => gettext('Firewall Categories'),
+        'section' => 'OPNsense.Firewall.Category',
+        'id' => 'categories',
+    ];
+    $result[] = [
+        'description' => gettext('Firewall Log Templates'),
+        'section' => 'OPNsense.Firewall.Lvtemplate',
+        'id' => 'lvtemplate',
+    ];
+    $result[] = [
+        'description' => gettext('Aliases'),
+        'help' => gettext('Synchronize the aliases over to the other HA host.'),
+        'section' => 'aliases,OPNsense.Firewall.Alias',
+        'id' => 'aliases',
+        'services' => ['pf'],
+    ];
+    $result[] = [
+        'description' => gettext('NAT'),
+        'help' => gettext('Synchronize the NAT rules over to the other HA host.'),
+        'section' => 'nat,OPNsense.Firewall.Filter.snatrules,OPNsense.Firewall.Filter.npt,OPNsense.Firewall.Filter.onetoone',
+        'id' => 'nat',
+        'services' => ['pf'],
+    ];
+
+    return $result;
+}

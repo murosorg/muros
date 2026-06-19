@@ -1,0 +1,437 @@
+%YAML 1.1
+---
+
+vars:
+  address-groups:
+    HOME_NET: "[{{OPNsense.IDS.general.homenet}}]"
+    EXTERNAL_NET: "!$HOME_NET"
+    HTTP_SERVERS: "$HOME_NET"
+    SMTP_SERVERS: "$HOME_NET"
+    SQL_SERVERS: "$HOME_NET"
+    DNS_SERVERS: "$HOME_NET"
+    TELNET_SERVERS: "$HOME_NET"
+    AIM_SERVERS: "$EXTERNAL_NET"
+    DC_SERVERS: "$HOME_NET"
+    DNP3_SERVER: "$HOME_NET"
+    DNP3_CLIENT: "$HOME_NET"
+    MODBUS_CLIENT: "$HOME_NET"
+    MODBUS_SERVER: "$HOME_NET"
+    ENIP_CLIENT: "$HOME_NET"
+    ENIP_SERVER: "$HOME_NET"
+
+  port-groups:
+    HTTP_PORTS: "80"
+    SHELLCODE_PORTS: "!80"
+    ORACLE_PORTS: 1521
+    SSH_PORTS: 22
+    DNP3_PORTS: 20000
+    MODBUS_PORTS: 502
+    FILE_DATA_PORTS: "[$HTTP_PORTS,110,143]"
+    FTP_PORTS: 21
+    GENEVE_PORTS: 6081
+    VXLAN_PORTS: 4789
+    TEREDO_PORTS: 3544
+
+default-log-dir: /var/log/suricata/
+
+stats:
+  enabled: yes
+  interval: 300
+
+outputs:
+  - eve-log:
+      enabled: yes
+      filetype: regular
+      filename: eve.json
+      pcap-file: false
+      community-id: false
+      community-id-seed: 0
+
+      types:
+        - alert:
+{% if not helpers.empty('OPNsense.IDS.general.LogPayload') %}
+             payload: yes
+             payload-buffer-size: 100kb
+             payload-printable: yes
+{% endif %}
+             tagged-packets: yes
+        - anomaly:
+            enabled: yes
+
+{%      if not helpers.empty('OPNsense.IDS.general.eveLog.http.enable') %}
+        - http:
+            extended: {{ 'no' if helpers.empty('OPNsense.IDS.general.eveLog.http.extended') else 'yes' }}
+{%          if not helpers.empty('OPNsense.IDS.general.eveLog.http.dumpAllHeaders') %}
+            dump-all-headers: {{OPNsense.IDS.general.eveLog.http.dumpAllHeaders}}
+{%          endif %}
+{%       endif %}
+{%      if not helpers.empty('OPNsense.IDS.general.eveLog.tls.enable') %}
+        - tls:
+            extended: {{ 'no' if helpers.empty('OPNsense.IDS.general.eveLog.tls.extended') else 'yes' }}
+            session-resumption: {{ 'no' if helpers.empty('OPNsense.IDS.general.eveLog.tls.sessionResumption') else 'yes' }}
+{%          set tls_custom = OPNsense.IDS.general.eveLog.tls.custom|default('') %}
+            ja4: {{ 'on' if not helpers.empty('OPNsense.IDS.general.eveLog.tls.extended') or 'ja4' in tls_custom.split(',') else 'off' }}
+{%          if tls_custom != '' %}
+            custom: [{{ tls_custom }}]
+{%          endif %}
+{%      endif %}
+
+        - drop:
+            alerts: yes
+            flows: start
+
+        - ssh
+
+{% if not helpers.empty('OPNsense.IDS.general.syslog_eve') %}
+  - eve-log:
+      enabled: yes
+      type: syslog
+      identity: "suricata"
+      facility: local5
+      level: Info
+      community-id: true
+      community-id-seed: 0
+      xff:
+        enabled: yes
+        mode: extra-data
+        deployment: reverse
+        header: X-Forwarded-For
+      types:
+        - alert:
+{%     if not helpers.empty('OPNsense.IDS.general.LogPayload') %}
+             payload: no
+             payload-buffer-size: 4kb
+             payload-printable: yes
+{%     endif %}
+             metadata: yes
+             tagged-packets: yes
+{% endif %}
+
+  - stats:
+      enabled: yes
+      filename: stats.log
+      append: yes
+      totals: yes
+      threads: no
+
+  - syslog:
+      enabled: {% if helpers.empty('OPNsense.IDS.general.syslog') %}no{% else %}yes{% endif +%}
+      facility: local5
+      level: Notice
+
+logging:
+  default-log-level: notice
+  default-output-filter:
+  outputs:
+  - syslog:
+      enabled: yes
+      facility: local5
+      format: "[%i] <%d> -- "
+
+
+app-layer:
+  error-policy: ignore
+  protocols:
+    telnet:
+      enabled: yes
+    rfb:
+      enabled: yes
+      detection-ports:
+        dp: 5900, 5901, 5902, 5903, 5904, 5905, 5906, 5907, 5908, 5909
+    mqtt:
+      enabled: yes
+    krb5:
+      enabled: yes
+    bittorrent-dht:
+      enabled: yes
+    snmp:
+      enabled: yes
+    ike:
+      enabled: yes
+    tls:
+      enabled: yes
+      detection-ports:
+        dp: 443
+      ja3-fingerprints: yes
+      ja4-fingerprints: yes
+
+    pgsql:
+      enabled: no
+      stream-depth: 0
+    dcerpc:
+      enabled: yes
+    ftp:
+      enabled: yes
+    rdp:
+    ssh:
+      enabled: yes
+    http2:
+      enabled: yes
+    smtp:
+      enabled: yes
+      raw-extraction: no
+      mime:
+        decode-mime: yes
+        decode-base64: yes
+        decode-quoted-printable: yes
+        header-value-depth: 2000
+        extract-urls: yes
+        body-md5: no
+      inspected-tracker:
+        content-limit: 100000
+        content-inspect-min-size: 32768
+        content-inspect-window: 4096
+    imap:
+      enabled: detection-only
+    smb:
+      enabled: yes
+      detection-ports:
+        dp: 139, 445
+    nfs:
+      enabled: yes
+    tftp:
+      enabled: yes
+    dns:
+      tcp:
+        enabled: yes
+        detection-ports:
+          dp: 53
+      udp:
+        enabled: yes
+        detection-ports:
+          dp: 53
+
+    http:
+      enabled: yes
+      libhtp:
+         default-config:
+           personality: IDS
+           request-body-limit: 100kb
+           response-body-limit: 100kb
+           request-body-minimal-inspect-size: 32kb
+           request-body-inspect-window: 4kb
+           response-body-minimal-inspect-size: 40kb
+           response-body-inspect-window: 16kb
+           response-body-decompress-layer-limit: 2
+           http-body-inline: auto
+           swf-decompression:
+             enabled: no
+             type: both
+             compress-depth: 100kb
+             decompress-depth: 100kb
+           double-decode-path: no
+           double-decode-query: no
+         server-config:
+
+    modbus:
+      enabled: yes
+      detection-ports:
+        dp: 502
+      stream-depth: 0
+
+    ntp:
+      enabled: yes
+
+    quic:
+      enabled: yes
+
+    dhcp:
+      enabled: yes
+
+    sip:
+
+asn1-max-frames: 256
+
+coredump:
+  max-dump: unlimited
+
+host-mode: auto
+
+runmode: workers
+
+{% if helpers.exists('OPNsense.IDS.general.defaultPacketSize') %}
+default-packet-size: {{OPNsense.IDS.general.defaultPacketSize|default('1514')}}
+{% endif %}
+
+magic-file: /usr/share/misc/magic
+
+legacy:
+  uricontent: enabled
+
+exception-policy: ignore
+
+engine-analysis:
+  rules-fast-pattern: yes
+  rules: yes
+
+pcre:
+  match-limit: 3500
+  match-limit-recursion: 1500
+
+host-os-policy:
+  windows: [0.0.0.0/0]
+  bsd: []
+  bsd-right: []
+  old-linux: []
+  linux: []
+  old-solaris: []
+  solaris: []
+  hpux10: []
+  hpux11: []
+  irix: []
+  macos: []
+  vista: []
+  windows2k3: []
+
+defrag:
+  memcap: 32mb
+  hash-size: 65536
+  trackers: 65535
+  max-frags: 65535
+  prealloc: yes
+  timeout: 60
+
+flow:
+  memcap: 128mb
+  hash-size: 65536
+  prealloc: 10000
+  emergency-recovery: 30
+
+vlan:
+  use-for-tracking: true
+
+livedev:
+  use-for-tracking: false
+
+flow-timeouts:
+
+  default:
+    new: 30
+    established: 300
+    closed: 0
+    bypassed: 100
+    emergency-new: 10
+    emergency-established: 100
+    emergency-closed: 0
+    emergency-bypassed: 50
+  tcp:
+    new: 60
+    established: 600
+    closed: 60
+    bypassed: 100
+    emergency-new: 5
+    emergency-established: 100
+    emergency-closed: 10
+    emergency-bypassed: 50
+  udp:
+    new: 30
+    established: 300
+    bypassed: 100
+    emergency-new: 10
+    emergency-established: 100
+    emergency-bypassed: 50
+  icmp:
+    new: 30
+    established: 300
+    bypassed: 100
+    emergency-new: 10
+    emergency-established: 100
+    emergency-bypassed: 50
+
+stream:
+  memcap: 64mb
+  checksum-validation: yes
+  inline: {% if OPNsense.IDS.general.mode|default("") in ["netmap", "divert"] %}true{% else %}auto{% endif +%}
+
+  midstream-policy: ignore
+  reassembly:
+    memcap: 256mb
+    depth: 1mb
+    toserver-chunk-size: 2560
+    toclient-chunk-size: 2560
+    randomize-chunk-size: yes
+
+host:
+  hash-size: 4096
+  prealloc: 1000
+  memcap: 32mb
+
+decoder:
+  teredo:
+    enabled: true
+    ports: $TEREDO_PORTS
+
+  vxlan:
+    enabled: true
+    ports: $VXLAN_PORTS
+
+  geneve:
+    enabled: true
+    ports: $GENEVE_PORTS
+
+detect:
+  profile: {% if helpers.exists('OPNsense.IDS.general.detect') %} {{ OPNsense.IDS.general.detect.Profile|default("medium")}} {% else %}medium{% endif +%}
+
+  custom-values:
+    toclient-groups: {% if helpers.exists('OPNsense.IDS.general.detect') %} {{ OPNsense.IDS.general.detect.toclient_groups|default("3")}} {% else %}3{% endif +%}
+    toserver-groups: {% if helpers.exists('OPNsense.IDS.general.detect') %} {{ OPNsense.IDS.general.detect.toserver_groups|default("25")}} {% else %}25{% endif +%}
+
+  sgh-mpm-context: auto
+  inspection-recursion-limit: 3000
+
+  prefilter:
+    default: mpm
+
+  profiling:
+    grouping:
+      dump-to-disk: false
+      include-rules: false      # very verbose
+      include-mpm-stats: false
+
+mpm-algo: {% if helpers.exists('OPNsense.IDS.general') %} {{ OPNsense.IDS.general.MPMAlgo|default("ac")}} {% else %}ac{% endif +%}
+
+spm-algo: auto
+
+threading:
+  detect-thread-ratio: 1.0
+
+luajit:
+  states: 128
+
+netmap:
+ - interface: default
+   threads: auto
+   copy-mode: ips
+   disable-promisc: {% if helpers.empty('OPNsense.IDS.general.promisc') %}yes{% else %}no{% endif +%}
+   checksum-checks: auto
+
+  {% if helpers.exists('OPNsense.IDS.general.interfaces') and OPNsense.IDS.general.mode|default("") == "netmap" %}
+    {% for intfName in OPNsense.IDS.general.interfaces.split(',') %}
+
+ - interface: {{helpers.physical_interface(intfName)}}
+   copy-iface: {{helpers.physical_interface(intfName)}}^
+
+ - interface: {{helpers.physical_interface(intfName)}}^
+   copy-iface: {{helpers.physical_interface(intfName)}}
+    {% endfor %}
+  {% endif %}
+
+default-rule-path: /usr/local/etc/suricata/opnsense.rules
+
+rule-files:
+  - suricata.rules
+
+classification-file: /usr/local/etc/suricata/classification.config
+reference-config-file: /usr/local/etc/suricata/reference.config
+
+{# include generated installed_rules.yaml #}
+{% set include_files = ['installed_rules.yaml'] %}{%
+for sfilename in helpers.absolute_glob("/usr/local/etc/suricata/conf.d/*.yaml") %}{%
+  do include_files.append(sfilename)
+%}
+{%  endfor %}
+
+include:
+{% for filename in include_files %}
+  - {{filename}}
+{% endfor %}

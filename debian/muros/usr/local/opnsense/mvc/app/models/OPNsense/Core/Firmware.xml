@@ -1,0 +1,14 @@
+<model>
+    <mount>//system/firmware</mount>
+    <version>1.0.1</version>
+    <description>Firmware settings</description>
+    <items>
+        <mirror type="TextField"/>
+        <flavour type="TextField"/>
+        <plugins type="TextField"/>
+        <type type="TextField"/>
+        <subscription type="TextField"/>
+        <reboot type="BooleanField"/>
+        <aux type="BooleanField"/>
+    </items>
+</model>

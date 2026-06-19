@@ -1,0 +1,453 @@
+<model>
+    <mount>//OPNsense/unboundplus</mount>
+    <description>Unbound configuration</description>
+    <version>1.0.15</version>
+    <items>
+        <general>
+            <enabled type="BooleanField">
+                <Default>0</Default>
+                <Required>Y</Required>
+            </enabled>
+            <port type="PortField">
+                <Default>53</Default>
+                <Required>Y</Required>
+            </port>
+            <stats type="BooleanField"/>
+            <active_interface type=".\UnboundInterfaceField">
+                <Multiple>Y</Multiple>
+            </active_interface>
+            <dnssec type="BooleanField"/>
+            <dns64 type="BooleanField"/>
+            <dns64prefix type="NetworkField">
+                <NetMaskRequired>Y</NetMaskRequired>
+                <AddressFamily>ipv6</AddressFamily>
+            </dns64prefix>
+            <noarecords type="BooleanField"/>
+            <regdhcp type="BooleanField"/>
+            <regdhcpdomain type="TextField">
+                <Mask>/^(?:(?:[a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])\.)*(?:[a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])$/i</Mask>
+                <ValidationMessage>A valid domain must be specified.</ValidationMessage>
+            </regdhcpdomain>
+            <regdhcpstatic type="BooleanField"/>
+            <noreglladdr6 type="BooleanField"/>
+            <noregrecords type="BooleanField"/>
+            <txtsupport type="BooleanField"/>
+            <cacheflush type="BooleanField"/>
+            <safesearch type="BooleanField"/>
+            <local_zone_type type="OptionField">
+                <Default>transparent</Default>
+                <Required>Y</Required>
+                <OptionValues>
+                    <transparent/>
+                    <always_nxdomain/>
+                    <always_refuse/>
+                    <always_transparent/>
+                    <deny/>
+                    <inform/>
+                    <inform_deny/>
+                    <nodefault/>
+                    <refuse/>
+                    <static/>
+                    <typetransparent/>
+                </OptionValues>
+            </local_zone_type>
+            <outgoing_interface type=".\UnboundInterfaceField">
+                <Multiple>Y</Multiple>
+            </outgoing_interface>
+            <enable_wpad type="BooleanField"/>
+        </general>
+        <advanced>
+            <hideidentity type="BooleanField"/>
+            <hideversion type="BooleanField"/>
+            <prefetch type="BooleanField"/>
+            <prefetchkey type="BooleanField"/>
+            <dnssecstripped type="BooleanField"/>
+            <belownxdomain type="BooleanField">
+                <Required>Y</Required>
+                <Default>1</Default>
+            </belownxdomain>
+            <aggressivensec type="BooleanField">
+                <Required>Y</Required>
+                <Default>1</Default>
+            </aggressivensec>
+            <serveexpired type="BooleanField"/>
+            <serveexpiredreplyttl type="NumericField"/>
+            <serveexpiredttl type="NumericField"/>
+            <serveexpiredttlreset type="BooleanField"/>
+            <serveexpiredclienttimeout type="NumericField"/>
+            <qnameminstrict type="BooleanField"/>
+            <extendedstatistics type="BooleanField"/>
+            <logqueries type="BooleanField"/>
+            <logreplies type="BooleanField"/>
+            <logtagqueryreply type="BooleanField"/>
+            <logservfail type="BooleanField"/>
+            <loglocalactions type="BooleanField"/>
+            <logverbosity type="OptionField">
+                <Default>1</Default>
+                <Required>Y</Required>
+                <OptionValues>
+                    <opt1 value="0">Level 0</opt1>
+                    <opt2 value="1">Level 1 (Default)</opt2>
+                    <opt3 value="2">Level 2</opt3>
+                    <opt4 value="3">Level 3</opt4>
+                    <opt5 value="4">Level 4</opt5>
+                    <opt6 value="5">Level 5</opt6>
+                </OptionValues>
+            </logverbosity>
+            <valloglevel type="OptionField">
+                <Default>0</Default>
+                <Required>Y</Required>
+                <OptionValues>
+                    <opt1 value="0">Level 0 (Default)</opt1>
+                    <opt2 value="1">Level 1</opt2>
+                    <opt3 value="2">Level 2</opt3>
+                </OptionValues>
+            </valloglevel>
+            <privatedomain type="CSVListField"/>
+            <privateaddress type="NetworkField">
+                <Required>Y</Required>
+                <WildcardEnabled>N</WildcardEnabled>
+                <Default>0.0.0.0/8,10.0.0.0/8,100.64.0.0/10,169.254.0.0/16,172.16.0.0/12,192.0.2.0/24,192.168.0.0/16,198.18.0.0/15,198.51.100.0/24,203.0.113.0/24,233.252.0.0/24,::1/128,2001:db8::/32,fc00::/8,fd00::/8,fe80::/10</Default>
+                <AsList>Y</AsList>
+            </privateaddress>
+            <insecuredomain type="CSVListField"/>
+            <msgcachesize type="TextField">
+                <Mask>/[0-9]+[kmg]?/i</Mask>
+                <ValidationMessage>The cache size should be numeric, optionally appended with 'k', 'm', or 'g'.</ValidationMessage>
+            </msgcachesize>
+            <rrsetcachesize type="TextField">
+                <Mask>/[0-9]+[kmg]?/i</Mask>
+                <ValidationMessage>The cache size should be numeric, optionally appended with 'k', 'm', or 'g'.</ValidationMessage>
+            </rrsetcachesize>
+            <outgoingnumtcp type="NumericField"/>
+            <incomingnumtcp type="NumericField"/>
+            <numqueriesperthread type="NumericField"/>
+            <outgoingrange type="NumericField"/>
+            <jostletimeout type="NumericField"/>
+            <discardtimeout type="NumericField"/>
+            <cachemaxttl type="NumericField"/>
+            <cachemaxnegativettl type="NumericField"/>
+            <cacheminttl type="NumericField"/>
+            <infrahostttl type="NumericField"/>
+            <infrakeepprobing type="BooleanField"/>
+            <infracachenumhosts type="NumericField"/>
+            <unwantedreplythreshold type="NumericField"/>
+        </advanced>
+        <acls>
+            <default_action type="OptionField">
+                <Default>allow</Default>
+                <Required>Y</Required>
+                <OptionValues>
+                    <opt1 value="allow">Allow</opt1>
+                    <opt2 value="deny">Deny</opt2>
+                    <opt3 value="refuse">Refuse</opt3>
+                </OptionValues>
+            </default_action>
+            <acl type="ArrayField">
+                <enabled type="BooleanField">
+                    <Default>1</Default>
+                    <Required>Y</Required>
+                </enabled>
+                <name type="TextField">
+                    <Required>Y</Required>
+                    <ValidationMessage>An Access list name is required.</ValidationMessage>
+                </name>
+                <action type="OptionField">
+                    <Default>allow</Default>
+                    <Required>Y</Required>
+                    <OptionValues>
+                        <opt1 value="allow">Allow</opt1>
+                        <opt2 value="deny">Deny</opt2>
+                        <opt3 value="refuse">Refuse</opt3>
+                        <opt4 value="allow_snoop">Allow Snoop</opt4>
+                        <opt5 value="deny_non_local">Deny Non-local</opt5>
+                        <opt6 value="refuse_non_local">Refuse Non-local</opt6>
+                    </OptionValues>
+                </action>
+                <networks type="NetworkField">
+                    <Multiple>Y</Multiple>
+                    <Required>Y</Required>
+                    <ValidationMessage>Please specify a one or more valid network segment in CIDR notation (Ipv4/IPv6).</ValidationMessage>
+                    <WildcardEnabled>N</WildcardEnabled>
+                    <NetMaskRequired>Y</NetMaskRequired>
+                    <AsList>Y</AsList>
+                </networks>
+                <description type="DescriptionField"/>
+            </acl>
+        </acls>
+        <dnsbl>
+            <blocklist type="ArrayField">
+                <enabled type="BooleanField">
+                    <Default>1</Default>
+                    <Required>Y</Required>
+                </enabled>
+                <type type="OptionField">
+                    <Multiple>Y</Multiple>
+                    <OptionValues>
+                        <opt1 value="General Blocklists">
+                            <atf>Abuse.ch - ThreatFox IOC</atf>
+                            <ag>AdGuard List</ag>
+                            <el>EasyList</el>
+                            <ep>EasyPrivacy</ep>
+                            <sb>Steven Black List</sb>
+                            <yy>YoYo List</yy>
+                        </opt1>
+                        <opt2 value="Hagezi Multi - Clean the Internet">
+                            <hgz001>LIGHT - Relaxed Blocking</hgz001>
+                            <hgz002>NORMAL - Relaxed/Balanced Blocking</hgz002>
+                            <hgz003>PRO - Balanced Blocking</hgz003>
+                            <hgz005>PRO++ - Balanced/Aggressive Blocking</hgz005>
+                            <hgz007>ULTIMATE - Aggressive Blocking</hgz007>
+                        </opt2>
+                        <opt3 value="OISD Blocklists">
+                            <oisd0>Ads Blocklist</oisd0>
+                            <oisd1>Big Blocklist (incl. Ads)</oisd1>
+                            <oisd2>NSFW Blocklist</oisd2>
+                        </opt3>
+                        <opt4 value="Hagezi Targeted Lists">
+                            <hgz011>Threat Intelligence Feeds</hgz011>
+                            <hgz009>Fake - scams / fakes</hgz009>
+                            <hgz010>Pop-Up Ads</hgz010>
+                            <hgz014>DoH/VPN/TOR/Proxy Bypass</hgz014>
+                            <hgz015>Safesearch not supported</hgz015>
+                            <hgz016>Dynamic DNS blocking</hgz016>
+                            <hgz017>Badware Hoster blocking</hgz017>
+                            <hgz018>Anti Piracy</hgz018>
+                            <hgz019>Gambling</hgz019>
+                            <hgz022>Social Networks</hgz022>
+                        </opt4>
+                        <opt5 value="Minimal Hardware Requirements">
+                            <hgz004>Multi PRO - Mini </hgz004>
+                            <hgz006>Multi PRO++ - Mini</hgz006>
+                            <hgz008>Multi ULTIMATE - Mini</hgz008>
+                            <hgz012>Threat Intelligence Feeds - Medium</hgz012>
+                            <hgz013>Threat Intelligence Feeds - Mini</hgz013>
+                            <hgz020>Gambling - Medium</hgz020>
+                            <hgz021>Gambling - Mini</hgz021>
+                        </opt5>
+                    </OptionValues>
+                </type>
+                <lists type="CSVListField"/>
+                <allowlists type="CSVListField"/>
+                <blocklists type="CSVListField"/>
+                <wildcards type="CSVListField">
+                    <Mask>/^((?:(?:[a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])\.){1,})(?:[a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])$/i</Mask>
+                    <ValidationMessage>A valid domain must be specified.</ValidationMessage>
+                    <MaskPerItem>Y</MaskPerItem>
+                </wildcards>
+                <source_nets type="NetworkField">
+                    <Multiple>Y</Multiple>
+                    <Strict>Y</Strict>
+                    <ValidationMessage>Please specify a valid network segment or address (IPv4/IPv6). If a mask is provided, please omit the host bits.</ValidationMessage>
+                    <WildcardEnabled>N</WildcardEnabled>
+                    <NetMaskRequired>N</NetMaskRequired>
+                    <AsList>Y</AsList>
+                </source_nets>
+                <address type="NetworkField">
+                    <NetMaskAllowed>N</NetMaskAllowed>
+                    <AddressFamily>ipv4</AddressFamily>
+                </address>
+                <nxdomain type="BooleanField"/>
+                <cache_ttl type="IntegerField">
+                    <Required>Y</Required>
+                    <Default>72000</Default>
+                </cache_ttl>
+                <description type="DescriptionField">
+                    <Required>Y</Required>
+                    <ValidationMessage>To keep track of which policies are applicable to source networks, a description should be provided. It should be a string between 1 and 255 characters.</ValidationMessage>
+                </description>
+            </blocklist>
+        </dnsbl>
+        <forwarding>
+            <enabled type="BooleanField"/>
+        </forwarding>
+        <dots>
+            <dot type="ArrayField">
+                <enabled type="BooleanField">
+                    <Required>Y</Required>
+                    <Default>1</Default>
+                </enabled>
+                <type type="OptionField">
+                    <Required>Y</Required>
+                    <Default>dot</Default>
+                    <OptionValues>
+                        <dot>DNS over TLS</dot>
+                        <forward>Forward</forward>
+                    </OptionValues>
+                </type>
+                <domain type="HostnameField">
+                    <IsDNSName>Y</IsDNSName>
+                    <IpAllowed>N</IpAllowed>
+                    <ValidationMessage>A valid domain must be specified.</ValidationMessage>
+                </domain>
+                <server type="NetworkField">
+                    <Required>Y</Required>
+                </server>
+                <port type="PortField"/>
+                <verify type="HostnameField"/>
+                <forward_tcp_upstream type="BooleanField">
+                    <Default>0</Default>
+                    <Required>Y</Required>
+                </forward_tcp_upstream>
+                <forward_first type="BooleanField">
+                    <Default>0</Default>
+                    <Required>Y</Required>
+                </forward_first>
+                <description type="DescriptionField"/>
+            </dot>
+        </dots>
+        <hosts>
+            <host type="ArrayField">
+                <enabled type="BooleanField">
+                    <Default>1</Default>
+                    <Required>Y</Required>
+                </enabled>
+                <hostname type="HostnameField">
+                    <HostWildcardAllowed>Y</HostWildcardAllowed>
+                    <IsDNSName>Y</IsDNSName>
+                    <IpAllowed>N</IpAllowed>
+                    <ValidationMessage>A valid hostname must be specified.</ValidationMessage>
+                </hostname>
+                <domain type="TextField">
+                    <Required>Y</Required>
+                    <Mask>/^(?:(?:[a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])\.)*(?:[a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])$/i</Mask>
+                    <ValidationMessage>A valid domain must be specified.</ValidationMessage>
+                </domain>
+                <rr type="OptionField">
+                    <Required>Y</Required>
+                    <Default>A</Default>
+                    <OptionValues>
+                        <A>A (IPv4 address)</A>
+                        <AAAA>AAAA (IPv6 address)</AAAA>
+                        <MX>MX (mail server)</MX>
+                        <TXT>TXT (text)</TXT>
+                    </OptionValues>
+                    <Constraints>
+                        <check001>
+                            <reference>mxprio.check001</reference>
+                        </check001>
+                        <check002>
+                            <reference>mx.check001</reference>
+                        </check002>
+                        <check003>
+                            <reference>server.check001</reference>
+                        </check003>
+                        <check004>
+                            <reference>server.check002</reference>
+                        </check004>
+                        <check005>
+                            <reference>txtdata.check001</reference>
+                        </check005>
+                    </Constraints>
+                </rr>
+                <mxprio type="IntegerField">
+                    <Constraints>
+                        <check001>
+                            <ValidationMessage>The field MX Priority is required.</ValidationMessage>
+                            <type>SetIfConstraint</type>
+                            <field>rr</field>
+                            <check>MX</check>
+                        </check001>
+                    </Constraints>
+                </mxprio>
+                <mx type="HostnameField">
+                    <Constraints>
+                        <check001>
+                            <ValidationMessage>The field MX Host is required.</ValidationMessage>
+                            <type>SetIfConstraint</type>
+                            <field>rr</field>
+                            <check>MX</check>
+                        </check001>
+                    </Constraints>
+                </mx>
+                <ttl type="IntegerField">
+                    <!-- https://datatracker.ietf.org/doc/html/rfc2181 -->
+                    <MaximumValue>2147483647</MaximumValue>
+                    <MinimumValue>0</MinimumValue>
+                </ttl>
+                <server type="NetworkField">
+                    <Constraints>
+                        <check001>
+                            <ValidationMessage>The field IP address is required.</ValidationMessage>
+                            <type>SetIfConstraint</type>
+                            <field>rr</field>
+                            <check>A</check>
+                        </check001>
+                        <check002>
+                            <ValidationMessage>The field IP address is required.</ValidationMessage>
+                            <type>SetIfConstraint</type>
+                            <field>rr</field>
+                            <check>AAAA</check>
+                        </check002>
+                    </Constraints>
+                </server>
+                <txtdata type="DescriptionField">
+                    <!-- Use DescriptionField to cap to 255 characters -->
+                    <Constraints>
+                        <check001>
+                            <ValidationMessage>The field TXT Data is required.</ValidationMessage>
+                            <type>SetIfConstraint</type>
+                            <field>rr</field>
+                            <check>TXT</check>
+                        </check001>
+                    </Constraints>
+                </txtdata>
+                <addptr type="BooleanField">
+                    <Default>1</Default>
+                    <Required>Y</Required>
+                </addptr>
+                <aliases type=".\AliasReflector" volatile="true">
+                    <HostWildcardAllowed>Y</HostWildcardAllowed>
+                    <FqdnWildcardAllowed>Y</FqdnWildcardAllowed>
+                    <IsDNSName>Y</IsDNSName>
+                    <IpAllowed>N</IpAllowed>
+                    <AsList>Y</AsList>
+                </aliases>
+                <description type="DescriptionField"/>
+            </host>
+        </hosts>
+        <aliases>
+            <alias type="ArrayField">
+                <enabled type="BooleanField">
+                    <Default>1</Default>
+                    <Required>Y</Required>
+                </enabled>
+                <host type="ModelRelationField">
+                    <Model>
+                        <host>
+                            <source>OPNsense.Unbound.Unbound</source>
+                            <items>hosts.host</items>
+                            <display>hostname,domain</display>
+                            <display_format>%s.%s</display_format>
+                        </host>
+                    </Model>
+                    <Required>Y</Required>
+                </host>
+                <hostname type="HostnameField">
+                    <Constraints>
+                        <check001>
+                            <ValidationMessage>The host field is required if a domain has not been specified.</ValidationMessage>
+                            <type>SetIfConstraint</type>
+                            <field>domain</field>
+                        </check001>
+                    </Constraints>
+                    <HostWildcardAllowed>Y</HostWildcardAllowed>
+                    <IsDNSName>Y</IsDNSName>
+                    <IpAllowed>N</IpAllowed>
+                </hostname>
+                <domain type="TextField">
+                    <Constraints>
+                        <check001>
+                            <ValidationMessage>The domain field is required if a host has not been specified.</ValidationMessage>
+                            <type>SetIfConstraint</type>
+                            <field>hostname</field>
+                        </check001>
+                    </Constraints>
+                    <Mask>/^(?:(?:[a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])\.)*(?:[a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])$/i</Mask>
+                    <ValidationMessage>A valid domain must be specified.</ValidationMessage>
+                </domain>
+                <description type="DescriptionField"/>
+            </alias>
+        </aliases>
+    </items>
+</model>

@@ -1,0 +1,82 @@
+<form>
+    <field>
+        <id>dot.enabled</id>
+        <label>Enabled</label>
+        <type>checkbox</type>
+        <help>Enable or disable this server.</help>
+        <grid_view>
+            <width>6em</width>
+            <type>boolean</type>
+            <formatter>rowtoggle</formatter>
+        </grid_view>
+    </field>
+    <field>
+        <id>dot.domain</id>
+        <label>Domain</label>
+        <type>text</type>
+        <help>
+            If a domain is entered here, queries for this specific domain will be forwarded to the specified server.
+            Leave blank to forward all queries to the specified server (default).
+        </help>
+    </field>
+    <field>
+        <id>dot.server</id>
+        <label>Server IP</label>
+        <type>text</type>
+        <help>IP address of DNS server to forward all requests.</help>
+    </field>
+    <field>
+        <id>dot.port</id>
+        <label>Server Port</label>
+        <type>text</type>
+        <help>Port of DNS server, for usual DNS use 53, if you use DoT set it to 853.</help>
+    </field>
+    <field>
+        <id>dot.forward_tcp_upstream</id>
+        <label>Forward TCP upstream</label>
+        <type>checkbox</type>
+        <advanced>true</advanced>
+        <help>
+            Upstream queries use TCP only for transport regardless of global flag tcp-upstream.
+            Please note this setting applies to the domain, so when multiple forwarders are defined for the same domain,
+            all are assumed to use tcp only.
+        </help>
+        <grid_view>
+            <type>boolean</type>
+            <formatter>boolean</formatter>
+            <visible>false</visible>
+        </grid_view>
+    </field>
+    <field>
+        <id>dot.forward_first</id>
+        <label>Forward first</label>
+        <type>checkbox</type>
+        <help>
+            If a forwarded query is met with a SERVFAIL error, and this option is enabled, Unbound will fall back to normal recursive resolution for this query as if no query forwarding had been specified. The fallback will only occur after a delay, so consider refining any server timeouts as needed. Please note this setting applies to the domain, so when multiple forwarders are defined for the same domain, all are assumed to use this setting.
+        </help>
+        <grid_view>
+            <type>boolean</type>
+            <formatter>boolean</formatter>
+            <visible>false</visible>
+        </grid_view>
+    </field>
+    <field>
+        <id>dot.verify</id>
+        <label>Verify CN</label>
+        <type>text</type>
+        <help>
+            The Common Name of the DNS server (e.g. dns.example.com). This field is required to verify its TLS certificate.
+            DNS-over-TLS is susceptible to man-in-the-middle attacks unless certificates can be verified.
+            Leave empty to accept self-signed yet also potentially fraudulent certificates.
+        </help>
+        <grid_view>
+            <visible>false</visible>
+        </grid_view>
+    </field>
+    <field>
+        <id>dot.description</id>
+        <label>Description</label>
+        <type>text</type>
+        <help>You may enter a description here for your reference (not parsed).</help>
+    </field>
+</form>

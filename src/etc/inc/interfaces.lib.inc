@@ -39,37 +39,47 @@ function legacy_interface_error($cmd, $opt = null)
 
 function legacy_interface_listget($flag = 'all')
 {
-    $cmd_wlan = 'sysctl -n net.wlan.devices';
-    $cmd = '/sbin/ifconfig -l';
+    /*
+     * MurOS: enumerate network devices with iproute2 instead of `ifconfig -l`.
+     * Wireless devices are detected through sysfs (the cfg80211 "phy80211" link
+     * present under /sys/class/net/<dev>) rather than the FreeBSD
+     * net.wlan.devices sysctl. With $flag === 'up' only administratively up
+     * devices are returned (the iproute2 "UP" flag), matching `ifconfig -lu`.
+     */
     $ifs_wlan = [];
+    foreach (glob('/sys/class/net/*/phy80211') as $path) {
+        $ifs_wlan[] = basename(dirname($path));
+    }
+
+    if ($flag === 'wlan') {
+        return $ifs_wlan;
+    }
+
     $ifs = [];
-
-    exec($cmd_wlan . ' 2>&1', $out_wlan, $ret_wlan);
-    if (!$ret_wlan && !empty($out_wlan[0])) {
-        $ifs_wlan = explode(' ', $out_wlan[0]);
-    }
-
-    if ($flag === 'up') {
-        $cmd .= 'u';
-    } elseif ($flag === 'wlan') {
-        return ($ifs_wlan);
-    }
-
-    exec($cmd . ' 2>&1', $out, $ret);
+    $out = [];
+    exec('/usr/sbin/ip -j link show 2>/dev/null', $out, $ret);
     if ($ret) {
-        legacy_interface_error($cmd);
-        return ($ifs);
+        legacy_interface_error('ip -j link show');
+        return $ifs;
     }
 
-    if (isset($out[0])) {
-        $ifs = explode(' ', $out[0]);
+    foreach ((json_decode(implode('', $out), true) ?: []) as $link) {
+        if (empty($link['ifname'])) {
+            continue;
+        }
+        if ($flag === 'up' && !in_array('UP', $link['flags'] ?? [])) {
+            continue;
+        }
+        $ifs[] = $link['ifname'];
     }
 
-    if (count($ifs_wlan)) {
-        $ifs = array_merge($ifs, $ifs_wlan);
+    foreach ($ifs_wlan as $wlan) {
+        if (!in_array($wlan, $ifs)) {
+            $ifs[] = $wlan;
+        }
     }
 
-    return ($ifs);
+    return $ifs;
 }
 
 function legacy_interface_flags($ifs, $flag, $report_errors = true)

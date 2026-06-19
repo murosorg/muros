@@ -1,0 +1,2 @@
+rc.conf.d:/etc/rc.conf.d/kea
+keactrl.conf:/usr/local/etc/kea/keactrl.conf

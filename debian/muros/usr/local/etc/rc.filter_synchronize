@@ -1,0 +1,359 @@
+#!/usr/local/bin/php
+<?php
+
+/*
+ * Copyright (C) 2016 Deciso B.V.
+ * Copyright (C) 2004-2006 Scott Ullrich <sullrich@gmail.com>
+ * Copyright (C) 2005 Bill Marquette <bill.marquette@gmail.com>
+ * Copyright (C) 2006 Peter Allgeyer <allgeyer@web.de>
+ * Copyright (C) 2008 Ermal Luçi
+ * Copyright (C) 2003-2004 Manuel Kasper <mk@neon1.net>
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *
+ * 1. Redistributions of source code must retain the above copyright notice,
+ *    this list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
+ * AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+ * AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY,
+ * OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ */
+
+require_once("config.inc");
+require_once("filter.inc");
+require_once("util.inc");
+require_once("interfaces.inc");
+require_once("XMLRPC_Client.inc");
+
+exit_on_bootup();
+
+function guess_interface_from_ip($ipaddress)
+{
+    if (is_ipaddrv4($ipaddress)) {
+        $family = "inet";
+    } elseif (is_ipaddrv6($ipaddress)) {
+        $family = "inet6";
+    } else {
+        return false;
+    }
+
+    /* search for the route with the largest subnet mask in route table */
+    $largest_mask = 0;
+    $best_if = null;
+
+    foreach (shell_safe('/usr/bin/netstat -rnWf %s', $family, true) as $line) {
+        $fields = preg_split("/\s+/", $line);
+        if (is_subnet($fields[0])) {
+            if (ip_in_subnet($ipaddress, $fields[0])) {
+                list($ip, $mask) = explode('/', $fields[0]);
+                if ($mask > $largest_mask) {
+                    $best_if = $fields[5];
+                    $largest_mask = $mask;
+                }
+            }
+        }
+    }
+
+    if (!empty($best_if)) {
+        return $best_if;
+    }
+
+    $output = shell_safe('/sbin/route -n get %s | /usr/bin/awk \'/interface/ { print $2; };\'', $ipaddress);
+    if (empty($output)) {
+        return false;
+    }
+
+    return $output;
+}
+
+/**
+ * fetch carp vips from config with modified advskew for the backup host to use
+ * @return array
+ */
+function get_vip_config_section(): array
+{
+    global $config;
+
+    if (!isset($config['virtualip']['vip'])) {
+        return [];
+    }
+    $temp = array();
+    $temp['vip'] = array();
+    foreach($config['virtualip']['vip'] as $section) {
+        if (!empty($section['vhid'])) {
+            if (isset($section['advskew']) && $section['advskew'] !== '') {
+                $section['advskew'] = min(intval($section['advskew']) + 100, 254);
+            }
+            $temp['vip'][] = $section;
+        }
+    }
+    return $temp;
+}
+
+/**
+ * validate remote config version
+ * @param string $url backup url
+ * @param string $username remote username
+ * @param string $password remote password
+ * @param boolean $debug enable debug output
+ * @return boolean
+ */
+function carp_check_version($url, $username, $password, $debug = false)
+{
+    $client = new SimpleXMLRPC_Client($url, 240);
+    $client->debug = $debug;
+    $client->setCredentials($username, $password);
+    if ($client->query('opnsense.firmware_version')) {
+        $remote_version = $client->getResponse();
+    } else {
+        // propagate error to log
+        log_msg("An error occurred while attempting XMLRPC sync with username {$username} and {$url} " . $client->error, LOG_ERR);
+        // print communication details on failure
+        echo $client->getDetails();
+        return false;
+    }
+
+    if (!is_array($remote_version) && trim($remote_version) == "Authentication failed") {
+        log_msg("An authentication failure occurred while trying to access {$url} (opnsense.firmware_version).", LOG_ERR);
+        return false;
+    }
+
+    return true;
+}
+
+/**
+ * traverse config structure and remove (unset) all "nosync" items
+ * @param array $cnf_structure pointer to config data
+ */
+function remove_nosync(&$cnf_structure)
+{
+    if (!is_array($cnf_structure)) {
+        return false;
+    } else {
+        foreach ($cnf_structure as $cnf_key => &$cnf_data) {
+            // nosync is boolean in mvc code, and either unset or 1 in legacy code.
+            if (is_array($cnf_data) && !empty($cnf_data['nosync'])) {
+                unset($cnf_structure[$cnf_key]);
+            } else {
+                remove_nosync($cnf_data);
+            }
+        }
+    }
+}
+
+/**
+ * find config section by reference (dot notation)
+ * for example system.user.0 points to the first entry in <system><user> xml config section
+ * @param array $cnf_structure_in pointer to config data
+ * @param array $cnf_structure_out pointer to config data
+ * @param string $reference reference pointer (system.user for example)
+ * @return null
+ */
+function copy_conf_section(&$cnf_structure_in, &$cnf_structure_out, $reference)
+{
+    $cnf_path = explode('.', $reference);
+    $cnf_path_depth = 1;
+    foreach ($cnf_path as $cnf_section) {
+        if (isset($cnf_structure_in[$cnf_section])) {
+            // reference found, create output structure when the data to copy lies deeper.
+            // for example wireless.clone.0 would only copy the first wireless clone, returns false on not found
+            $cnf_structure_in = &$cnf_structure_in[$cnf_section];
+            if ($cnf_path_depth < count($cnf_path)) {
+                if (!isset($cnf_structure_out[$cnf_section])) {
+                    $cnf_structure_out[$cnf_section] = array();
+                }
+                $cnf_structure_out = &$cnf_structure_out[$cnf_section];
+            } else {
+              $cnf_structure_out[$cnf_section] = $cnf_structure_in;
+            }
+        } else {
+            // if source entry doesn't exist, make sure we copy an empty entry to the remote side
+            // otherwise there's no way to know data has been removed
+            if (!isset($cnf_structure_out[$cnf_section])) {
+                $cnf_structure_out[$cnf_section] = array();
+            }
+            $cnf_structure_out = &$cnf_structure_out[$cnf_section];
+        }
+        $cnf_path_depth++;
+    }
+}
+
+/**
+ * traverse config structure and remove (unset) all "nosync" items
+ * @param string $url backup url
+ * @param string $username remote username
+ * @param string $password remote password
+ * @param array $sections sections to transfer
+ * @param boolean $debug enable debug output
+ * @return boolean
+ */
+function carp_sync_xml($url, $username, $password, $sections, $debug)
+{
+    global $config;
+
+    $transport_data = array();
+    foreach ($sections as $section) {
+        switch ($section) {
+            case 'virtualip':
+                // Sync only eligible VIPs to the backup host
+                $transport_data[$section] = get_vip_config_section();
+                break;
+            default:
+                copy_conf_section($config, $transport_data, $section);
+        }
+    }
+
+    // remove items which may not be synced
+    remove_nosync($transport_data);
+
+    // ***** post processing *****
+    // dhcpd, unchanged from legacy code (may need some inspection later)
+    if (is_array($transport_data['dhcpd'])) {
+        foreach($transport_data['dhcpd'] as $dhcpif => $dhcpifconf) {
+            if (isset($dhcpifconf['failover_peerip']) && $dhcpifconf['failover_peerip'] != '') {
+                $int = guess_interface_from_ip($dhcpifconf['failover_peerip']);
+                $transport_data['dhcpd'][$dhcpif]['failover_peerip'] = get_interface_ip($int);
+            }
+        }
+    }
+
+    $client = new SimpleXMLRPC_Client($url,240);
+    $client->debug = $debug;
+    $client->setCredentials($username, $password);
+    if ($client->query('opnsense.restore_config_section', $transport_data)) {
+        $response = $client->getResponse();
+    } else {
+        // propagate error to log
+        log_msg("An error occurred while attempting XMLRPC sync with username {$username} and {$url} " . $client->error, LOG_ERR);
+        // print communication details on failure
+        echo $client->getDetails();
+        return false;
+    }
+
+    if (!is_array($response) && trim($response) == "Authentication failed") {
+        log_msg("An authentication failure occurred while trying to access {$url} (opnsense.restore_config_section).", LOG_ERR);
+        exit;
+    }
+
+    return true;
+}
+
+if (!empty($config['hasync'])) {
+    $hasync = $config['hasync'];
+    $enable_debug = in_array('debug', $argv);
+    $restart_services = in_array('restart_services', $argv);
+    $pre_check_master = in_array('pre_check_master', $argv);
+    if (in_array('-h', $argv)) {
+        // show help and exit
+        echo "rc.filter_synchronize [debug] [restart_services] [pre_check_master]\n";
+        echo "debug - enable debug output\n";
+        echo "restart_services - restart remote configured services\n";
+        echo "pre_check_master - exit when carp is not in master mode\n";
+        exit;
+    }
+
+    if ($pre_check_master) {
+        foreach (legacy_interfaces_details() as $intf) {
+            if (!empty($intf['carp'])) {
+                foreach ($intf['carp'] as $carp) {
+                    if ($carp['status'] !== 'MASTER') {
+                        echo "pre_check_master: backup mode, exit\n";
+                        exit;
+                    }
+                }
+            }
+        }
+    }
+
+    if (empty($hasync['synchronizetoip'])) {
+        log_msg("Config sync not being done because of missing sync IP (this is normal on secondary systems).", LOG_WARNING);
+        exit;
+    }
+    if (is_ipaddrv6($hasync['synchronizetoip'])) {
+        $hasync['synchronizetoip'] = "[{$hasync['synchronizetoip']}]";
+    }
+
+    // determine target url
+    if (substr($hasync['synchronizetoip'],0, 4) == 'http') {
+        // URL provided
+        if (substr($hasync['synchronizetoip'], strlen($hasync['synchronizetoip'])-1, 1) == '/') {
+            $synchronizeto = $hasync['synchronizetoip']."xmlrpc.php";
+        } else {
+            $synchronizeto = $hasync['synchronizetoip']."/xmlrpc.php";
+        }
+    } elseif (!empty($config['system']['webgui']['protocol'])) {
+        // no url provided, assume the backup is using the same settings as our box.
+        $port = $config['system']['webgui']['port'];
+        if (!empty($port)) {
+            $synchronizeto = $config['system']['webgui']['protocol'] . '://'.$hasync['synchronizetoip'].':'.$port."/xmlrpc.php";
+        } else {
+            $synchronizeto = $config['system']['webgui']['protocol'] . '://'.$hasync['synchronizetoip']."/xmlrpc.php";
+        }
+    }
+
+    $sections = [];
+    $syncitems = array_filter(explode(',', $hasync['syncitems'] ?? ''));
+    foreach (plugins_xmlrpc_sync() as $cnf_key => $cnf) {
+        if (in_array($cnf_key, $syncitems)) {
+            foreach (array_filter(explode(',', $cnf['section'] ?? '')) as $section) {
+                $sections[] = $section;
+            }
+        }
+    }
+
+    if (count($sections) <= 0) {
+        log_msg("Nothing has been configured to be synched. Skipping....");
+        exit;
+    }
+
+    $username = empty($hasync['username']) ? "root" : $hasync['username'];
+    if (!carp_check_version($synchronizeto, $username, $hasync['password'], $enable_debug)) {
+        exit;
+    }
+
+    carp_sync_xml($synchronizeto, $username, $hasync['password'], $sections, $enable_debug);
+    $client = new SimpleXMLRPC_Client($synchronizeto, 240);
+    $client->debug = $enable_debug;
+    $client->setCredentials($username, $hasync['password']);
+    if ($client->query("opnsense.filter_configure")) {
+        $response = $client->getResponse();
+    } else {
+        // propagate error to log
+        log_msg("An error occurred while attempting XMLRPC sync with username {$username} and {$url} " . $client->error, LOG_ERR);
+        // print communication details on failure
+        echo $client->getDetails();
+        return false;
+    }
+
+    if (!is_array($response) && trim($response) == "Authentication failed") {
+        log_msg("An authentication failure occurred while trying to access {$url}.", LOG_ERR);
+        exit;
+    }
+
+    if ($restart_services) {
+        $client->query('opnsense.configd_reload_all_templates', []);
+        if ($client->query('opnsense.list_services', [])) {
+            foreach ($client->getResponse() as $service) {
+                $client->query('opnsense.restart_service', [
+                    "service" => $service['name'],
+                    "id" => isset($service['id']) ? $service['name'] : ""
+                ]);
+            }
+        }
+    }
+
+    log_msg("Filter sync successfully completed with {$synchronizeto}.");
+}

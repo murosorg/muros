@@ -1,0 +1,417 @@
+<?php
+
+/*
+ * Copyright (C) 2023-2025 Deciso B.V.
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *
+ * 1. Redistributions of source code must retain the above copyright notice,
+ *    this list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
+ * AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+ * AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY,
+ * OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ */
+
+namespace OPNsense\Kea;
+
+use OPNsense\Base\Messages\Message;
+use OPNsense\Base\BaseModel;
+use OPNsense\Core\Config;
+use OPNsense\Core\Backend;
+use OPNsense\Core\File;
+use OPNsense\Firewall\Util;
+
+class KeaDhcpv4 extends BaseModel
+{
+    /**
+     * Before persisting data into the model, update option_data fields for selected subnets.
+     * setNodes() is used in most cases (at least from our base controller), which should make this a relatvily
+     * save entrypoint to enforce some data.
+     */
+    public function setNodes($data)
+    {
+        $ifconfig = json_decode((new Backend())->configdRun('interface list ifconfig'), true) ?? [];
+        foreach ($this->subnets->subnet4->iterateItems() as $subnet) {
+            if (!$subnet->option_data_autocollect->isEmpty()) {
+                // find first possible candidate to use as a gateway.
+                $host_ip = null;
+                foreach ($ifconfig as $if => $details) {
+                    foreach ($details['ipv4'] as $net) {
+                        if (Util::isIPInCIDR($net['ipaddr'], $subnet->subnet->getValue())) {
+                            $host_ip = $net['ipaddr'];
+                            break 2;
+                        }
+                    }
+                }
+
+                if (!empty($host_ip)) {
+                    $subnet->option_data->routers = $host_ip;
+                    $subnet->option_data->domain_name_servers = $host_ip;
+                    $subnet->option_data->ntp_servers = $host_ip;
+                }
+            }
+        }
+        return parent::setNodes($data);
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function performValidation($validateFullModel = false)
+    {
+        $messages = parent::performValidation($validateFullModel);
+        // validate changed reservations
+        foreach ($this->reservations->reservation->iterateItems() as $reservation) {
+            if (!$validateFullModel && !$reservation->isFieldChanged()) {
+                continue;
+            }
+            $key = $reservation->__reference;
+            $subnet = "";
+            $subnet_node = $this->getNodeByReference("subnets.subnet4.{$reservation->subnet}");
+            if ($subnet_node) {
+                $subnet = $subnet_node->subnet->getValue();
+            }
+            if (!Util::isIPInCIDR($reservation->ip_address->getValue(), $subnet)) {
+                $messages->appendMessage(new Message(gettext("Address not in specified subnet"), $key . ".ip_address"));
+            }
+            if (!$reservation->client_id->isEmpty() && !$reservation->hw_address->isEmpty()) {
+                $messages->appendMessage(new Message(gettext("Either a client ID or a MAC address should be specified, but not both"), $key . ".hw_address"));
+            } elseif ($reservation->client_id->isEmpty() && $reservation->hw_address->isEmpty()) {
+                $messages->appendMessage(new Message(gettext("Either a client ID or a MAC address should be specified."), $key . ".hw_address"));
+            }
+        }
+
+        return $messages;
+    }
+
+    public function isEnabled()
+    {
+        return $this->general->enabled->isEqual('1') && !$this->general->interfaces->isEmpty();
+    }
+
+    /**
+     * should filter rules be enabled
+     * @return bool
+     */
+    public function fwrulesEnabled()
+    {
+        return  $this->general->enabled->isEqual('1') &&
+                $this->general->fwrules->isEqual('1') &&
+                !$this->general->interfaces->isEmpty();
+    }
+
+    private function getConfigPhysicalInterfaces()
+    {
+        $result = [];
+        foreach ($this->general->interfaces->getValues() as $interface) {
+            $device = Util::getRealInterface($interface, 'inet');
+            if (!empty($device)) {
+                $result[] = $device;
+            }
+        }
+        return $result;
+    }
+
+    private function getConfigThisServerHostname()
+    {
+        $hostname = $this->ha->this_server_name->getValue();
+        if (empty($hostname)) {
+            $hostname = (string)Config::getInstance()->object()->system->hostname;
+        }
+        return $hostname;
+    }
+
+    /**
+     * @param FieldType $node node to iterate
+     * @param bool $defaults add defaults when set
+     * @return array
+     */
+    private function collectOptionData($node, $defaults = false)
+    {
+        $result = [];
+        foreach ($node->iterateItems() as $key => $value) {
+            $target_fieldname = str_replace('_', '-', $key);
+            if (!$value->isEqual('')) {
+                if ($key == 'static_routes') {
+                    $value = implode(',', array_map('trim', explode(',', $value->getValue())));
+                }
+                $result[] = [
+                    'name' => $target_fieldname,
+                    'data' => (string)$value
+                ];
+            } elseif ($key == 'domain_name' && $defaults) {
+                $result[] = [
+                    'name' => $target_fieldname,
+                    'data' => (string)Config::getInstance()->object()->system->domain
+                ];
+            }
+        }
+        return $result;
+    }
+
+    private function getConfigSubnets($ddns_enabled = false)
+    {
+        $result = [];
+        $subnet_id = 1;
+        foreach ($this->subnets->subnet4->iterateItems() as $subnet_uuid => $subnet) {
+            $record = [
+                'id' => $subnet_id++,
+                'subnet' => $subnet->subnet->getValue(),
+                'next-server' => $subnet->next_server->getValue(),
+                'match-client-id' => !$subnet->{'match-client-id'}->isEmpty(),
+                'option-data' => $this->collectOptionData($subnet->option_data, true),
+                'pools' => [],
+                'reservations' => []
+            ];
+            /* add valid-lifetime at this level if given */
+            if ($subnet->valid_lifetime->isSet()) {
+                $record['valid-lifetime'] = $subnet->valid_lifetime->asInt();
+            }
+            /* add allocator if selected */
+            if (!$subnet->allocator->isEmpty()) {
+                $record['allocator'] = $subnet->allocator->getValue();
+            }
+            /* add description and other custom keys - not parsed by KEA */
+            $record['user-context'] = ['uuid' => $subnet->getAttribute('uuid')];
+            if (!$subnet->description->isEmpty()) {
+                $record['user-context']['description'] = $subnet->description->getValue();
+            }
+            /* add pools */
+            foreach ($subnet->pools->getValues() as $pool) {
+                $record['pools'][] = ['pool' => $pool];
+            }
+            /* static reservations */
+            foreach ($this->reservations->reservation->iterateItems() as $key => $reservation) {
+                if ($reservation->subnet != $subnet_uuid) {
+                    continue;
+                }
+                $res = [];
+                foreach (['ip_address', 'hostname'] as $key) {
+                    if (!$reservation->$key->isEmpty()) {
+                        $res[str_replace('_', '-', $key)] = $reservation->$key->getValue();
+                    }
+                }
+                if (!$reservation->hw_address->isEmpty()) {
+                    $res['hw-address'] = str_replace('-', ':', $reservation->hw_address->getValue());
+                } elseif (!$reservation->client_id->isEmpty()) {
+                    $res['client-id'] = $reservation->client_id->getValue();
+                }
+
+                if (!$reservation->next_server->isEmpty()) {
+                    $res['next-server'] = $reservation->next_server->getValue();
+                }
+
+                // Add DHCP option-data elements for reservations
+                $optdata = $this->collectOptionData($reservation->option_data);
+                /* append raw options */
+                foreach ($reservation->option->getValues() as $uuid) {
+                    $option = $this->getNodeByReference("options.option.$uuid");
+                    if ($option === null) {
+                        continue;
+                    }
+                    $entry = [
+                        'code' => $option->code->asInt(),
+                        'csv-format' => false,
+                        'data' => $option->data->encodeValue(),
+                        'always-send' => !$option->force->isEmpty(),
+                    ];
+                    /* add description and other custom keys - not parsed by KEA */
+                    $entry['user-context'] = ['uuid' => $option->getAttribute('uuid')];
+                    if (!$option->description->isEmpty()) {
+                        $entry['user-context']['description'] = $option->description->getValue();
+                    }
+                    /* only conditionally send the option when a client option matches */
+                    if (!$option->match_code->isEmpty()) {
+                        $entry['client-classes'] = [$uuid];
+                    }
+                    $optdata[] = $entry;
+                }
+                if (!empty($optdata)) {
+                    $res['option-data'] = $optdata;
+                }
+
+                /* add description and other custom keys - not parsed by KEA */
+                $res['user-context'] = ['uuid' => $reservation->getAttribute('uuid')];
+                if (!$reservation->description->isEmpty()) {
+                    $res['user-context']['description'] = $reservation->description->getValue();
+                }
+
+                $record['reservations'][] = $res;
+            }
+            /* append raw options */
+            foreach ($subnet->option->getValues() as $uuid) {
+                $option = $this->getNodeByReference("options.option.$uuid");
+                if ($option === null) {
+                    continue;
+                }
+                $entry = [
+                    'code' => $option->code->asInt(),
+                    'csv-format' => false,
+                    'data' => $option->data->encodeValue(),
+                    'always-send' => !$option->force->isEmpty(),
+                ];
+                /* add description and other custom keys - not parsed by KEA */
+                $entry['user-context'] = ['uuid' => $option->getAttribute('uuid')];
+                if (!$option->description->isEmpty()) {
+                    $entry['user-context']['description'] = $option->description->getValue();
+                }
+                /* only conditionally send the option when a client option matches */
+                if (!$option->match_code->isEmpty()) {
+                    $entry['client-classes'] = [$uuid];
+                }
+                $record['option-data'][] = $entry;
+            }
+            /* DDNS per subnet settings */
+            if ($ddns_enabled) {
+                if (!$subnet->ddns_qualifying_suffix->isEmpty()) {
+                    $record['ddns-qualifying-suffix'] = $subnet->ddns_qualifying_suffix->getValue();
+                }
+                $record['ddns-send-updates'] = !$subnet->ddns_dns_server->isEmpty();
+                $record['ddns-override-no-update'] = !$subnet->ddns_override_no_update->isEmpty();
+                $record['ddns-override-client-update'] = !$subnet->ddns_override_client_update->isEmpty();
+                $record['ddns-update-on-renew'] = !$subnet->ddns_update_on_renew->isEmpty();
+                if (!$subnet->ddns_conflict_resolution_mode->isEmpty()) {
+                    $record['ddns-conflict-resolution-mode'] = $subnet->ddns_conflict_resolution_mode->getValue();
+                }
+            }
+            $result[] = $record;
+        }
+        return $result;
+    }
+
+    private function getConfigClientClasses()
+    {
+        $result = [];
+        foreach ($this->options->option->iterateItems() as $uuid => $option) {
+            if ($option->match_code->isEmpty()) {
+                continue;
+            }
+            $result[] = [
+                'name' => $uuid,
+                'test' => sprintf('option[%d].hex == 0x%s', $option->match_code->asInt(), $option->match_data->encodeValue()),
+            ];
+        }
+        return $result;
+    }
+
+    private function getExpiredLeasesProcessingConfig()
+    {
+        $config = [];
+        $lexpireFields = iterator_to_array($this->lexpire->iterateItems());
+        foreach ($lexpireFields as $fieldName => $fieldValue) {
+            if (!$fieldValue->isEqual('')) {
+                $keaFieldName = str_replace('_', '-', $fieldName);
+                $config[$keaFieldName] = $fieldValue->asInt();
+            }
+        }
+        return empty($config) ? null : $config;
+    }
+
+    public function generateConfig($target = '/usr/local/etc/kea/kea-dhcp4.conf')
+    {
+        $ddns = new KeaDdns();
+        $ddns_enabled = !$ddns->general->enabled->isEmpty();
+        $cnf = [
+            'Dhcp4' => [
+                'valid-lifetime' => $this->general->valid_lifetime->asInt(),
+                'decline-probation-period' => $this->general->decline_probation_period->isSet() ?
+                                              $this->general->decline_probation_period->asInt() : 600,
+                'interfaces-config' => [
+                    'interfaces' => $this->getConfigPhysicalInterfaces(),
+                    'dhcp-socket-type' => $this->general->dhcp_socket_type->getValue(),
+                    /* socket retries are on a per-interface basis, failing to open one won't affect others */
+                    'service-sockets-max-retries' => $this->general->service_sockets_max_retries->isSet() ?
+                                                     $this->general->service_sockets_max_retries->asInt() : 5,
+                    'service-sockets-retry-wait-time' => $this->general->service_sockets_retry_wait_time->isSet() ?
+                                                         $this->general->service_sockets_retry_wait_time->asInt() : 5000,
+                ],
+                'lease-database' => [
+                    'type' => 'memfile',
+                    'persist' => true,
+                ],
+                'control-socket' => [
+                    'socket-type' => 'unix',
+                    'socket-name' => '/var/run/kea/kea4-ctrl-socket'
+                ],
+                'loggers' => [
+                    [
+                        'name' => 'kea-dhcp4',
+                        'output_options' => [
+                            [
+                                'output' => 'syslog'
+                            ]
+                        ],
+                        'severity' => 'INFO',
+                    ]
+                ],
+                'subnet4' => $this->getConfigSubnets($ddns_enabled),
+                'hooks-libraries' => [
+                    ['library' => '/usr/local/lib/kea/hooks/libdhcp_lease_cmds.so'],
+                    ['library' => '/usr/local/lib/kea/hooks/libdhcp_host_cmds.so'],
+                ],
+            ]
+        ];
+        $client_classes = $this->getConfigClientClasses();
+        if (!empty($client_classes)) {
+            $cnf['Dhcp4']['client-classes'] = $client_classes;
+        }
+        $expiredLeasesConfig = $this->getExpiredLeasesProcessingConfig();
+        if ($expiredLeasesConfig !== null) {
+            $cnf['Dhcp4']['expired-leases-processing'] = $expiredLeasesConfig;
+        }
+        if (!$this->ha->enabled->isEmpty()) {
+            $record = [
+                'library' => '/usr/local/lib/kea/hooks/libdhcp_ha.so',
+                'parameters' => [
+                    'high-availability' => [
+                        [
+                            'this-server-name' => $this->getConfigThisServerHostname(),
+                            'mode' => 'hot-standby',
+                            'heartbeat-delay' => 10000,
+                            'max-response-delay' => 60000,
+                            'max-ack-delay' => 5000,
+                            'max-unacked-clients' => $this->ha->max_unacked_clients->asInt(),
+                            'sync-timeout' => 60000,
+                        ]
+                    ]
+                ]
+            ];
+            foreach ($this->ha_peers->peer->iterateItems() as $peer) {
+                if (!isset($record['parameters']['high-availability'][0]['peers'])) {
+                    $record['parameters']['high-availability'][0]['peers'] = [];
+                }
+                $record['parameters']['high-availability'][0]['peers'][] = array_map(
+                    fn($x) => $x->getValue(),
+                    iterator_to_array($peer->iterateItems())
+                );
+            }
+            $cnf['Dhcp4']['hooks-libraries'][] = $record;
+        }
+        if ($ddns_enabled) {
+            $cnf['Dhcp4']['dhcp-ddns'] = [
+                'enable-updates' => true,
+                'server-ip' => $ddns->general->server_ip->getValue(),
+                'server-port' => $ddns->general->server_port->asInt(),
+            ];
+        }
+        /* Compatibility flags */
+        foreach ($this->general->compatibility->getValues() as $opt) {
+            $cnf['Dhcp4']['compatibility'][$opt] = true;
+        }
+        File::file_put_contents($target, json_encode($cnf, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE), 0600);
+    }
+}

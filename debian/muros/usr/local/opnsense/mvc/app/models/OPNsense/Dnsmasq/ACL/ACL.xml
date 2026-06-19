@@ -1,0 +1,16 @@
+<acl>
+    <page-services-dnsforwarder>
+        <name>Services: Dnsmasq DNS/DHCP: Settings</name>
+        <patterns>
+            <pattern>ui/dnsmasq/*</pattern>
+            <pattern>api/dnsmasq/*</pattern>
+        </patterns>
+    </page-services-dnsforwarder>
+    <page-diagnostics-logs-dnsmasq>
+        <name>Services: Dnsmasq DNS/DHCP: Log File</name>
+        <patterns>
+            <pattern>ui/diagnostics/log/core/dnsmasq/*</pattern>
+            <pattern>api/diagnostics/log/core/dnsmasq/*</pattern>
+        </patterns>
+    </page-diagnostics-logs-dnsmasq>
+</acl>
