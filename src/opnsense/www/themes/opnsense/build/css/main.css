@@ -7380,26 +7380,33 @@ div[data-for*=help_for] {
    (logo + version, then identity + logout) to avoid empty space */
 /* Sidebar header: prominent left-aligned logo with a compact single-line
    account row. Uses horizontal space and keeps the vertical footprint small. */
+/* Sidebar header: logo pinned to the left edge with the version at the far
+   right of the band, and a right-aligned account line (user@host + logout). */
 .muros-brand {
-  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   margin-left: -15px;
-  padding: 12px 14px 6px 0;
+  margin-right: -15px;
+  padding: 12px 10px 6px 0;
 }
 .muros-brand-logo {
-  display: block;
+  display: inline-flex;
   line-height: 0;
+  flex: 0 1 auto;
+  min-width: 0;
 }
 .muros-brand-logo img {
-  height: 46px;
+  height: 38px;
   width: auto;
   max-width: 100%;
   display: block;
 }
 .muros-version {
-  display: block;
-  margin-top: 5px;
+  flex: 0 0 auto;
   font-family: "Courier New", monospace;
-  font-size: 9px;
+  font-size: 11px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: #6f8097;
@@ -7407,47 +7414,39 @@ div[data-for*=help_for] {
 .muros-account {
   display: flex;
   align-items: center;
-  gap: 7px;
+  justify-content: space-between;
+  gap: 8px;
   margin-left: -15px;
-  padding: 4px 14px 12px 0;
+  margin-right: -15px;
+  padding: 2px 10px 12px 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   font-size: 12px;
   white-space: nowrap;
 }
-.muros-account-icon {
-  flex: 0 0 auto;
-  color: #F5C518;
-  font-size: 13px;
+.muros-identity {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .muros-account .muros-user {
-  flex: 0 0 auto;
   color: #eef2f7;
   font-weight: 600;
 }
 .muros-account .muros-host {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
   color: #6f8097;
 }
 a.muros-logout {
   flex: 0 0 auto;
-  margin-left: auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 5px;
-  color: #8a99ad !important;
-  font-size: 14px;
+  color: #9fb0c4 !important;
+  font-size: 13px;
   text-decoration: none;
-  transition: background 0.12s ease, color 0.12s ease;
+  transition: color 0.12s ease;
+}
+a.muros-logout i {
+  margin-right: 5px;
 }
 a.muros-logout:hover,
 a.muros-logout:focus {
-  background: rgba(255, 255, 255, 0.06);
   color: #F5C518 !important;
   text-decoration: none;
 }

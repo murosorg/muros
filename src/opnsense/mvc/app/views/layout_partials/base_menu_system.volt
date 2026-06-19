@@ -6,10 +6,8 @@
         <span class="muros-version">v{{ product_version|default('') }}</span>
     </div>
     <div class="muros-account">
-        <i class="fa fa-user muros-account-icon"></i>
-        <span class="muros-user">{{ session_user_display }}</span>
-        <span class="muros-host">@{{ system_hostname }}</span>
-        <a class="muros-logout" href="/index.php?logout" title="Logout"><i class="fa fa-power-off"></i></a>
+        <span class="muros-identity"><span class="muros-user">{{ session_user_display }}</span><span class="muros-host">@{{ system_hostname }}</span></span>
+        <a class="muros-logout" href="/index.php?logout"><i class="fa fa-sign-out"></i> Logout</a>
     </div>
     <div class="row">
         <nav class="page-side-nav">
