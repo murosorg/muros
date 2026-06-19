@@ -263,7 +263,8 @@ function _interfaces_bridge_configure($bridge, $ifconfig_details = null)
     /* remove unassigned members */
     foreach (array_keys($current_members) as $device) {
         if (!in_array($device, $members)) {
-            mwexecf('/sbin/ifconfig %s deletem %s', [$bridgeif, $device]);
+            /* MurOS: detach a member from the Linux bridge */
+            mwexecf('/usr/sbin/ip link set dev %s nomaster', [$device]);
         }
     }
 
