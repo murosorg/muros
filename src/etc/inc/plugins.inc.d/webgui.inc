@@ -249,8 +249,9 @@ EOD;
 
     $change_user = '';
     if (!empty($config['system']['webgui']['noroot']) || file_exists('/var/run/www_non_root')) {
-        $change_user .= "server.username = \"wwwonly\"\n";
-        $change_user .= "server.groupname = \"wwwonly\"\n";
+        /* MurOS: the unprivileged web user on Debian is www-data */
+        $change_user .= "server.username = \"www-data\"\n";
+        $change_user .= "server.groupname = \"www-data\"\n";
         touch('/var/run/www_non_root'); /* create file as root, lock going back to root */
     }
 
