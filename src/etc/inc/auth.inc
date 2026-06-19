@@ -237,11 +237,12 @@ function local_sync_accounts()
     /* we need to know the current state of users and groups, both configured and actual */
     $current_data = [];
 
-    foreach (['usershow', 'groupshow'] as $command) {
-        $section = $command == 'usershow' ? 'user' : 'group';
+    /* MurOS: enumerate accounts with getent (passwd/group) instead of FreeBSD `pw ... -a` */
+    foreach (['passwd', 'group'] as $command) {
+        $section = $command == 'passwd' ? 'user' : 'group';
         $current_data[$section] = [];
 
-        foreach (shell_safe('/usr/sbin/pw %s -a', $command, true) as $record) {
+        foreach (shell_safe('/usr/bin/getent %s', $command, true) as $record) {
             $line = explode(':', $record);
 
             // filter system managed users and groups
@@ -276,13 +277,14 @@ function local_sync_accounts()
             if (empty($config_map[$section][$oid]) || $config_map[$section][$oid] !== $object[0]) {
                 if ($section == 'user') {
                     /*
-                     * If a crontab was created to user, pw userdel will be interactive and
-                     * can cause issues. Just remove crontab before run it when necessary
+                     * MurOS: remove the user's crontab first (Debian stores it
+                     * under /var/spool/cron/crontabs) then delete the account
+                     * with userdel. Home directory is intentionally preserved.
                      */
-                    @unlink("/var/cron/tabs/{$object[0]}");
-                    mwexecf('/usr/sbin/pw userdel -n %s', $object[0]);
+                    @unlink("/var/spool/cron/crontabs/{$object[0]}");
+                    mwexecf('/usr/sbin/userdel %s', [$object[0]]);
                 } else {
-                    mwexecf('/usr/sbin/pw groupdel -g %s', $object[2]);
+                    mwexecf('/usr/sbin/groupdel %s', [$object[0]]);
                 }
             }
         }
@@ -344,22 +346,29 @@ function local_user_set(&$user, $force_password = false, $userattrs = null)
 
     if ($user_uid == 0) {
         $user_shell = !empty($user['shell']) ? $user['shell'] : '/usr/local/sbin/opnsense-shell';
-        $user_group = 'wheel';
+        $user_group = 'root';
         $user_home = '/root';
     } else {
         $is_admin = userIsAdmin($user['name']);
         $user_shell = $is_admin && !empty($user['shell']) ? $user['shell'] : '/usr/sbin/nologin';
-        $user_group = $is_admin ? 'wheel' : 'nobody';
+        /*
+         * MurOS: on Debian gid 0 is the "root" group (FreeBSD calls it "wheel")
+         * and gid 65534 is "nogroup" (FreeBSD "nobody"). Administrators keep the
+         * privileged gid 0 so the rest of the privilege model and SSH AllowGroups
+         * still key on it.
+         */
+        $user_group = $is_admin ? 'root' : 'nogroup';
         $user_home = "/home/{$user_name}";
     }
 
-    // XXX: primary group id can only be wheel or nobody, otherwise we should map the correct numbers for comparison
-    $user_gid = $user_group == 'wheel' ? 0 : 65534;
+    // XXX: primary group id can only be root (admins) or nogroup, otherwise we should map the correct numbers for comparison
+    $user_gid = $user_group == 'root' ? 0 : 65534;
 
     if (!$force_password) {
-        /* read from pw db if not provided (batch mode) */
+        /* read from the passwd db if not provided (batch mode) */
         if ($userattrs === null) {
-            $fd = popen(exec_safe('/usr/sbin/pw usershow -n %s', $user_name), 'r');
+            /* MurOS: getent replaces FreeBSD `pw usershow` */
+            $fd = popen(exec_safe('/usr/bin/getent passwd %s', $user_name), 'r');
             $pwread = fgets($fd);
             pclose($fd);
             if (substr_count($pwread, ':')) {
@@ -368,35 +377,51 @@ function local_user_set(&$user, $force_password = false, $userattrs = null)
         }
     }
 
-    $user_frmt = ['/usr/sbin/pw %s'];
-
-    /* determine add or mod */
+    /*
+     * MurOS: provision the local account with the Debian shadow utilities
+     * instead of FreeBSD `pw`. getent passwd returns 7 colon-separated fields:
+     * 0=name 1=password(x) 2=uid 3=gid 4=gecos 5=home 6=shell, so the change
+     * detection uses those indices (FreeBSD used a 10-field layout). The
+     * password hash is fed to chpasswd on stdin, mirroring the previous `pw -H 0`
+     * approach so it never appears on the command line.
+     */
     if ($userattrs === null || $userattrs[0] != $user['name']) {
-        $user_frmt[] = '-m -k /usr/share/skel -o';
         $user_op = 'useradd';
     } elseif (
         $userattrs[0] == $user_name &&
-        $userattrs[1] == '*' &&
-        $userattrs[2] == $user_uid &&
-        $userattrs[3] == $user_gid &&
-        $userattrs[7] == $comment &&
-        $userattrs[8] == $user_home &&
-        $userattrs[9] == $user_shell
+        (int)$userattrs[2] == (int)$user_uid &&
+        (int)$userattrs[3] == (int)$user_gid &&
+        $userattrs[4] == $comment &&
+        $userattrs[5] == $user_home &&
+        $userattrs[6] == $user_shell
     ) {
         $user_op = null;
     } else {
         $user_op = 'usermod';
     }
 
-    /* add or mod pw db */
+    /* add or mod the local account */
+    if ($user_op == 'useradd') {
+        mwexecf(
+            '/usr/sbin/useradd -m -k /etc/skel -o -u %s -g %s -s %s -d %s -c %s %s',
+            [$user_uid, $user_gid, $user_shell, $user_home, $comment, $user_name]
+        );
+    } elseif ($user_op == 'usermod') {
+        mwexecf(
+            '/usr/sbin/usermod -o -u %s -g %s -s %s -d %s -c %s %s',
+            [$user_uid, $user_gid, $user_shell, $user_home, $comment, $user_name]
+        );
+    }
+
+    /* set the password field (hash or the '*' sentinel for integrated auth) */
     if ($user_op != null) {
-        $user_frmt[] = '-q -u %s -n %s -g %s -s %s -d %s -c %s -H 0 2>&1';
-        $fd = popen(exec_safe(
-            $user_frmt,
-            [$user_op, $user_uid, $user_name, $user_group, $user_shell, $user_home, $comment]
-        ), 'w');
-        fwrite($fd, $user_pass);
-        pclose($fd);
+        if ($user_pass === '*' || $user_pass === '') {
+            mwexecf('/usr/sbin/usermod -p %s %s', ['*', $user_name]);
+        } else {
+            $fd = popen(exec_safe('/usr/sbin/chpasswd -e'), 'w');
+            fwrite($fd, "{$user_name}:{$user_pass}");
+            pclose($fd);
+        }
     }
 
     /* create user directory if required */
@@ -418,7 +443,8 @@ function local_user_set(&$user, $force_password = false, $userattrs = null)
         @unlink("{$user_home}/.ssh/authorized_keys");
     }
 
-    mwexecfm('/usr/sbin/pw %s %s', [$lock_account, $user_name]);
+    /* MurOS: usermod -L/-U replaces FreeBSD `pw lock/unlock` */
+    mwexecfm('/usr/sbin/usermod %s %s', [$lock_account == 'lock' ? '-L' : '-U', $user_name]);
 }
 
 function local_user_set_password(&$user, $password = null)
@@ -469,7 +495,8 @@ function local_user_list_uids()
 {
     $uids = [];
 
-    foreach (shell_safe('/usr/sbin/pw usershow -a', [], true) as $line) {
+    /* MurOS: getent passwd replaces FreeBSD `pw usershow -a`; uid is field 2 in both */
+    foreach (shell_safe('/usr/bin/getent passwd', [], true) as $line) {
         $parts = explode(":", $line);
         if (count($parts) > 2) {
             $uids[] = $parts[2];
@@ -529,11 +556,23 @@ function local_group_set($group, $uids = null)
         $group_members = implode(',', $members);
     }
 
-    $new = mwexecfm('/usr/sbin/pw groupshow %s', $group_name);
+    /*
+     * MurOS: manage groups with the Debian shadow utilities. getent returns a
+     * non-zero exit code when the group is absent (mirroring how the previous
+     * `pw groupshow` result was interpreted), in which case the group is created
+     * with groupadd, otherwise its gid is updated with groupmod. The full member
+     * list is then applied with gpasswd -M (which replaces the existing members,
+     * matching `pw group ... -M`).
+     */
+    $missing = mwexecfm('/usr/bin/getent group %s', $group_name);
 
-    mwexecf('/usr/sbin/pw group%s %s -g %s -M %s', [
-        $new ? 'add' : 'mod', $group_name, $group_gid, $group_members
-    ]);
+    if ($missing) {
+        mwexecf('/usr/sbin/groupadd -o -g %s %s', [$group_gid, $group_name]);
+    } else {
+        mwexecf('/usr/sbin/groupmod -o -g %s %s', [$group_gid, $group_name]);
+    }
+
+    mwexecf('/usr/sbin/gpasswd -M %s %s', [$group_members, $group_name]);
 }
 
 /**
