@@ -1,3 +1,26 @@
+muros (0.9.12) trixie; urgency=medium
+
+  * Network Time (NTP) ported from the ntp.org daemon to chrony, the time
+    daemon MurOS already ships on Debian. ntpd is not packaged for Debian and
+    its configuration and query interfaces differ from chrony. ntpd_configure_do
+    now generates /etc/chrony/chrony.conf from the Ntpd model (upstream servers
+    and pools with iburst/prefer/noselect, orphan/local stratum, serve-to-client
+    via allow, per-interface bindaddress, statistics logging, leap second list,
+    rate limiting and custom options) and drives the stock chrony systemd unit;
+    the former one-shot client mode maps to chronyd -q. GPS and PPS refclocks are
+    mapped to chrony SHM/PPS refclocks (best effort, needs gpsd and hardware).
+  * The Network Time status page (ntpd_status.php) now reads chrony instead of
+    ntpq: it parses chronyc sources, sourcestats and tracking into the same
+    fields the existing view expects (status symbols, stratum, poll in seconds,
+    octal reach, and offset/jitter/delay in milliseconds), with per-source round
+    trip delay taken from chronyc ntpdata. Validated against live chrony and the
+    generated config validated with chronyd -p.
+  * The NTP service now tracks /run/chrony/chronyd.pid and stops cleanly through
+    systemctl. Serial line setup for GPS uses stty instead of the FreeBSD
+    comcontrol/tip path and accepts Debian tty device names.
+
+ -- MurOS <dev@muros.org>  Sat, 20 Jun 2026 12:55:19 +0200
+
 muros (0.9.11) trixie; urgency=medium
 
   * Kea DHCP server ported to Debian. OPNsense drives Kea through the FreeBSD
