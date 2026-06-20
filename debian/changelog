@@ -1,3 +1,18 @@
+muros (0.9.22) trixie; urgency=medium
+
+  * Ported the SSH daemon configuration (openssh.inc) from FreeBSD to Debian, so
+    the System: Settings: Administration options (port, root login, password
+    authentication, listen interfaces, ciphers/MACs/KEX/host-key algorithms) now
+    actually reconfigure sshd. Settings are written to a drop-in at
+    /etc/ssh/sshd_config.d/muros.conf that the stock Debian sshd_config already
+    includes; the main config and package-managed host keys are left untouched.
+    The generated config is validated with "sshd -t" before being applied and is
+    rolled back on failure, and the daemon is reloaded (not restarted) to keep
+    existing sessions, all to avoid locking the box out. Service control now goes
+    through systemd (ssh.service) instead of pkill.
+
+ -- MurOS <dev@muros.org>  Sat, 20 Jun 2026 17:05:00 +0200
+
 muros (0.9.21) trixie; urgency=medium
 
   * Web UI sidebar: removed the version label from the brand block (it added an
