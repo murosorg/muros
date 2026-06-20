@@ -80,4 +80,34 @@ net.ipv4.ip_forward = 1
 net.ipv6.conf.all.forwarding = 1
 SCTL
 
+# lighttpd: MurOS web UI front end. Shipped under the MurOS prefix and wired
+# in with a systemd drop-in, so it never collides with the stock lighttpd
+# conffile and the UI does not depend on interface assignment to come up.
+install -d "$DEST/usr/local/etc/muros"
+cat > "$DEST/usr/local/etc/muros/lighttpd.conf" <<'LIGHTTPD'
+server.modules = ( "mod_access","mod_alias","mod_redirect","mod_rewrite","mod_setenv","mod_fastcgi","mod_openssl","mod_deflate","mod_expire" )
+server.document-root = "/usr/local/www/"
+server.port = 80
+server.tag = "MurOS"
+server.errorlog = "/var/log/lighttpd/error.log"
+index-file.names = ( "index.php","index.html" )
+mimetype.assign = ( ".html"=>"text/html",".htm"=>"text/html",".css"=>"text/css",".js"=>"application/javascript",".json"=>"application/json",".png"=>"image/png",".jpg"=>"image/jpeg",".jpeg"=>"image/jpeg",".gif"=>"image/gif",".svg"=>"image/svg+xml",".ico"=>"image/x-icon",".woff"=>"font/woff",".woff2"=>"font/woff2",".ttf"=>"font/ttf",".eot"=>"application/vnd.ms-fontobject",".map"=>"application/json",""=>"application/octet-stream" )
+alias.url += ( "/ui/" => "/usr/local/opnsense/www/", "/api/" => "/usr/local/opnsense/www/" )
+url.rewrite-if-not-file = ( "^/ui/([^\?]+)(\?(.*))?" => "/ui/index.php?$3", "^/api/([^\?]+)(\?(.*))?" => "/api/api.php?$3" )
+fastcgi.server = ( ".php" => ( "localhost" => ( "socket" => "/run/php/php8.4-fpm.sock", "broken-scriptfilename" => "enable" ) ) )
+$SERVER["socket"] == ":443" {
+  ssl.engine = "enable"
+  ssl.pemfile = "/usr/local/etc/muros/server.crt"
+  ssl.privkey = "/usr/local/etc/muros/server.key"
+}
+LIGHTTPD
+
+install -d "$DEST/etc/systemd/system/lighttpd.service.d"
+cat > "$DEST/etc/systemd/system/lighttpd.service.d/muros.conf" <<'DROPIN'
+# Point lighttpd at the MurOS web UI configuration instead of the stock one.
+[Service]
+ExecStart=
+ExecStart=/usr/sbin/lighttpd -D -f /usr/local/etc/muros/lighttpd.conf
+DROPIN
+
 echo "staged into $DEST"

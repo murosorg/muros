@@ -8,7 +8,33 @@ case "$1" in
         --divert /etc/php/8.4/fpm/pool.d/www.conf.distrib \
         /etc/php/8.4/fpm/pool.d/www.conf || true
     fi
+
+    # Self-signed certificate for the web UI (replace later from the GUI).
+    if [ ! -s /usr/local/etc/muros/server.crt ] || [ ! -s /usr/local/etc/muros/server.key ]; then
+      mkdir -p /usr/local/etc/muros
+      openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
+        -keyout /usr/local/etc/muros/server.key \
+        -out /usr/local/etc/muros/server.crt \
+        -subj '/O=MurOS/CN=MurOS' >/dev/null 2>&1 || true
+      chown www-data:www-data /usr/local/etc/muros/server.crt /usr/local/etc/muros/server.key 2>/dev/null || true
+      chmod 600 /usr/local/etc/muros/server.key 2>/dev/null || true
+    fi
+
+    # Seed a default configuration so the control plane and UI can start.
+    if [ ! -e /conf/config.xml ] && [ -e /usr/local/etc/config.xml.sample ]; then
+      mkdir -p /conf
+      cp -p /usr/local/etc/config.xml.sample /conf/config.xml
+      chown www-data:www-data /conf/config.xml 2>/dev/null || true
+      chmod 640 /conf/config.xml 2>/dev/null || true
+    fi
+    if [ ! -e /usr/local/etc/config.xml ]; then
+      ln -sf /conf/config.xml /usr/local/etc/config.xml
+    fi
+
+    # Pick up the lighttpd drop-in and (re)start the front end.
+    systemctl daemon-reload 2>/dev/null || true
     systemctl reload-or-restart php8.4-fpm 2>/dev/null || true
+    systemctl restart lighttpd 2>/dev/null || true
     ;;
 esac
 #DEBHELPER#
