@@ -1199,8 +1199,8 @@ function openvpn_clear_route($mode, $settings)
     if ($clear_route && !empty($ip) && !empty($mask)) {
         list($ip1, $ip2) = openvpn_get_interface_ip($ip, $mask);
         $ip_to_clear = ($mode == "server") ? $ip1 : $ip2;
-        /* XXX: Family for route? */
-        mwexecf('/sbin/route -q delete %s', $ip_to_clear);
+        /* iproute2 infers the family from the address */
+        mwexecf('/usr/sbin/ip route del %s', $ip_to_clear);
     }
 }
 
