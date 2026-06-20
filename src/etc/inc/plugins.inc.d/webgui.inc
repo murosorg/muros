@@ -115,8 +115,19 @@ function webgui_configure_do($verbose = false, $interface_map = null)
 
     if ($config['system']['webgui']['protocol'] == "https") {
         $cert =& lookup_cert($config['system']['webgui']['ssl-certref']);
-        if (!is_array($cert) && !$cert['crt'] && !$cert['prv']) {
-            /* XXX for now only if a certificate is not available */
+        $regenerate = !is_array($cert) || empty($cert['crt']) || empty($cert['prv']);
+        if (!$regenerate) {
+            /*
+             * Regenerate the GUI certificate when the stored one cannot serve
+             * as a TLS server certificate (missing the serverAuth extended key
+             * usage). This self-heals boxes whose self-signed certificate was
+             * created before the openssl path fix, which left an unusable
+             * certificate that the administration page rejects.
+             */
+            $purpose = cert_get_purpose($cert['crt']);
+            $regenerate = empty($purpose['server']) || $purpose['server'] != 'Yes';
+        }
+        if ($regenerate) {
             webgui_create_selfsigned(false);
             $cert =& lookup_cert($config['system']['webgui']['ssl-certref']);
         }
@@ -185,7 +196,7 @@ function webgui_create_selfsigned($verbose = false)
     $dns = $config['system']['hostname'] . "." . $config['system']['domain'];
 
     mwexecf(
-        '/usr/local/bin/openssl req -new -extensions server_cert ' .
+        '/usr/bin/openssl req -new -extensions server_cert ' .
         '-config /usr/local/etc/ssl/opnsense.cnf ' .
         '-newkey rsa:4096 -sha256 -days 397 -nodes -x509 ' .
         '-subj "/CN="%s"/C=NL/ST=Zuid-Holland/L=Middelharnis/O="%s" self-signed web certificate" ' .

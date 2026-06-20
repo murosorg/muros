@@ -15,7 +15,11 @@ case "$1" in
       openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
         -keyout /usr/local/etc/muros/server.key \
         -out /usr/local/etc/muros/server.crt \
-        -subj '/O=MurOS/CN=MurOS' >/dev/null 2>&1 || true
+        -subj '/O=MurOS/CN=MurOS' \
+        -addext 'basicConstraints=CA:FALSE' \
+        -addext 'keyUsage=digitalSignature,keyEncipherment' \
+        -addext 'extendedKeyUsage=serverAuth' \
+        -addext 'subjectAltName=DNS:MurOS' >/dev/null 2>&1 || true
       chown www-data:www-data /usr/local/etc/muros/server.crt /usr/local/etc/muros/server.key 2>/dev/null || true
       chmod 600 /usr/local/etc/muros/server.key 2>/dev/null || true
     fi

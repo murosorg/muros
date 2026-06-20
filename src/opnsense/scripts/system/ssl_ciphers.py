@@ -52,7 +52,7 @@ if __name__ == '__main__':
     # use opnsense.cnf template to avoid generic config constraints limiting options
     ossl_env = os.environ.copy()
     ossl_env['OPENSSL_CONF'] = '/usr/local/etc/ssl/opnsense.cnf'
-    sp = subprocess.run(['/usr/local/bin/openssl', 'ciphers', '-V'], capture_output=True, text=True, env=ossl_env)
+    sp = subprocess.run(['/usr/bin/openssl', 'ciphers', '-V'], capture_output=True, text=True, env=ossl_env)
     for line in sp.stdout.split("\n"):
         parts = line.strip().split()
         if len(parts) > 1:

@@ -41,7 +41,7 @@ if __name__ == '__main__':
     ossl_env = os.environ.copy()
     ossl_env['OPENSSL_CONF'] = '/usr/local/etc/ssl/opnsense.cnf'
     sp = subprocess.run(
-        ['/usr/local/bin/openssl', 'ecparam', '-list_curves'],
+        ['/usr/bin/openssl', 'ecparam', '-list_curves'],
         capture_output=True,
         text=True,
         env=ossl_env
