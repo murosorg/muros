@@ -1,3 +1,13 @@
+muros (0.9.15) trixie; urgency=medium
+
+  * Web UI: consolidated the theme set down to a single dark MurOS theme
+    (amber #F5C518 on a dark background). Removed the light "opnsense" theme
+    and the "opnsense-auto" theme. The remaining theme is named "muros" and is
+    now the default for fresh and upgraded installs; boxes whose stored theme
+    no longer exists fall back to it gracefully.
+
+ -- MurOS <dev@muros.org>  Sat, 20 Jun 2026 14:05:00 +0200
+
 muros (0.9.14) trixie; urgency=medium
 
   * Web UI: rebranded the interface accent colour from the inherited OPNsense
