@@ -35,7 +35,13 @@ $client_ip = isset($argv[1]) ? $argv[1] : '';
 $system_mac = '';
 
 if (!empty($client_ip)) {
-    $macs = OPNsense\Core\Shell::shell_safe('/usr/sbin/arp -an | grep %s | awk \'{ print $4 }\'', [$client_ip], true);
+    /* resolve the client MAC from the neighbour table (iproute2 replaces the
+       FreeBSD arp(8) lookup, which also avoids depending on net-tools) */
+    $macs = OPNsense\Core\Shell::shell_safe(
+        '/usr/sbin/ip neigh show %s | awk \'{ for (i = 1; i <= NF; i++) if ($i == "lladdr") print $(i + 1) }\'',
+        [$client_ip],
+        true
+    );
     $system_mac = !empty($macs[0]) ? $macs[0] : '';
 }
 

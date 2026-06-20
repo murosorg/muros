@@ -191,7 +191,7 @@ function dhcrelay_configure_id($verbose = false, $id_map = null)
 
         foreach ($destination->server->getValues() as $server) {
             if ($family == 'inet6') {
-                $routeif = shell_safe('/sbin/route -6 get %s | grep interface: | awk \'{ print $2 }\'', $server);
+                $routeif = shell_safe('/usr/sbin/ip -6 route get %s | awk \'{ for (i = 1; i <= NF; i++) if ($i == "dev") print $(i + 1) }\' | head -n 1', $server);
                 if (empty($routeif)) {
                     log_msg("dhcrelay_configure_id() found no suitable route to $server for $interface($device)", LOG_WARNING);
                     continue;
