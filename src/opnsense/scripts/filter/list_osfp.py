@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!/usr/bin/python3
 
 """
     Copyright (c) 2015-2019 Ad Schellevis <ad@opnsense.org>
@@ -28,17 +28,15 @@
     --------------------------------------------------------------------------------------
     list os fingerprints
 """
-import subprocess
 import sys
 import ujson
 
 if __name__ == '__main__':
+    # Passive OS fingerprinting was a pf feature (pfctl -s osfp / the "OS" rule
+    # match). nftables has no equivalent, so the list of known fingerprints is
+    # always empty on MurOS. The action is kept so the GUI/API contract is
+    # preserved and the "OS" rule option simply offers no choices.
     result = []
-    sp = subprocess.run(['/sbin/pfctl', '-s', 'osfp'], capture_output=True)
-    data = sp.stdout.decode().strip()
-    if data.count('\n') > 2:
-        for line in data.split('\n')[2:]:
-            result.append(line.replace('\t', ' ').strip())
 
     # handle command line argument (type selection)
     if len(sys.argv) > 1 and sys.argv[1] == 'json':
