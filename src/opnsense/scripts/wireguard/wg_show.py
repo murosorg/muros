@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!/usr/bin/python3
 
 """
     Copyright (c) 2023 Ad Schellevis <ad@opnsense.org>
@@ -30,10 +30,15 @@ import ujson
 
 
 interfaces = {}
-for line in subprocess.run(['/sbin/ifconfig'], capture_output=True, text=True).stdout.split("\n"):
-    if not line.startswith('\t') and line.find('<') > -1:
-        ifname = line.split(':')[0]
-        interfaces[ifname] = 'up' if 'UP' in line.split('<')[1].split('>')[0].split(',') else 'down'
+sp_links = subprocess.run(['/usr/sbin/ip', '-j', 'link', 'show'], capture_output=True, text=True)
+try:
+    links = ujson.loads(sp_links.stdout or '[]')
+except ValueError:
+    links = []
+for link in links:
+    ifname = link.get('ifname')
+    if ifname:
+        interfaces[ifname] = 'up' if 'UP' in link.get('flags', []) else 'down'
 
 sp = subprocess.run(['/usr/bin/wg', 'show', 'all', 'dump'], capture_output=True, text=True)
 result = {'records': []}

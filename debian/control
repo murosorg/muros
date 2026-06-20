@@ -17,7 +17,7 @@ Depends: ${misc:Depends},
  nftables, iproute2, chrony, openssl,
  conntrack, tcpdump, iftop
 Recommends: unbound, openssh-server
-Suggests: openvpn, strongswan, isc-dhcp-server, kea, suricata, keepalived, conntrackd
+Suggests: openvpn, strongswan, isc-dhcp-server, kea, suricata, keepalived, conntrackd, wireguard-tools
 Description: MurOS firewall and routing platform
  MurOS is an OPNsense fork ported to Debian. It provides a web-managed
  stateful firewall (nftables), NAT, interfaces and routing on top of a
