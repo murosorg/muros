@@ -7,27 +7,22 @@
         /* next pane */
         $(".action_next").click(function(){
             let target = $("#tab_" + $(this).data('next_index'));
+            let advance = function () {
+                target.parent().removeClass('hidden');
+                target.click();
+            };
             let this_form = $(this).closest('.tab-pane').find('form');
-            saveFormToEndpoint("/api/core/initial_setup/set", 'form_root', function(){
-                    target.parent().removeClass('hidden');
-                    target.click();
-                },
-                true,
-                function (data) {
-                    let failed_here  = false;
-                    if (data.validations && this_form) {
-                        let validations = Object.keys(data.validations);
-                        this_form.find('input, select').each(function(){
-                            if (validations.includes($(this).attr('id'))) {
-                                failed_here = true;
-                            }
-                        });
-                    }
-                    if (!failed_here) {
-                        target.parent().removeClass('hidden');
-                        target.click();
-                    }
-            });
+            if (this_form.length === 0) {
+                /* informational step without inputs, nothing to validate */
+                advance();
+                return;
+            }
+            /* Validate and store only the fields of the current step. The model
+               is in-memory (the final apply step re-submits every field at once),
+               so validating the whole form here would fail on required fields
+               that belong to later steps and the Next button would silently do
+               nothing. Keeping the dialog enabled shows the user what to fix. */
+            saveFormToEndpoint("/api/core/initial_setup/set", this_form.attr('id'), advance, false);
         });
         $("#wizard\\.interfaces\\.wan\\.ipv4_type").change(function(){
             $(".wan_options").closest('tr').hide();
