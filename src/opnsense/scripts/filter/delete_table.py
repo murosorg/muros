@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!/usr/bin/python3
 
 """
     Copyright (c) 2015-2019 Ad Schellevis <ad@opnsense.org>
@@ -26,24 +26,17 @@
     POSSIBILITY OF SUCH DAMAGE.
 
     --------------------------------------------------------------------------------------
-    delete items from pf table
+    delete items from a firewall alias (nftables named set)
     usage : delete_table.py [tablename] [item|ALL]
 """
-import tempfile
-import subprocess
-import os
 import sys
+from lib.alias.pf import PF
 
 if __name__ == '__main__':
     if len(sys.argv) > 2:
-        # always validate if the item is in the pf table before trying to delete
-        sp = subprocess.run(['/sbin/pfctl', '-t', sys.argv[1], '-T', 'show'], capture_output=True, text=True)
         if sys.argv[2].strip() == 'ALL':
-            if len(sp.stdout.strip().split('\n')) > 0:
-                # delete all entries from a pf table
-                subprocess.run(['/sbin/pfctl', '-t', sys.argv[1], '-T', 'flush'], capture_output=True)
+            # MurOS: empty both family sets backing the alias
+            PF.flush(sys.argv[1])
         else:
-            for line in sp.stdout.strip().split('\n'):
-                if line.strip() == sys.argv[2].strip():
-                    subprocess.run(['/sbin/pfctl', '-t', sys.argv[1], '-T', 'delete', line.strip()],
-                                    capture_output=True)
+            # MurOS: remove a single entry from the matching family set
+            PF.delete_element(sys.argv[1], sys.argv[2])

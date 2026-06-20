@@ -132,10 +132,12 @@ if __name__ == '__main__':
                 else:
                     # replace table contents with collected alias
                     error_output = PF.replace(alias.get_name(), alias_filename)
-                    if error_output.find('pfctl: ') > -1:
+                    if error_output != '':
+                        # MurOS: nft reports load failures on stderr (the old
+                        # pf implementation prefixed messages with "pfctl: ")
                         error_message = "Error loading alias [%s]: %s {current_size: %d, new_size: %d}" % (
                             alias.get_name(),
-                            error_output.replace('pfctl: ', ''),
+                            error_output.replace('nft: ', ''),
                             cnt_alias_pf_content,
                             cnt_alias_content,
                         )
