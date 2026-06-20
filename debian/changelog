@@ -1,3 +1,13 @@
+muros (0.9.14) trixie; urgency=medium
+
+  * Web UI: rebranded the interface accent colour from the inherited OPNsense
+    brick orange (#C03E14) to the MurOS amber (#F5C518) across both the light
+    and dark themes, plus the shared bootgrid and captive-portal stylesheets.
+    Text on amber accent surfaces (buttons, active menu item, pagination,
+    labels, dialog headers) is set to near-black for legibility.
+
+ -- MurOS <dev@muros.org>  Sat, 20 Jun 2026 13:29:15 +0200
+
 muros (0.9.13) trixie; urgency=medium
 
   * Installer / first-boot console setup: removed the last FreeBSD-only console
