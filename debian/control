@@ -14,7 +14,7 @@ Depends: ${misc:Depends},
  php8.4-gd, php8.4-mbstring, php8.4-bcmath, php8.4-ldap, php8.4-sqlite3,
  php8.4-phalcon,
  python3 (>= 3.11), python3-jinja2, python3-dnspython, python3-ldap3,
- nftables, iproute2, chrony
+ nftables, iproute2, chrony, openssl
 Recommends: unbound, openssh-server
 Suggests: openvpn, strongswan, isc-dhcp-server, kea, suricata, keepalived, conntrackd
 Description: MurOS firewall and routing platform

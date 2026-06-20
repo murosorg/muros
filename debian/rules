@@ -19,10 +19,14 @@ override_dh_fixperms:
 
 # Units are placed under /lib/systemd/system by stage-fs.sh.
 override_dh_installsystemd:
-	dh_installsystemd --no-start muros-configd.service
-	dh_installsystemd --no-start muros-firewall.service
-	dh_installsystemd --no-start muros-interface-assign.service
-	dh_installsystemd --no-start muros-interfaces.service
+	# The control plane and web UI come up automatically.
+	dh_installsystemd --name=muros-configd --no-start muros-configd.service
+	# Data-plane units (interface assignment, addressing, firewall) are shipped
+	# but left disabled: they are opt-in and must never touch the management
+	# link or lock the operator out before interfaces have been assigned.
+	dh_installsystemd --name=muros-firewall --no-enable --no-start muros-firewall.service
+	dh_installsystemd --name=muros-interface-assign --no-enable --no-start muros-interface-assign.service
+	dh_installsystemd --name=muros-interfaces --no-enable --no-start muros-interfaces.service
 
 # Large interpreted payload: these steps are irrelevant and slow.
 override_dh_strip:

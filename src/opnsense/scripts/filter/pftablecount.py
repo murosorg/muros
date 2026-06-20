@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!/usr/bin/python3
 
 """
     Copyright (c) 2021 Deciso B.V.
@@ -26,64 +26,62 @@
     POSSIBILITY OF SUCH DAMAGE.
 
     --------------------------------------------------------------------------------------
-    returns pf table allocated and reserved size
+    MurOS: returns the allocated and used size of the firewall alias tables.
+    Aliases are nftables named sets (table inet muros) rather than FreeBSD pf
+    tables, so the live element counts come from the PF abstraction (nft) while
+    the planned size and last-updated timestamp still derive from the persisted
+    /var/db/aliastables/<name>.txt files. The overall capacity is the configured
+    maximum table-entries limit.
 """
-import subprocess
 import os
+import sys
 import ujson
+import xml.etree.cElementTree as ET
 from datetime import datetime
+
+sys.path.insert(0, "/usr/local/opnsense/scripts/filter")
+from lib.alias.pf import PF
+
+# fallback capacity when the configuration does not pin a maximum, matching the
+# historical default applied by the ruleset generator.
+DEFAULT_TABLE_ENTRIES = 200000
+CONFIG_XML = '/conf/config.xml'
+
+
+def configured_table_entries():
+    try:
+        node = ET.ElementTree(file=CONFIG_XML).find('./system/maximumtableentries')
+        if node is not None and node.text and node.text.strip().isdigit():
+            return int(node.text.strip())
+    except (ET.ParseError, OSError):
+        pass
+    return DEFAULT_TABLE_ENTRIES
 
 
 if __name__ == '__main__':
     result = {
         'status': 'ok',
-        'size': 0,
+        'size': configured_table_entries(),
         'used': 0,
         'details': {}
     }
-    tables_count = 0
-    table_name = None
-    for line in subprocess.run(['/sbin/pfctl', '-vvsT'], capture_output=True, text=True).stdout.strip().split('\n'):
-        parts = line.strip().split()
-        digits = [int(x) for x in parts if x.isdigit()]
-        if len(parts) > 1 and "-" in parts[0]:
-            table_name = line.split()[1].strip()
-            result['details'][table_name] = {}
-        elif table_name is None or len(parts) < 2:
-            continue
-        elif parts[0] == 'Evaluations:':
-            result['details'][table_name]['eval_nomatch'] = digits[0]
-            result['details'][table_name]['eval_match'] = digits[1]
-        elif parts[0] == 'In/Block:':
-            result['details'][table_name]['in_block_p'] = digits[0]
-            result['details'][table_name]['in_block_b'] = digits[1]
-        elif parts[0] == 'In/Pass:':
-            result['details'][table_name]['in_pass_p'] = digits[0]
-            result['details'][table_name]['in_pass_b'] = digits[1]
-        elif parts[0] == 'Out/Block:':
-            result['details'][table_name]['out_block_p'] = digits[0]
-            result['details'][table_name]['out_block_b'] = digits[1]
-        elif parts[0] == 'Out/Pass:':
-            result['details'][table_name]['out_pass_p'] = digits[0]
-            result['details'][table_name]['out_pass_b'] = digits[1]
-        elif parts[0] ==  'Addresses:':
-            table_size = digits[0]
-            table_updated = None
-            filename = "/var/db/aliastables/%s.txt" % table_name
-            if os.path.isfile(filename):
-                tmp = open(filename).read()
-                planned_size  = tmp.count('\n') + 1 if len(tmp) > 0 else 0
-                # if planned size doesn't fit the table, make sure we report intented size
-                # used size can be divert a bit if pfctl optimizes as well.
-                table_size = max(planned_size, table_size)
-                table_updated = datetime.fromtimestamp(os.path.getmtime(filename)).isoformat()
 
-            result['details'][table_name]['count'] = table_size
-            result['details'][table_name]['updated'] = table_updated
-            result['used'] += table_size
+    for table_name, info in PF.list_tables():
+        table_size = info.get('addresses', 0)
+        table_updated = None
+        filename = "/var/db/aliastables/%s.txt" % table_name
+        if os.path.isfile(filename):
+            tmp = open(filename).read()
+            planned_size = tmp.count('\n') + 1 if len(tmp) > 0 else 0
+            # if the planned size does not match the loaded set (auto-merge may
+            # coalesce overlapping entries), report the larger intended size.
+            table_size = max(planned_size, table_size)
+            table_updated = datetime.fromtimestamp(os.path.getmtime(filename)).isoformat()
 
-    for line in subprocess.run(['/sbin/pfctl', '-sm'], capture_output=True, text=True).stdout.strip().split('\n'):
-        if "table-entries" in line:
-            result['size'] = int("".join(filter(str.isdigit, line)))
+        result['details'][table_name] = {
+            'count': table_size,
+            'updated': table_updated,
+        }
+        result['used'] += table_size
 
     print(ujson.dumps(result))
