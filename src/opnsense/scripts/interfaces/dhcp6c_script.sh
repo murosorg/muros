@@ -38,7 +38,9 @@ INFOREQ|REBIND|RENEW|REQUEST|SOLICIT)
     ENVFILE="/tmp/dhcp6c.${IFNAME}.env"
 
     if [ "$(pluginctl -g OPNsense.Interfaces.settings.dhcp6_debug)" = "1" ]; then
-        ifconfig -L > "${IFCFILE}"
+        # debug-only dump of the interface state (FreeBSD "ifconfig -L" showed
+        # address lifetimes; "ip -6 addr show" carries valid_lft/preferred_lft)
+        ip -6 addr show dev "${IFNAME}" > "${IFCFILE}" 2>&1
         env | sort > "${ENVFILE}"
     else
         rm -f "${IFCFILE}" "${ENVFILE}"
