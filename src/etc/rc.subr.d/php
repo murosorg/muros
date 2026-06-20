@@ -29,26 +29,28 @@ OWNERSHIP=$(opnsense-version -R 'CORE_GROUP=CORE_GID:CORE_USER=CORE_UID')
 OWNERGRP=${OWNERSHIP%:*}
 OWNERUSR=${OWNERSHIP##*:}
 
-PW=/usr/sbin/pw
 GROUP=${OWNERGRP%=*}
 GID=${OWNERGRP##*=}
 USER=${OWNERUSR%=*}
 UID=${OWNERUSR##*=}
-OWNER="${USER}:wheel"
+OWNER="${USER}:${GROUP}"
 
-PW_ARG=add
-if ${PW} groupshow ${GROUP} >/dev/null 2>&1; then
-    PW_ARG=mod
+# Ensure the web group exists (Debian shadow utilities). The default MurOS
+# web identity maps onto Debian's stock www-data (uid/gid 33), which already
+# exists, so this is a no-op on a standard system; we only create it when a
+# custom group/uid was configured. We never force-change an existing system
+# group's gid to avoid disrupting other services that share it.
+if ! getent group "${GROUP}" >/dev/null 2>&1; then
+    groupadd -g "${GID}" "${GROUP}" 2>/dev/null || groupadd "${GROUP}"
 fi
 
-${PW} group${PW_ARG} ${GROUP} -g ${GID}
-
-PW_ARG=add
-if ${PW} usershow ${USER} >/dev/null 2>&1; then
-    PW_ARG=mod
+# Ensure the web user exists and is a non-login, no-home service account.
+if ! getent passwd "${USER}" >/dev/null 2>&1; then
+    useradd -u "${UID}" -g "${GROUP}" -c "World Wide Web Only" \
+        -d /nonexistent -s /usr/sbin/nologin "${USER}" 2>/dev/null || \
+    useradd -g "${GROUP}" -c "World Wide Web Only" \
+        -d /nonexistent -s /usr/sbin/nologin "${USER}"
 fi
-
-${PW} user${PW_ARG} ${USER} -u ${UID} -g ${GID} -c "World Wide Web Only" -d /nonexistent -s /usr/sbin/nologin
 
 # set up required output directories for various PHP components
 for _PHPDIR in cache sessions tests tmp; do
