@@ -1319,106 +1319,52 @@ function system_login_configure($verbose = false)
         }
     }
 
+    /*
+     * MurOS: console configuration. On FreeBSD this wrote /boot.config,
+     * /boot/loader.conf and /etc/ttys and signalled init(8) with SIGHUP.
+     * On Debian the console is owned by systemd:
+     *   - a serial console is the serial-getty@ttySN template unit, with the
+     *     baud rate pinned through a unit drop-in,
+     *   - the local video terminal is getty@tty1 (autovt).
+     * The kernel "console=" argument lives in GRUB and is intentionally left
+     * untouched here: changing it requires update-grub and a reboot, so it is
+     * handled at install time / via /etc/default/grub rather than on every
+     * settings save (avoiding any risk of cutting console access at runtime).
+     */
+    $serial_device = 'ttyS0';
+    $serial_unit = "serial-getty@{$serial_device}.service";
+    $dropin_dir = "/etc/systemd/system/{$serial_unit}.d";
+
     if ($serial_enabled) {
-        $serial_options = ["-S{$serialspeed}"];
-        if ($console_selection[0] == 'comconsole') {
-            $serial_options[] = '-h';
-        }
-        if (in_array('vidconsole', $console_selection)) {
-            $serial_options[] = '-D';
-        }
-        @file_put_contents('/boot.config', join(' ', $serial_options) . "\n");
-        $new_boot_config['comconsole_speed'] = '"' . $serialspeed . '"';
-        $new_boot_config['boot_serial'] = '"YES"';
-    } elseif (!$output_enabled) {
-        @file_put_contents('/boot.config', "-q -m\n");
+        /* pin the requested baud rate through a drop-in that overrides the
+         * stock ExecStart (which keep-bauds through a list of speeds). */
+        @mkdir($dropin_dir, 0755, true);
+        $override = sprintf(
+            "[Service]\nExecStart=\nExecStart=-/sbin/agetty --keep-baud %s %%I \$TERM\n",
+            $serialspeed
+        );
+        @file_put_contents("{$dropin_dir}/muros-baud.conf", $override);
+        mwexecf('/usr/bin/systemctl daemon-reload');
+        mwexecf('/usr/bin/systemctl enable %s', [$serial_unit]);
+        mwexecf('/usr/bin/systemctl restart %s', [$serial_unit]);
     } else {
-        @unlink('/boot.config');
+        mwexecf('/usr/bin/systemctl disable %s', [$serial_unit], true);
+        mwexecf('/usr/bin/systemctl stop %s', [$serial_unit], true);
+        @unlink("{$dropin_dir}/muros-baud.conf");
+        mwexecf('/usr/bin/systemctl daemon-reload');
     }
 
-    if (empty($config['system']['usevirtualterminal'])) {
-        $new_boot_config['kern.vty'] = '"sc"';
-    }
-
-    /* reload static values from rc.loader.d */
-    mwexecf('/usr/local/etc/rc.loader');
-
-    /* copy settings already there */
-    $new_loader_conf = @file_get_contents('/boot/loader.conf');
-
-    $new_loader_conf .= "# dynamically generated console settings follow\n";
-    foreach ($new_boot_config as $param => $value) {
-        if (!empty($value)) {
-            $new_loader_conf .= "{$param}={$value}\n";
-        } else {
-            $new_loader_conf .= "#{$param}\n";
-        }
-    }
-    $new_loader_conf .= "\n";
-
-    $new_loader_conf .= "# dynamically generated tunables settings follow\n";
-    foreach (system_sysctl_get() as $param => $value) {
-        $new_loader_conf .= "{$param}=\"{$value}\"\n";
-    }
-
-    /* write merged file back to target location */
-    @file_put_contents('/boot/loader.conf', $new_loader_conf);
-
-    /* setup /etc/ttys */
-    $etc_ttys_lines = explode("\n", file_get_contents('/etc/ttys'));
-    $fd = fopen('/etc/ttys', 'w');
-
-    $on_off_secure_u = $serial_enabled ? (!empty($config['system']['serialusb']) ? 'on' : 'onifconsole') . ' secure' : 'off secure';
-    $on_off_secure_v = $virtual_enabled ? 'onifexists secure' : 'off secure';
-    if (isset($config['system']['disableconsolemenu'])) {
-        $console_type = 'Pc';
-        $serial_type = '3wire.' . $serialspeed;
+    /* video terminal: systemd manages getty@tty1 via autovt by default;
+     * only disable it when the operator explicitly selected no video output. */
+    if ($virtual_enabled) {
+        mwexecf('/usr/bin/systemctl unmask %s', ['getty@tty1.service'], true);
     } else {
-        $console_type = 'al.Pc';
-        $serial_type = 'al.3wire.' . $serialspeed;
+        mwexecf('/usr/bin/systemctl mask %s', ['getty@tty1.service'], true);
     }
-
-    foreach ($etc_ttys_lines as $tty) {
-        /* virtual terminals */
-        foreach (['ttyv0', 'ttyv1', 'ttyv2', 'ttyv3', 'ttyv4', 'ttyv5', 'ttyv6', 'ttyv7'] as $virtualport) {
-            if (strpos($tty, $virtualport) === 0) {
-                fwrite($fd, "{$virtualport}\t\"/usr/libexec/getty {$console_type}\"\t\txterm\t{$on_off_secure_v}\n");
-                continue 2;
-            }
-        }
-
-        /* serial terminals */
-        foreach (['tty%s0', 'tty%s1', 'tty%s2', 'tty%s3'] as $serialport) {
-            $serialport = sprintf($serialport, !empty($config['system']['serialusb']) ? 'U' : 'u');
-            if (stripos($tty, $serialport) === 0) {
-                fwrite($fd, "{$serialport}\t\"/usr/libexec/getty {$serial_type}\"\tvt100\t{$on_off_secure_u}\n");
-                continue 2;
-            }
-        }
-
-        /* xen terminal */
-        if (strpos($tty, 'xc0') === 0) {
-            $on_off_secure_w = $virtual_enabled ? 'onifconsole secure' : 'off secure';
-            fwrite($fd, "xc0\t\"/usr/libexec/getty {$console_type}\"\t\txterm\t{$on_off_secure_w}\n");
-            continue;
-        }
-
-        /* XXX rcons currently not tied to serial setting */
-
-        if (!empty($tty)) {
-            /* all other lines stay the same */
-            fwrite($fd, $tty . "\n");
-        }
-    }
-
-    fclose($fd);
 
     configd_run('template reload OPNsense/Auth');
 
     service_log("done.\n", $verbose);
-
-    /* force init(8) to reload /etc/ttys */
-    mwexecf('/bin/kill -HUP 1');
 }
 
 function reset_factory_defaults($sync = true)
