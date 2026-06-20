@@ -21,7 +21,7 @@
       <descr>System Administrator</descr>
       <scope>system</scope>
       <groupname>admins</groupname>
-      <password>$2y$10$YRVoF4SgskIsrXOvOQjGieB9XqHPRra9R7d80B3BZdbY/j21TwBfS</password>
+      <password>$2y$10$ljIcz88GrNT6RX6UUJV2yOeYq4YOlJFDmWhL8CZYJts2GnxcSK5F.</password>
       <uid>0</uid>
     </user>
     <timezone>Etc/UTC</timezone>
