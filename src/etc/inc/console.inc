@@ -77,9 +77,13 @@ function is_interface_mismatch($locked = true)
 
 function set_networking_interfaces_ports($probe = false)
 {
-    shell_safe('/sbin/conscontrol mute on');
+    /* Silence kernel messages on the console while the interactive menu is
+       drawn so they do not garble the prompts. On Debian "dmesg -D" disables
+       printing log messages to the console and "dmesg -E" re-enables it
+       (the FreeBSD original used conscontrol, which does not exist here). */
+    shell_safe('/usr/bin/dmesg -D');
     $ret = _set_networking_interfaces_ports($probe);
-    shell_safe('/sbin/conscontrol mute off');
+    shell_safe('/usr/bin/dmesg -E');
 
     return $ret;
 }
