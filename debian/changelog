@@ -1,3 +1,11 @@
+muros (0.9.17) trixie; urgency=medium
+
+  * Default configuration: set the seeded system hostname to "MurOS" instead of
+    the inherited "OPNsense" so a fresh install no longer shows "root @OPNsense"
+    in the web UI header. Existing installs keep their configured hostname.
+
+ -- MurOS <dev@muros.org>  Sat, 20 Jun 2026 15:50:00 +0200
+
 muros (0.9.16) trixie; urgency=medium
 
   * Runtime directories: create /var/etc (and the PHP temp/session/cache tree)
