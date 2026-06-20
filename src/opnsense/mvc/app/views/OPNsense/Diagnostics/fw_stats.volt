@@ -25,7 +25,7 @@
  #}
 
 <!-- nvd3 -->
-<link rel="stylesheet" type="text/css" href="{{ cache_safe(theme_file_or_default('/css/nv.d3.css', ui_theme|default('opnsense'))) }}" />
+<link rel="stylesheet" type="text/css" href="{{ cache_safe(theme_file_or_default('/css/nv.d3.css', ui_theme|default('muros'))) }}" />
 
 <!-- d3 -->
 <script src="{{ cache_safe('/ui/js/d3.min.js') }}"></script>

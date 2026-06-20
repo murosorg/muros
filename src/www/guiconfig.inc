@@ -95,7 +95,7 @@ function get_themed_filename($url, $exists = false)
 {
     global $config;
 
-    $theme = 'opnsense';
+    $theme = 'muros';
 
     if (isset($config['theme']) && is_dir('/usr/local/opnsense/www/themes/' . $config['theme'])) {
         $theme = $config['theme'];
