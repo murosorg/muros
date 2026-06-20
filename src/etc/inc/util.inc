@@ -1004,7 +1004,9 @@ function mwexecfb($format, $args = [], $opts = [])
         array_unshift($args, $opts['restart']);
     }
 
-    array_unshift($format, '/usr/sbin/daemon -f');
+    /* muros-daemon is our Debian replacement for FreeBSD daemon(8); it accepts
+       the same -f/-o/-p/-P/-r/-R flag subset assembled above */
+    array_unshift($format, '/usr/local/sbin/muros-daemon -f');
 
     return OPNsense\Core\Shell::run_safe($format, $args);
 }
