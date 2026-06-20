@@ -32,20 +32,68 @@ class Processor extends Base
 {
     public function run()
     {
-        $cpustats = $this->shellCmd('/usr/local/sbin/cpustats');
-        $ps = $this->shellCmd('/bin/ps uxaH');
-
-        if (!empty($cpustats) && !empty($ps)) {
-            $tmp = explode(':', $cpustats[0]);
-            return [
-                'user' => $tmp[0],
-                'nice' => $tmp[1],
-                'system' => $tmp[2],
-                'interrupt' => $tmp[3],
-                'processes' => count($ps) - 1
-            ];
+        // FreeBSD sampled cpu time through the cpustats helper; on Linux we derive
+        // the same user/nice/system/interrupt split from two /proc/stat reads.
+        $first = $this->readCpu();
+        usleep(250000);
+        $second = $this->readCpu();
+        if ($first === null || $second === null) {
+            return [];
         }
 
-        return [];
+        $delta = [];
+        $total = 0.0;
+        foreach ($second as $key => $value) {
+            $delta[$key] = $value - ($first[$key] ?? 0);
+            $total += $delta[$key];
+        }
+        if ($total <= 0) {
+            return [];
+        }
+
+        // task (thread) count, matching the threaded "ps uxaH" count of the original;
+        // /proc/loadavg reports it as the denominator of its running/total field.
+        $processes = 0;
+        $load = @file_get_contents('/proc/loadavg');
+        if ($load !== false && preg_match('#\d+/(\d+)#', $load, $m)) {
+            $processes = (int)$m[1];
+        }
+
+        return [
+            'user' => $delta['user'] / $total * 100.0,
+            'nice' => $delta['nice'] / $total * 100.0,
+            'system' => $delta['system'] / $total * 100.0,
+            'interrupt' => ($delta['irq'] + $delta['softirq']) / $total * 100.0,
+            'processes' => $processes,
+        ];
+    }
+
+    /**
+     * read the aggregate cpu time counters from /proc/stat
+     * @return array|null jiffies per state, or null when unavailable
+     */
+    private function readCpu()
+    {
+        $raw = @file_get_contents('/proc/stat');
+        if ($raw === false) {
+            return null;
+        }
+        foreach (explode("\n", $raw) as $line) {
+            if (strpos($line, 'cpu ') === 0) {
+                // cpu user nice system idle iowait irq softirq steal guest guest_nice
+                $p = preg_split('/\s+/', trim($line));
+                return [
+                    'user' => (float)($p[1] ?? 0),
+                    'nice' => (float)($p[2] ?? 0),
+                    'system' => (float)($p[3] ?? 0),
+                    'idle' => (float)($p[4] ?? 0),
+                    'iowait' => (float)($p[5] ?? 0),
+                    'irq' => (float)($p[6] ?? 0),
+                    'softirq' => (float)($p[7] ?? 0),
+                    'steal' => (float)($p[8] ?? 0),
+                ];
+            }
+        }
+        return null;
     }
 }
