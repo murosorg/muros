@@ -14,26 +14,55 @@
 # WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
 # ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 # OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+#
+# MurOS: ported from FreeBSD ifconfig(8)/route(8)/arp(8) to Linux iproute2.
+# Address and route handling now use ip(8); the gateway, DNS and OPNsense
+# interface state are still delegated to ifctl/configctl which are
+# platform independent helpers.
 
-IFCONFIG="/sbin/ifconfig -n"
+IP="/sbin/ip"
 LOGGER="/usr/bin/logger -s -p user.notice -t dhclient dhclient-script:"
 
 #
 # Helper functions that implement common actions.
 #
 
+# convert a dotted IPv4 netmask (e.g. 255.255.255.0) to a prefix length (24)
+mask2prefix()
+{
+	local mask="${1:-255.255.255.255}" octet prefix=0
+	local IFS=.
+	for octet in $mask; do
+		case $octet in
+		255) prefix=$((prefix + 8));;
+		254) prefix=$((prefix + 7));;
+		252) prefix=$((prefix + 6));;
+		248) prefix=$((prefix + 5));;
+		240) prefix=$((prefix + 4));;
+		224) prefix=$((prefix + 3));;
+		192) prefix=$((prefix + 2));;
+		128) prefix=$((prefix + 1));;
+		*) ;;
+		esac
+	done
+	echo $prefix
+}
+
 delete_old_address()
 {
-	eval "$IFCONFIG $interface inet -alias $old_ip_address $medium"
+	[ -n "$old_ip_address" ] || return 0
+	$IP -4 addr del "$old_ip_address/$(mask2prefix "$old_subnet_mask")" dev "$interface" 2>/dev/null
 }
 
 add_new_address()
 {
-	eval "$IFCONFIG $interface \
-		inet $new_ip_address \
-		netmask $new_subnet_mask \
-		broadcast $new_broadcast_address \
-		$medium"
+	prefix=$(mask2prefix "$new_subnet_mask")
+	if [ -n "$new_broadcast_address" ]; then
+		$IP -4 addr add "$new_ip_address/$prefix" broadcast "$new_broadcast_address" dev "$interface"
+	else
+		$IP -4 addr add "$new_ip_address/$prefix" dev "$interface"
+	fi
+	$IP link set dev "$interface" up
 
 	$LOGGER "New IP Address ($interface): $new_ip_address"
 	$LOGGER "New Subnet Mask ($interface): $new_subnet_mask"
@@ -48,15 +77,14 @@ add_new_address()
 delete_old_alias()
 {
 	if [ -n "$alias_ip_address" ]; then
-		$IFCONFIG $interface inet -alias $alias_ip_address > /dev/null 2>&1
+		$IP -4 addr del "$alias_ip_address/$(mask2prefix "$alias_subnet_mask")" dev "$interface" > /dev/null 2>&1
 	fi
 }
 
 add_new_alias()
 {
 	if [ -n "$alias_ip_address" ]; then
-		$IFCONFIG $interface inet alias $alias_ip_address netmask \
-		    $alias_subnet_mask
+		$IP -4 addr add "$alias_ip_address/$(mask2prefix "$alias_subnet_mask")" dev "$interface"
 	fi
 }
 
@@ -92,7 +120,11 @@ delete_old_routes()
 		fill_classless_routes "$old_classless_routes"
 		set $classless_routes
 		while [ $# -gt 1 ]; do
-			route delete "$1" "$2"
+			if [ "0.0.0.0" = "$2" ]; then
+				$IP route del "$1" dev "$interface" 2>/dev/null
+			else
+				$IP route del "$1" via "$2" 2>/dev/null
+			fi
 			shift; shift
 		done
 		return 0;
@@ -101,16 +133,14 @@ delete_old_routes()
 	if [ -n "$old_static_routes" ]; then
 		set $old_static_routes
 		while [ $# -gt 1 ]; do
-			route delete "$1" "$2"
+			$IP route del "$1" via "$2" 2>/dev/null
 			shift; shift
 		done
 	fi
 
 	/usr/local/sbin/ifctl -i ${interface} -4rd
 
-	arp -an -i $interface | \
-	    sed -n -e 's/^.*(\(.*\)) at .*$/arp -d \1/p' | \
-	    sh >/dev/null 2>&1
+	$IP neigh flush dev "$interface" >/dev/null 2>&1
 }
 
 add_new_routes()
@@ -130,9 +160,9 @@ add_new_routes()
 		set $classless_routes
 		while [ $# -gt 1 ]; do
 			if [ "0.0.0.0" = "$2" ]; then
-				route add "$1" -iface "$interface"
+				$IP route add "$1" dev "$interface"
 			else
-				route add "$1" "$2"
+				$IP route add "$1" via "$2"
 			fi
 			shift; shift
 		done
@@ -151,7 +181,7 @@ add_new_routes()
 		$LOGGER "New Static Routes ($interface): $new_static_routes"
 		set $new_static_routes
 		while [ $# -gt 1 ]; do
-			route add $1 $2
+			$IP route add "$1" via "$2"
 			if [ -z "$(/usr/local/sbin/ifctl -i ${interface} -4r)" ]; then
 				/usr/local/sbin/ifctl -i ${interface} -4rd -a ${2}
 			fi
@@ -183,13 +213,14 @@ $LOGGER "Reason $reason on $interface executing"
 
 case $reason in
 MEDIUM)
-	eval "$IFCONFIG $interface $medium"
+	# media selection is not configurable through this path on Linux
+	$IP link set dev "$interface" up
 	sleep 1
 	;;
 
 PREINIT)
 	delete_old_alias
-	eval "$IFCONFIG $interface up"
+	$IP link set dev "$interface" up
 	/usr/local/sbin/ifctl -i ${interface} -4rd
 	;;
 
@@ -247,7 +278,7 @@ TIMEOUT)
 	if [ -n "$new_routers" ]; then
 		$LOGGER "New Routers ($interface): $new_routers"
 		set "$new_routers"
-		if ping -q -c 1 -t 1 "$1"; then
+		if ping -q -c 1 -W 1 "$1"; then
 			if [ "$new_ip_address" != "$alias_ip_address" ]; then
 				add_new_alias
 			fi
@@ -257,7 +288,7 @@ TIMEOUT)
 			exit 0
 		fi
 	fi
-	eval "$IFCONFIG $interface inet -alias $new_ip_address $medium"
+	$IP -4 addr del "$new_ip_address/$(mask2prefix "$new_subnet_mask")" dev "$interface" 2>/dev/null
 	delete_old_routes
 	/usr/local/sbin/configctl -d interface newip $interface
 	exit 1
