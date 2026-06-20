@@ -34,143 +34,92 @@ require_once('script/load_phalcon.php');
 use OPNsense\Core\Config;
 use OPNsense\Core\Shell;
 
-$ntpq_servers = [];
-$result = [];
-$server = [];
+$result = ['ntpq_servers' => [], 'gps' => []];
 
-foreach (array_slice(Shell::shell_safe('/usr/local/sbin/ntpq -pnw', [], true), 2) as $line) {
-    if (empty($server['status'])) {
-        $server['status'] = substr($line, 0, 1);
-    }
-    $line = substr($line, 1);
-    $peerinfo = preg_split('/\s+/', $line);
-    if (empty($server['server'])) {
-        $server['server'] = $peerinfo[0];
-    }
-    if (empty($peerinfo[1])) {
-        // newline in ntpq output
-        continue;
-    }
-    $server['refid'] = $peerinfo[1];
-    $server['stratum'] = $peerinfo[2];
-    $server['type'] = $peerinfo[3];
-    $server['when'] = $peerinfo[4];
-    $server['poll'] = $peerinfo[5];
-    $server['reach'] = $peerinfo[6];
-    $server['delay'] = $peerinfo[7];
-    $server['offset'] = $peerinfo[8];
-    $server['jitter'] = $peerinfo[9];
-
-    if ($server['type'] === 'p') {
-        $server['status'] = '__pool';
-    }
-
-    $ntpq_servers[] = $server;
-    $server = [];
-}
-
-$result['ntpq_servers'] = $ntpq_servers;
-$result['gps'] = [];
-
-function nmeaGeoParts(?string $val, ?string $dir): ?array
+/*
+ * Query the chrony daemon and present its sources with the same field names
+ * the legacy ntpq based page produced, so the existing view keeps working.
+ * chronyc -c returns comma separated records.
+ */
+function chrony_records($command)
 {
-    if ($val === null || $dir === null) {
-        return null;
+    $records = [];
+    foreach (Shell::shell_safe('/usr/bin/chronyc -c ' . $command . ' 2> /dev/null', [], true) as $line) {
+        $line = trim($line);
+        if ($line === '') {
+            continue;
+        }
+        $records[] = explode(',', $line);
     }
-    if (!preg_match('/^\d+(\.\d+)?$/', $val)) {
-        return null;
-    }
-
-    [$int, $frac] = array_pad(explode('.', $val, 2), 2, '0');
-    $degStr = substr($int, 0, max(strlen($int) - 2, 0));
-    $minStr = substr($int, -2) . '.' . $frac;
-
-    $deg  = ($degStr === '' ? 0 : (int)$degStr);
-    $min  = (float)$minStr;
-    $dir  = strtoupper($dir);
-    $sign = ($dir === 'S' || $dir === 'W') ? -1 : 1;
-
-    $dec  = $sign * ($deg + $min / 60.0);
-
-    return ['dec' => $dec, 'deg' => $deg, 'min' => $min, 'dir' => $dir];
+    return $records;
 }
 
-foreach (Shell::shell_safe('/usr/local/sbin/ntpq -c clockvar 2> /dev/null', [], true) as $line) {
-    if (strncmp($line, "timecode=", 9) !== 0) {
-        continue;
+/* map the chrony source state to the ntpq status symbols used by the view */
+$state_map = [
+    '*' => '*',
+    '+' => '+',
+    '-' => '-',
+    'x' => 'x',
+    '?' => ' ',
+    '~' => ' ',
+];
+
+/* map the chrony source mode to the ntpq connection type symbols */
+$mode_map = [
+    '^' => 'u',
+    '=' => 's',
+    '#' => 'l',
+];
+
+/* index the per source statistics by name to recover the jitter (std dev) */
+$stats = [];
+foreach (chrony_records('sourcestats') as $row) {
+    if (count($row) >= 8) {
+        $stats[$row[0]] = $row;
     }
-    if (!preg_match('/"([^"]+)"/', $line, $m)) {
-        continue;
-    }
-
-    $vars = explode(',', $m[1]);
-    $type = $vars[0] ?? '';
-    $gps  = ['sentence' => $type];
-
-    switch ($type) {
-        case '$GPRMC': {
-            $gps['ok'] = (($vars[2] ?? '') === 'A');
-
-            $lat = nmeaGeoParts($vars[3] ?? null, $vars[4] ?? null);
-            $lon = nmeaGeoParts($vars[5] ?? null, $vars[6] ?? null);
-            break;
-        }
-        case '$GPGGA': {
-            $gps['ok']       = $vars[6]  ?? null;
-            $gps['alt']      = $vars[9]  ?? null;
-            $gps['alt_unit'] = $vars[10] ?? null;
-            $gps['sat']      = $vars[7]  ?? null;
-
-            $lat = nmeaGeoParts($vars[2] ?? null, $vars[3] ?? null);
-            $lon = nmeaGeoParts($vars[4] ?? null, $vars[5] ?? null);
-            break;
-        }
-        case '$GPGLL': {
-            $gps['ok'] = (($vars[6] ?? '') === 'A');
-
-            $lat = nmeaGeoParts($vars[1] ?? null, $vars[2] ?? null);
-            $lon = nmeaGeoParts($vars[3] ?? null, $vars[4] ?? null);
-            break;
-        }
-        default:
-            $lat = $lon = null;
-    }
-
-    // Merge parsed lat/lon parts if present
-    if ($lat) {
-        $gps += [
-            'lat'     => $lat['dec'],
-            'lat_deg' => $lat['deg'],
-            'lat_min' => $lat['min'],
-            'lat_dir' => $lat['dir'],
-        ];
-    }
-    if ($lon) {
-        $gps += [
-            'lon'     => $lon['dec'],
-            'lon_deg' => $lon['deg'],
-            'lon_min' => $lon['min'],
-            'lon_dir' => $lon['dir'],
-        ];
-    }
-
-    $gps = array_filter($gps, static fn($v) => $v !== null && $v !== '');
-    $result['gps'] = array_replace($result['gps'], $gps);
 }
 
-$cfg = Config::getInstance()->object();
+/* the synced source reference id is only exposed through the tracking record */
+$track_refid = '';
+$tracking = chrony_records('tracking');
+if (!empty($tracking[0]) && count($tracking[0]) >= 2) {
+    $track_refid = $tracking[0][0];
+}
 
-if (!empty($cfg->ntpd->gps->type) && (string)$cfg->ntpd->gps->type == 'SureGPS' && isset($result['gps']['ok'])) {
-    // GSV message is only enabled by init commands in services_ntpd_gps.php for SureGPS board
-    $gpsport = fopen("/dev/gps0", "r+");
-    while ($gpsport) {
-        $buffer = fgets($gpsport);
-        if (substr($buffer, 0, 6) == '$GPGSV') {
-            $gpgsv = explode(',', $buffer);
-            $result['gps']['gps_satview'] = $gpgsv[3];
-            break;
+foreach (chrony_records('sources') as $row) {
+    if (count($row) < 10) {
+        continue;
+    }
+    $mode = $row[0];
+    $state = $row[1];
+    $name = $row[2];
+
+    $server = [];
+    $server['status'] = $state_map[$state] ?? ' ';
+    $server['server'] = $name;
+    $server['refid'] = ($state === '*' && $track_refid !== '') ? $track_refid : '-';
+    $server['stratum'] = $row[3];
+    $server['type'] = $mode_map[$mode] ?? 'u';
+    $server['when'] = $row[6];
+    /* chrony reports the poll as a power of two, the view expects seconds */
+    $server['poll'] = (string)(1 << max(0, (int)$row[4]));
+    $server['reach'] = $row[5];
+    /* offset and jitter are converted from seconds to milliseconds like ntpq */
+    $server['offset'] = sprintf('%.3f', ((float)$row[7]) * 1000.0);
+    $server['jitter'] = isset($stats[$name][7]) ? sprintf('%.3f', ((float)$stats[$name][7]) * 1000.0) : '';
+
+    /* the round trip delay is only available through the authorised ntpdata query */
+    $server['delay'] = '';
+    if (($mode === '^' || $mode === '=') && preg_match('/^[A-Za-z0-9._:-]+$/', $name)) {
+        foreach (Shell::shell_safe('/usr/bin/chronyc ntpdata ' . $name . ' 2> /dev/null', [], true) as $dline) {
+            if (preg_match('/Peer delay\s*:\s*([0-9.eE+-]+)\s*seconds/', $dline, $m)) {
+                $server['delay'] = sprintf('%.3f', ((float)$m[1]) * 1000.0);
+                break;
+            }
         }
     }
+
+    $result['ntpq_servers'][] = $server;
 }
 
 echo json_encode($result);
