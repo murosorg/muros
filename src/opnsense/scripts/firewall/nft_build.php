@@ -670,6 +670,202 @@ function rule_line(SimpleXMLElement $rule, array $ifaces, array $aliases = []): 
     return $line;
 }
 
+/* Resolve a NetworkAliasField value (source_net / destination_net of an MVC
+ * model rule) for one address family. Returns ['expr' => nft token|null,
+ * 'ok' => bool]. "ok" is false when the value is a literal address that
+ * belongs to the other family, signalling that no rule line should be
+ * produced for the current family. A null expr means "any" (no L3 match). */
+function mvc_resolve_net(string $value, string $family, array $ifaces, array $aliases): array
+{
+    $value = trim($value);
+    if ($value === '' || strtolower($value) === 'any') {
+        return ['expr' => null, 'ok' => true];
+    }
+    $literals = [];
+    $ref = null;
+    foreach (preg_split('/[\s,]+/', $value) ?: [] as $tok) {
+        $tok = trim($tok);
+        if ($tok === '') {
+            continue;
+        }
+        $aliasRef = alias_addr_ref($tok, $family, $aliases);
+        if ($aliasRef !== null) {
+            $ref = $aliasRef;
+            continue;
+        }
+        if (isset($ifaces[$tok])) {
+            /* an interface keyword resolves to its statically known subnet */
+            $cidr = $family === 'ip6' ? $ifaces[$tok]['cidr6'] : $ifaces[$tok]['cidr4'];
+            if ($cidr !== null) {
+                $literals[] = $cidr;
+            }
+            continue;
+        }
+        $ipPart = strpos($tok, '/') !== false ? substr($tok, 0, strpos($tok, '/')) : $tok;
+        $isv6 = filter_var($ipPart, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) !== false;
+        $isv4 = filter_var($ipPart, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false;
+        if ($isv6 && $family === 'ip6') {
+            $literals[] = $tok;
+        } elseif ($isv4 && $family === 'ip') {
+            $literals[] = $tok;
+        } elseif ($isv4 || $isv6) {
+            /* literal belongs to the other family: skip this family entirely */
+            return ['expr' => null, 'ok' => false];
+        }
+        /* unknown tokens (hostnames, dynamic refs) are ignored */
+    }
+    if (!empty($literals)) {
+        $expr = count($literals) === 1 ? $literals[0] : '{ ' . implode(', ', array_unique($literals)) . ' }';
+        return ['expr' => $expr, 'ok' => true];
+    }
+    return ['expr' => $ref, 'ok' => true];
+}
+
+/* Translate one MVC model firewall rule (OPNsense/Firewall/Filter) into nft
+ * rule lines. The model schema differs from the legacy <filter><rule> one
+ * (action/source_net/destination_net, multiple interfaces, inet46), so it
+ * gets its own translator. A rule may yield several lines: an "any" (inet46)
+ * rule is emitted once per family. Every line carries the rule uuid as its
+ * comment so per-rule counters can be mapped back to the GUI. */
+function mvc_rule_line(SimpleXMLElement $rule, array $ifaces, array $aliases): array
+{
+    if (trim((string)($rule->enabled ?? '1')) === '0') {
+        return [];
+    }
+    $action = strtolower(trim((string)$rule->action)) ?: 'pass';
+    $verdict = ['pass' => 'accept', 'block' => 'drop', 'reject' => 'reject'][$action] ?? null;
+    if ($verdict === null) {
+        return [];
+    }
+
+    $uuid = trim((string)$rule['uuid']);
+    $ipproto = trim((string)$rule->ipprotocol) ?: 'inet';
+    $families = $ipproto === 'inet6' ? ['ip6'] : ($ipproto === 'inet46' ? ['ip', 'ip6'] : ['ip']);
+
+    /* interface match, shared across families */
+    $dir = trim((string)$rule->direction) ?: 'in';
+    $kw = $dir === 'out' ? 'oifname' : 'iifname';
+    $devs = [];
+    foreach (preg_split('/[\s,]+/', trim((string)$rule->interface)) ?: [] as $ik) {
+        $ik = trim($ik);
+        if ($ik !== '' && isset($ifaces[$ik])) {
+            $devs[] = $ifaces[$ik]['device'];
+        }
+    }
+    $ifExpr = null;
+    if (!empty($devs)) {
+        $neg = trim((string)($rule->interfacenot ?? '0')) === '1' ? '!= ' : '';
+        $devs = array_values(array_unique($devs));
+        if (count($devs) === 1 && $neg === '') {
+            $ifExpr = "$kw " . ifname_token($devs[0]);
+        } else {
+            $ifExpr = "$kw $neg" . '{ ' . implode(', ', array_map('ifname_token', $devs)) . ' }';
+        }
+    }
+
+    $proto = strtolower(trim((string)$rule->protocol));
+    $sport = resolve_port((string)($rule->source_port ?? ''), $aliases);
+    $dport = resolve_port((string)($rule->destination_port ?? ''), $aliases);
+    $sneg = trim((string)($rule->source_not ?? '0')) === '1' ? '!= ' : '';
+    $dneg = trim((string)($rule->destination_not ?? '0')) === '1' ? '!= ' : '';
+
+    $lines = [];
+    foreach ($families as $family) {
+        $parts = [];
+        if ($ifExpr !== null) {
+            $parts[] = $ifExpr;
+        }
+
+        $hasL3 = false;
+        /* layer 4 protocol */
+        $l4 = null;
+        if ($proto === 'tcp' || $proto === 'udp') {
+            $l4 = $proto;
+        } elseif ($proto === 'tcp/udp') {
+            $l4 = 'th';
+        } elseif ($proto === 'icmp') {
+            if ($family === 'ip6') {
+                $parts[] = 'meta l4proto ipv6-icmp';
+                $names = trim((string)$rule->icmp6type);
+            } else {
+                $parts[] = 'ip protocol icmp';
+                $names = trim((string)$rule->icmptype);
+            }
+            $hasL3 = true;
+            if ($names !== '') {
+                $icmpMatch = icmp_type_match($names, $family);
+                if ($icmpMatch !== null) {
+                    $parts[] = $icmpMatch;
+                }
+            }
+        } elseif ($proto !== '' && $proto !== 'any') {
+            $protoNumbers = [
+                'igmp' => 2, 'ipencap' => 4, 'ipv6' => 41, 'gre' => 47, 'esp' => 50,
+                'ah' => 51, 'ospf' => 89, 'pim' => 103, 'vrrp' => 112, 'carp' => 112,
+                'pfsync' => 240, 'sctp' => 132, 'etherip' => 97, 'l2tp' => 115,
+            ];
+            if (isset($protoNumbers[$proto])) {
+                $parts[] = 'meta l4proto ' . $protoNumbers[$proto];
+            }
+        }
+
+        /* source / destination addresses */
+        $s = mvc_resolve_net((string)($rule->source_net ?? ''), $family, $ifaces, $aliases);
+        if (!$s['ok']) {
+            continue;
+        }
+        $d = mvc_resolve_net((string)($rule->destination_net ?? ''), $family, $ifaces, $aliases);
+        if (!$d['ok']) {
+            continue;
+        }
+        if ($s['expr'] !== null) {
+            $parts[] = "$family saddr $sneg" . $s['expr'];
+            $hasL3 = true;
+        }
+        if ($d['expr'] !== null) {
+            $parts[] = "$family daddr $dneg" . $d['expr'];
+            $hasL3 = true;
+        }
+        if (!$hasL3) {
+            array_unshift($parts, $family === 'ip6' ? 'meta nfproto ipv6' : 'meta nfproto ipv4');
+        }
+
+        /* ports (tcp/udp only) */
+        if ($l4 !== null) {
+            if ($l4 === 'th') {
+                $parts[] = 'meta l4proto { tcp, udp }';
+                if ($sport !== null) {
+                    $parts[] = "th sport $sneg$sport";
+                }
+                if ($dport !== null) {
+                    $parts[] = "th dport $dneg$dport";
+                }
+            } else {
+                if ($sport !== null) {
+                    $parts[] = "$l4 sport $sneg$sport";
+                }
+                if ($dport !== null) {
+                    $parts[] = "$l4 dport $dneg$dport";
+                }
+                if ($sport === null && $dport === null) {
+                    $parts[] = "meta l4proto $l4";
+                }
+            }
+        }
+
+        /* logging prefixes the verdict; nft logs then continues to the verdict */
+        $log = trim((string)($rule->log ?? '0')) === '1' ? 'log ' : '';
+        $stmt = trim(implode(' ', $parts));
+        $line = '        ' . ($stmt === '' ? '' : $stmt . ' ') . $log . "counter $verdict";
+        if ($uuid !== '') {
+            $line .= " comment \"$uuid\"";
+        }
+        $lines[] = $line;
+    }
+
+    return $lines;
+}
+
 /* ----------------------------------------------------------------- */
 
 $path = $argv[1] ?? '/conf/config.xml';
@@ -687,10 +883,28 @@ $ifaces = build_interfaces($cfg);
 $aliases = build_aliases($cfg);
 
 $rules = [];
+/* legacy <filter><rule> entries */
 if (isset($cfg->filter)) {
     foreach ($cfg->filter->rule as $rule) {
         $line = rule_line($rule, $ifaces, $aliases);
         if ($line !== null) {
+            $rules[] = $line;
+        }
+    }
+}
+/* MVC model rules (OPNsense/Firewall/Filter), as managed by the
+ * "Firewall: Rules" GUI. These are sorted by their sequence field before
+ * translation so evaluation order matches what the operator configured. */
+if (isset($cfg->OPNsense->Firewall->Filter->rules->rule)) {
+    $mvcRules = [];
+    foreach ($cfg->OPNsense->Firewall->Filter->rules->rule as $rule) {
+        $mvcRules[] = $rule;
+    }
+    usort($mvcRules, function ($a, $b) {
+        return ((int)$a->sequence) <=> ((int)$b->sequence);
+    });
+    foreach ($mvcRules as $rule) {
+        foreach (mvc_rule_line($rule, $ifaces, $aliases) as $line) {
             $rules[] = $line;
         }
     }
