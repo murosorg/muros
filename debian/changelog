@@ -1,3 +1,11 @@
+muros (0.9.21) trixie; urgency=medium
+
+  * Web UI sidebar: removed the version label from the brand block (it added an
+    unnecessary gap) and laid the bottom account block out on a single line with
+    user@host on the left and Logout on the right, reclaiming vertical space.
+
+ -- MurOS <dev@muros.org>  Sat, 20 Jun 2026 16:50:00 +0200
+
 muros (0.9.20) trixie; urgency=medium
 
   * Initial setup wizard: the Next button no longer silently does nothing. It
