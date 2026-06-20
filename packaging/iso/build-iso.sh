@@ -11,9 +11,10 @@
 #
 # The boot menu offers:
 #   - "Install MurOS" (default, 30s timeout): partitions the first disk
-#     (guided LVM), copies the base system, installs muros. Everything is
-#     automated except the network step, where the operator picks the LAN
-#     interface and types its STATIC IP (a firewall LAN is never DHCP).
+#     (guided LVM), copies the base system, installs muros. Fully
+#     unattended; networking is not configured by the installer. On first
+#     boot MurOS assigns the interfaces (WAN on DHCP, LAN static) and loads
+#     the firewall, exactly like an OPNsense appliance.
 #   - the stock live "Install" / "Graphical install" entries: a plain
 #     interactive Debian install.
 #
@@ -372,10 +373,10 @@ done
 # 4. Make "Install MurOS" the ONLY boot entry. A MurOS installer has no
 #    use for the stock Debian live entries (Live system, Start installer,
 #    speech, Advanced, Utilities), which only confuse operators, so we
-#    replace the menus with a single MurOS entry instead of appending to
-#    them. priority=high (not critical) keeps the network step
-#    interactive so the LAN interface and its static IP are chosen during
-#    install. We rewrite both the BIOS (isolinux) and UEFI (grub) menus.
+#    them. priority=high surfaces any question the preseed does not answer
+#    (a safety net rather than failing on a bad default); a fully preseeded
+#    run is unattended. We rewrite both the BIOS (isolinux) and UEFI (grub)
+#    menus.
 # ---------------------------------------------------------------------
 echo "[4/5] Building a MurOS-only boot menu (single 'Install MurOS' entry)"
 KARGS="priority=high"
@@ -501,8 +502,10 @@ xorriso -as mkisofs \
 
 echo
 echo "Done. Offline MurOS installer (no network needed): ${OUTPUT}"
-echo "Boot menu: 'Install MurOS' (default, 30s). The install is automated"
-echo "except the LAN step, where you pick the interface and its static IP."
-echo "The stock Debian entries remain for a plain manual install."
-echo "Root password for the installed system: ${ROOT_PASSWORD}"
+echo "Boot menu: 'Install MurOS' (default, 30s). The install is fully"
+echo "unattended; networking is not configured by the installer. On first"
+echo "boot MurOS assigns the interfaces (WAN on DHCP, LAN static) and loads"
+echo "the firewall; reach the web UI on the LAN at https://192.168.1.1"
+echo "(login root / opnsense). The stock Debian entries remain for a plain"
+echo "manual install. Console root password for the installed system: ${ROOT_PASSWORD}"
 echo "Write it to a USB key:  sudo dd if=${OUTPUT} of=/dev/sdX bs=4M status=progress oflag=sync"

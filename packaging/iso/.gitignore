@@ -1,0 +1,4 @@
+offline/
+.work/
+*.iso
+*.iso.sha256
