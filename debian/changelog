@@ -1,3 +1,15 @@
+muros (0.9.9) trixie; urgency=medium
+
+  * Fix login HTTP 500 (surfaced in the browser as a CSRF error): the package
+    now ships the vendored contrib/ libraries to /usr/local/opnsense/contrib.
+    The auth factory enumerates every connector at login and the TOTP
+    connector requires base32/Base32.php, which was missing.
+  * Appliance boot robustness: interface units no longer order after
+    network-online.target (they bring the network up), avoiding a long
+    wait-online delay; interface assignment runs before interface addressing.
+
+ -- MurOS <dev@muros.org>  Sat, 20 Jun 2026 10:40:00 +0200
+
 muros (0.9.8) trixie; urgency=medium
 
   * Ship 99-muros.ini (fpm+cli): include_path and appliance PHP limits so the
