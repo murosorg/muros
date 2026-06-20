@@ -93,7 +93,7 @@ footer {
 }
 
 .content h1 {
-  color: #C03E14
+  color: #F5C518
 }
 
 
@@ -136,12 +136,12 @@ input[type="text"], input[type="password"] {
 .btn{
     font-size: 16px;
     position: relative;
-    color: #FFFFFF;
+    color: #1a1a1a;
     font-weight: 300;
     display: inline-block;
     line-height: 1;
     padding:13px 25px 16px;
-    background: #C03E14;
+    background: #F5C518;
     border-radius: 25px;
     text-align: center;
     font-style: normal;
