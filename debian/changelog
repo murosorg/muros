@@ -1,3 +1,15 @@
+muros (0.9.10) trixie; urgency=medium
+
+  * Gateway monitoring now functional on Debian. The gateway-monitoring path
+    (dpinger.inc, gateway_status.php, gateway_watcher.php) and the monitor host
+    route (system_host_route via iproute2) were already OS-independent; the only
+    missing piece was the daemon. dpinger 3.6 is now packaged for Debian 13 and
+    pulled in as a dependency, so per-gateway latency, loss and availability
+    monitoring (the basis for multi-WAN failover) work out of the box.
+  * Add dpinger to Depends (served from the MurOS apt repository).
+
+ -- MurOS <dev@muros.org>  Sat, 20 Jun 2026 11:35:00 +0000
+
 muros (0.9.9) trixie; urgency=medium
 
   * Fix login HTTP 500 (surfaced in the browser as a CSRF error): the package
