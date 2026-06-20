@@ -175,7 +175,7 @@ function dhcrelay_configure_id($verbose = false, $id_map = null)
             continue;
         }
 
-        $cmd_frmt = ['/usr/sbin/daemon -S -T dhcrelay -f -p %s'];
+        $cmd_frmt = ['/usr/local/sbin/muros-daemon -f -p %s'];
         $cmd_args = ["/var/run/dhcrelay-{$relay->getAttribute('uuid')}.pid"];
 
         $cmd_frmt[] = sprintf('/usr/local/sbin/dhcrelay%s -d', $family == 'inet6' ? '6' : '');

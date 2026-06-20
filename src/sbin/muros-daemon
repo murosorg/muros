@@ -1,0 +1,186 @@
+#!/usr/bin/python3
+
+"""Minimal daemon(8) replacement for MurOS on Debian.
+
+FreeBSD's daemon(8) is used by util.inc:mwexecfb() to launch background
+processes. Debian has no equivalent, so this shim reproduces the small flag
+subset MurOS relies on:
+
+  -f             detach from the controlling terminal (always done here)
+  -o <logfile>   append the child's stdout and stderr to <logfile>
+  -p <pidfile>   write the child pid to <pidfile>
+  -P <pidfile>   write the supervisor pid to <pidfile> (restart mode)
+  -u <user>      drop privileges to <user> before running the command
+  -r             restart the child when it exits
+  -R <seconds>   restart the child after <seconds> when it exits (implies -r)
+
+Other value-less single-letter flags (such as -S) are accepted and ignored for
+compatibility. The first non-option argument and everything after it is the
+command to run.
+"""
+
+import os
+import pwd
+import signal
+import sys
+import time
+
+# flags that consume the following argument as their value
+VALUE_FLAGS = ('-o', '-p', '-P', '-u', '-R', '-rR', '-T', '-m', '-s', '-l')
+
+
+def parse_args(argv):
+    opts = {
+        'logfile': None,
+        'pidfile': None,
+        'user': None,
+        'restart': False,
+        'restart_delay': 0,
+    }
+    idx = 0
+    while idx < len(argv):
+        arg = argv[idx]
+        if not arg.startswith('-') or arg == '-':
+            break
+        if arg == '-f':
+            idx += 1
+        elif arg == '-o':
+            opts['logfile'] = argv[idx + 1]
+            idx += 2
+        elif arg in ('-p', '-P'):
+            opts['pidfile'] = argv[idx + 1]
+            idx += 2
+        elif arg == '-u':
+            opts['user'] = argv[idx + 1]
+            idx += 2
+        elif arg == '-r':
+            opts['restart'] = True
+            idx += 1
+        elif arg in ('-R', '-rR'):
+            opts['restart'] = True
+            opts['restart_delay'] = int(argv[idx + 1])
+            idx += 2
+        elif arg in VALUE_FLAGS:
+            # known FreeBSD daemon(8) flag we do not emulate (e.g. syslog
+            # options); skip it together with its value
+            idx += 2
+        else:
+            # unknown value-less flag, ignore it for compatibility
+            idx += 1
+    return opts, argv[idx:]
+
+
+def drop_privileges(user):
+    entry = pwd.getpwnam(user)
+    os.setgid(entry.pw_gid)
+    os.initgroups(user, entry.pw_gid)
+    os.setuid(entry.pw_uid)
+    os.environ['USER'] = entry.pw_name
+    os.environ['HOME'] = entry.pw_dir
+
+
+def redirect_standard_fds(logfile):
+    devnull = os.open(os.devnull, os.O_RDWR)
+    os.dup2(devnull, 0)
+    if logfile:
+        out = os.open(logfile, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+    else:
+        out = devnull
+    os.dup2(out, 1)
+    os.dup2(out, 2)
+    # devnull and out can be the same fd when no logfile is given; the set
+    # avoids closing it twice (which would raise EBADF)
+    for extra in {devnull, out}:
+        if extra > 2:
+            os.close(extra)
+
+
+def write_pidfile(pidfile, pid):
+    if not pidfile:
+        return
+    try:
+        with open(pidfile, 'w') as handle:
+            handle.write('%d\n' % pid)
+    except OSError:
+        pass
+
+
+def run_once(command, logfile, user=None):
+    """Fork a child that execs the command with redirected output."""
+    pid = os.fork()
+    if pid == 0:
+        redirect_standard_fds(logfile)
+        if user:
+            try:
+                drop_privileges(user)
+            except (KeyError, OSError):
+                os._exit(127)
+        try:
+            os.execvp(command[0], command)
+        except OSError:
+            os._exit(127)
+    return pid
+
+
+def supervise(command, opts):
+    """Run as a long lived supervisor that restarts the command."""
+    redirect_standard_fds(opts['logfile'])
+    write_pidfile(opts['pidfile'], os.getpid())
+
+    state = {'child': None, 'stop': False}
+
+    def on_term(signum, frame):
+        state['stop'] = True
+        if state['child']:
+            try:
+                os.kill(state['child'], signal.SIGTERM)
+            except OSError:
+                pass
+
+    signal.signal(signal.SIGTERM, on_term)
+    signal.signal(signal.SIGINT, on_term)
+
+    while not state['stop']:
+        state['child'] = run_once(command, opts['logfile'], opts['user'])
+        try:
+            os.waitpid(state['child'], 0)
+        except OSError:
+            pass
+        state['child'] = None
+        if state['stop']:
+            break
+        if opts['restart_delay'] > 0:
+            time.sleep(opts['restart_delay'])
+
+    if opts['pidfile']:
+        try:
+            os.unlink(opts['pidfile'])
+        except OSError:
+            pass
+    os._exit(0)
+
+
+def main():
+    opts, command = parse_args(sys.argv[1:])
+    if not command:
+        sys.stderr.write('muros-daemon: no command specified\n')
+        return 1
+
+    # First fork lets the caller return immediately; the child detaches into its
+    # own session so it is no longer tied to the invoking process.
+    if os.fork() != 0:
+        return 0
+    os.setsid()
+
+    if opts['restart']:
+        supervise(command, opts)
+        return 0
+
+    # One shot: fork the command, record its pid, let init reap it.
+    pid = run_once(command, opts['logfile'], opts['user'])
+    write_pidfile(opts['pidfile'], pid)
+    os._exit(0)
+
+
+if __name__ == '__main__':
+    sys.exit(main())
