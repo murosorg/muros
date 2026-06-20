@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!/usr/bin/python3
 
 """
     Copyright (c) 2025 Ad Schellevis <ad@opnsense.org>
@@ -95,28 +95,36 @@ if __name__ == '__main__':
             result['rows'].append(record)
     else:
         result['source'] = 'arp-ndp'
-        # use arp/ndp
+        # use the iproute2 neighbour table (replaces FreeBSD arp/ndp)
         if inputargs.verbose:
             from lib import OUI
+
+        def neigh_show(family_arg):
+            sp = subprocess.run(['/usr/sbin/ip', '-j', family_arg, 'neigh', 'show'],
+                                capture_output=True, text=True)
+            try:
+                return ujson.loads(sp.stdout or '[]')
+            except ValueError:
+                return []
+
         if 'inet' in inputargs.proto:
-            sp = subprocess.run(['/usr/sbin/arp', '-an', '--libxo', 'json'], capture_output=True, text=True)
-            libxo_out = ujson.loads(sp.stdout)
-            arp_cache = libxo_out['arp']['arp-cache'] if 'arp' in libxo_out and 'arp-cache' in libxo_out['arp'] else []
-            for row in arp_cache:
-                if 'mac-address' in row:
-                    record = [row['interface'], row['mac-address'], row['ip-address']]
-                    if inputargs.verbose:
-                        record.append(OUI().get_vendor(row['mac-address'], ''))
-                        record.extend(['', '']) # match "discover" output
-                    result['rows'].append(record)
+            for entry in neigh_show('-4'):
+                mac = entry.get('lladdr')
+                if not mac:
+                    continue
+                record = [entry.get('dev', ''), mac, entry.get('dst', '')]
+                if inputargs.verbose:
+                    record.append(OUI().get_vendor(mac, ''))
+                    record.extend(['', '']) # match "discover" output
+                result['rows'].append(record)
         if 'inet6' in inputargs.proto and inputargs.ndp:
-            sp = subprocess.run(['/usr/sbin/ndp', '-an'], capture_output=True, text=True)
-            for line in sp.stdout.split('\n')[1:]:
-                line_parts = line.split()
-                if len(line_parts) > 3 and line_parts[1] != '(incomplete)':
-                    record = [line_parts[2], line_parts[1], line_parts[0].split('%', 1)[0]]
-                    if inputargs.verbose:
-                        record.append(OUI().get_vendor(line_parts[1], ''))
-                        record.extend(['', '']) # match "discover" output
-                    result['rows'].append(record)
+            for entry in neigh_show('-6'):
+                mac = entry.get('lladdr')
+                if not mac:
+                    continue
+                record = [entry.get('dev', ''), mac, entry.get('dst', '')]
+                if inputargs.verbose:
+                    record.append(OUI().get_vendor(mac, ''))
+                    record.extend(['', '']) # match "discover" output
+                result['rows'].append(record)
     print(ujson.dumps(result))
