@@ -32,19 +32,21 @@ class Temperature extends Base
 {
     public function run()
     {
-        $frmt = [
-            '/sbin/sysctl -ni',
-            'dev.cpu.0.temperature',
-            'hw.acpi.thermal.tz0.temperature',
-            'hw.temperature.CPU',
-        ];
-
-        $data = $this->shellCmd($frmt);
-
-        if (!empty($data)) {
-            return [preg_replace('/[^0-9,.]/', '', $data[0])];
+        // FreeBSD read CPU/ACPI temperature sysctls; on Linux the thermal zones
+        // are exposed under /sys/class/thermal in millidegrees Celsius. Report the
+        // hottest zone to match the single-value behaviour of the original.
+        $temps = [];
+        foreach (glob('/sys/class/thermal/thermal_zone*/temp') as $zone) {
+            $raw = @file_get_contents($zone);
+            if ($raw !== false && is_numeric(trim($raw))) {
+                $temps[] = ((float)trim($raw)) / 1000.0;
+            }
         }
 
-        return [];
+        if (empty($temps)) {
+            return [];
+        }
+
+        return [round(max($temps), 1)];
     }
 }

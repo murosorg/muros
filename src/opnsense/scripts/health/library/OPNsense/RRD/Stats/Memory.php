@@ -32,32 +32,38 @@ class Memory extends Base
 {
     public function run()
     {
-        $frmt = [
-            '/sbin/sysctl',
-            'vm.stats.vm.v_page_count',
-            'vm.stats.vm.v_active_count',
-            'vm.stats.vm.v_inactive_count',
-            'vm.stats.vm.v_free_count',
-            'vm.stats.vm.v_cache_count',
-            'vm.stats.vm.v_wire_count'
-        ];
-
-        $memory = $this->shellCmd($frmt);
-
-        if (!empty($memory)) {
-            $percentages = [];
-            $data = [];
-            foreach ($memory as $idx => $item) {
-                // strip vm.stats.vm.v_ and collect into $result
-                $tmp = explode(':', substr($item, 14));
-                $data[$tmp[0]] = trim($tmp[1]);
-                if ($idx > 0) {
-                    $percentages[explode('_', $tmp[0])[0]] = ($data[$tmp[0]] / $data['page_count']) * 100.0;
-                }
-            }
-            return $percentages;
+        // FreeBSD exposed memory through vm.stats.vm.v_*_count sysctls; on Linux
+        // the equivalent breakdown comes from /proc/meminfo (values in kB).
+        $raw = @file_get_contents('/proc/meminfo');
+        if ($raw === false) {
+            return [];
         }
 
-        return [];
+        $kb = [];
+        foreach (explode("\n", $raw) as $line) {
+            if (preg_match('/^(\w+):\s+(\d+)\s*kB/', $line, $m)) {
+                $kb[$m[1]] = (float)$m[2];
+            }
+        }
+
+        $total = $kb['MemTotal'] ?? 0;
+        if ($total <= 0) {
+            return [];
+        }
+
+        // map Linux memory accounting onto the dataset names of the existing
+        // system-memory.rrd schema (active/inactive/free/cache/wire) so historical
+        // graphs keep working. Linux has no "wired" class, approximate it with the
+        // non-pageable kernel allocations.
+        $cache = ($kb['Cached'] ?? 0) + ($kb['Buffers'] ?? 0);
+        $wire = ($kb['Slab'] ?? 0) + ($kb['KernelStack'] ?? 0) + ($kb['PageTables'] ?? 0);
+
+        return [
+            'active' => (($kb['Active'] ?? 0) / $total) * 100.0,
+            'inactive' => (($kb['Inactive'] ?? 0) / $total) * 100.0,
+            'free' => (($kb['MemFree'] ?? 0) / $total) * 100.0,
+            'cache' => ($cache / $total) * 100.0,
+            'wire' => ($wire / $total) * 100.0,
+        ];
     }
 }
