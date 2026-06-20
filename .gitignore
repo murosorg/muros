@@ -32,3 +32,6 @@ debian/*.substvars
 debian/*.debhelper
 debian/*.debhelper.log
 debian/debhelper-build-stamp
+packaging/iso/offline/
+packaging/iso/*.iso
+packaging/iso/work/

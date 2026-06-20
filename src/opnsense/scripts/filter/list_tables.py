@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!/usr/bin/python3
 
 """
     Copyright (c) 2015-2025 Ad Schellevis <ad@opnsense.org>
@@ -28,12 +28,10 @@
     --------------------------------------------------------------------------------------
     returns a list of pf tables as json structure
 """
-import subprocess
 import ujson
+from lib.alias.pf import PF
 
 if __name__ == '__main__':
-    result = []
-    sp = subprocess.run(['/sbin/pfctl', '-sT'], capture_output=True, text=True)
-    for line in sp.stdout.strip().split('\n'):
-        result.append(line.strip())
+    # enumerate the logical alias names currently loaded as nftables named sets
+    result = [name for name, _ in PF.list_tables()]
     print(ujson.dumps(result))
