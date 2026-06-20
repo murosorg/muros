@@ -1,3 +1,14 @@
+muros (0.9.13) trixie; urgency=medium
+
+  * Installer / first-boot console setup: removed the last FreeBSD-only console
+    calls that printed "sh: 1: /sbin/conscontrol: not found" and
+    "sh: 1: /sbin/dmesg: not found" during interface assignment. Kernel message
+    muting around the interactive menu now uses dmesg -D / dmesg -E instead of
+    the FreeBSD conscontrol, and the interface description probe reads
+    /usr/bin/dmesg. The first-boot setup is now free of stray shell errors.
+
+ -- MurOS <dev@muros.org>  Sat, 20 Jun 2026 13:12:11 +0200
+
 muros (0.9.12) trixie; urgency=medium
 
   * Default credentials changed from root/opnsense to root/muros. The root
