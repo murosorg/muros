@@ -235,8 +235,8 @@ function dpinger_configure_do($verbose = false, $gwname_map = null)
             }
         }
 
-        /* see note below on why -f is being used */
-        $frmt = ['/usr/local/bin/dpinger -f'];
+        /* see note below on why -f is being used (Debian ships dpinger in /usr/bin) */
+        $frmt = ['/usr/bin/dpinger -f'];
         $args = [];
 
         /* log warnings via syslog */

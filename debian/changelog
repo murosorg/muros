@@ -1,3 +1,13 @@
+muros (0.9.25) trixie; urgency=medium
+
+  * Dashboard/Gateways: the gateway monitoring daemon was launched from
+    /usr/local/bin/dpinger (the FreeBSD path), which does not exist on Debian
+    where the dpinger package installs /usr/bin/dpinger. As a result no monitor
+    ever started and the Gateways widget (and gateway status/alarms) stayed
+    empty. Corrected the path so dpinger is started and reports RTT/loss/status.
+
+ -- MurOS <dev@muros.org>  Sat, 20 Jun 2026 18:05:00 +0200
+
 muros (0.9.24) trixie; urgency=medium
 
   * Dashboard: fixed the Memory widget, which always showed N/A because the
