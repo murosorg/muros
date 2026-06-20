@@ -13,7 +13,6 @@
   background-color: transparent;
   border-bottom: none;
   border-left: 1px solid #E5E5E5;
-
 }
 
 .tabulator .tabulator-header .tabulator-col {
@@ -52,7 +51,7 @@
 }
 
 .tabulator-row.tabulator-row-even {
-    background-color: #fff;
+  background-color: #fff;
 }
 
 .tabulator-row.tabulator-row-even.tabulator-selectable:hover:not(.tabulator-selected) {
@@ -77,19 +76,13 @@
 }
 
 /* Command column styles */
-.tabulator-col.tabulator-frozen.tabulator-frozen-right {
-}
-
-.tabulator-row .tabulator-cell.tabulator-frozen.tabulator-frozen-right {
-}
-
 /* Tabulator groupBy row styles */
 .tabulator-row.tabulator-group {
   border: none;
   pointer-events: none;
 }
 
-.tabulator-row.tabulator-group span {
+.tabulator-row.tabulator-group .span {
   margin-left: 0;
   color: #373736;
 }
@@ -125,12 +118,6 @@
   border-left: 1px solid #FBFBFB;
 }
 
-.tabulator-col.tabulator-row-header.tabulator-frozen.tabulator-frozen-left {
-}
-
-.tabulator-cell.tabulator-row-header.tabulator-frozen.tabulator-frozen-left {
-}
-
 /*------------*/
 /* theme: cells */
 .tabulator-row .tabulator-cell {
@@ -151,25 +138,25 @@
 
 .tabulator .tabulator-footer .tabulator-page {
   background-color: #fff;
-  color: #C03E14;
+  color: #F5C518;
 }
 
 .tabulator .tabulator-footer .tabulator-page.active {
-  background-color: #C03E14;
-  border-color: #C03E14;
+  background-color: #F5C518;
+  border-color: #F5C518;
   cursor: default;
   color: #fff;
 }
 
 .tabulator .tabulator-footer .tabulator-page:not(disabled):hover {
-  color: #7b280d;
+  color: #F5C518;
   background-color: #eeeeee;
   border-color: #ddd;
 }
 
 .tabulator .tabulator-footer .tabulator-page:not(disabled).active:hover {
-  background-color: #C03E14;
-  border-color: #C03E14;
+  background-color: #F5C518;
+  border-color: #F5C518;
   color: #fff;
   cursor: default;
 }
@@ -298,26 +285,26 @@
 }
 
 .bootgrid-placeholder {
-    font-size: 15px;
-    text-align: center;
-    white-space: normal;
-    font-weight: 400;
-    margin: 10px;
+  font-size: 15px;
+  text-align: center;
+  white-space: normal;
+  font-weight: 400;
 }
 
 .bootgrid-overlay {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(255, 255, 255, 0.5);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    z-index: 99;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(255, 255, 255, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 99;
 }
+
 .overlay > i {
-    font-size: 20px;
-    color: black;
+  font-size: 20px;
+  color: black;
 }

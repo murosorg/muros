@@ -2,6 +2,14 @@
   z-index: -1;
 }
 
+.bootstrap-dialog {
+  /* dialog types */
+  /**
+   * Icon animation
+   * Copied from font-awesome: http://fontawesome.io/
+   **/
+  /** End of icon animation **/
+}
 .bootstrap-dialog .modal-header {
   border-top-left-radius: 4px;
   border-top-right-radius: 4px;
@@ -27,9 +35,6 @@
   -khtml-opacity: 1;
   opacity: 1;
 }
-.bootstrap-dialog {
-  /* dialog types */
-}
 .bootstrap-dialog.type-default .modal-header {
   background-color: #fff;
 }
@@ -40,7 +45,7 @@
   background-color: #B0CDDB;
 }
 .bootstrap-dialog.type-primary .modal-header {
-  background-color: #C03E14;
+  background-color: #F5C518;
 }
 .bootstrap-dialog.type-success .modal-header {
   background-color: #9BD275;
@@ -59,12 +64,6 @@
 }
 .bootstrap-dialog.size-large .bootstrap-dialog-message {
   font-size: 18px;
-}
-.bootstrap-dialog {
-  /**
-   * Icon animation
-   * Copied from font-awesome: http://fontawesome.io/
-   **/
 }
 .bootstrap-dialog .icon-spin {
   display: inline-block;
@@ -112,7 +111,4 @@
   100% {
     transform: rotate(359deg);
   }
-}
-.bootstrap-dialog {
-  /** End of icon animation **/
 }

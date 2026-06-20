@@ -138,22 +138,22 @@
 }
 .tabulator .tabulator-footer .tabulator-page {
     background-color: #101218;
-    color: #C03E14;
+    color: #F5C518;
 }
 .tabulator .tabulator-footer .tabulator-page.active {
-    background-color: #C03E14;
-    border-color: #C03E14;
+    background-color: #F5C518;
+    border-color: #F5C518;
     cursor: default;
     color: #101218;
 }
 .tabulator .tabulator-footer .tabulator-page:not(disabled):hover {
-    color: #7b280d;
+    color: #F5C518;
     background-color: #242937;
     border-color: #ddd;
 }
 .tabulator .tabulator-footer .tabulator-page:not(disabled).active:hover {
-    background-color: #C03E14;
-    border-color: #C03E14;
+    background-color: #F5C518;
+    border-color: #F5C518;
     color: #101218;
     cursor: default;
 }
