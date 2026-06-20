@@ -853,8 +853,15 @@ function mvc_rule_line(SimpleXMLElement $rule, array $ifaces, array $aliases): a
             }
         }
 
-        /* logging prefixes the verdict; nft logs then continues to the verdict */
-        $log = trim((string)($rule->log ?? '0')) === '1' ? 'log ' : '';
+        /* logging prefixes the verdict; nft logs then continues to the verdict.
+         * The prefix carries the metadata the firewall log viewer needs that is
+         * not otherwise present in the kernel netfilter log line: the rule action
+         * and the rule uuid (resolved back to its description by read_log.py).
+         * Format: "muros,<action>,<uuid> " (kept well under the 64 byte limit). */
+        $log = '';
+        if (trim((string)($rule->log ?? '0')) === '1') {
+            $log = 'log prefix "muros,' . $action . ',' . $uuid . ' " ';
+        }
         $stmt = trim(implode(' ', $parts));
         $line = '        ' . ($stmt === '' ? '' : $stmt . ' ') . $log . "counter $verdict";
         if ($uuid !== '') {
