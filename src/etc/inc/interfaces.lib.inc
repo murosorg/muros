@@ -781,7 +781,7 @@ function get_interface_list($only_active = false, $include_dmesg = false)
     $iflist = [];
 
     if ($include_dmesg) {
-        exec('/sbin/dmesg', $dmesg_arr);
+        exec('/usr/bin/dmesg', $dmesg_arr);
     }
 
     $vfaces = interfaces_virtual_patterns();
