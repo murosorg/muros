@@ -1,3 +1,16 @@
+muros (0.9.20) trixie; urgency=medium
+
+  * Initial setup wizard: the Next button no longer silently does nothing. It
+    used to submit every step at once against the in-memory model, so required
+    fields belonging to later steps failed validation while the dialog was
+    suppressed. Next now validates and stores only the current step and shows
+    the validation dialog, so the user gets feedback and can move forward.
+  * Web UI sidebar: moved the account block (user@host and Logout) to the bottom
+    of the menu so the logo sits at the very top, removed the wasted left and top
+    spacing, and aligned the brand, menu and account to the left edge.
+
+ -- MurOS <dev@muros.org>  Sat, 20 Jun 2026 16:35:00 +0200
+
 muros (0.9.19) trixie; urgency=medium
 
   * Web UI: remove the empty band across the top of every page. There is no
