@@ -31,6 +31,15 @@ case "$1" in
       ln -sf /conf/config.xml /usr/local/etc/config.xml
     fi
 
+    # Many ported OPNsense scripts carry a "#!/usr/local/bin/php" shebang (the
+    # FreeBSD interpreter path) and are executed directly, e.g. the console menu
+    # runs /usr/local/opnsense/scripts/shell/setports.php as a program. Debian
+    # ships PHP at /usr/bin/php, so provide the expected path as a symlink.
+    if [ ! -e /usr/local/bin/php ]; then
+      mkdir -p /usr/local/bin
+      ln -sf /usr/bin/php /usr/local/bin/php
+    fi
+
     # PHP runtime directories referenced by 99-muros.ini.
     for d in /var/lib/php/tmp /var/lib/php/sessions; do
       mkdir -p "$d"

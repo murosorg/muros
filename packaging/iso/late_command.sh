@@ -54,6 +54,61 @@ GRUB_CMDLINE_LINUX_DEFAULT="console=tty0 console=ttyS0,115200n8"
 GRUBCFG
 in-target update-grub || true
 
+# 3d. Interactive console (OPNsense-style). The appliance has no graphical
+#     login: the local VGA console (tty1) and the first serial port autologin
+#     as root straight into the MurOS console. /usr/local/sbin/muros-console
+#     runs the one-time setup wizard on first boot (keyboard layout, interface
+#     assignment, LAN IP/mask/gateway) and then the operator menu. Hostname,
+#     DNS, timezone and language are handled by the web setup wizard.
+in-target chsh -s /usr/local/sbin/muros-console root || true
+grep -q '^/usr/local/sbin/muros-console
+#    when it has a WAN), and drop the offline pool source.
+rm -f /target/etc/apt/sources.list.d/muros-offline.list
+cat > /target/etc/apt/sources.list <<'SRCLIST'
+deb http://deb.debian.org/debian trixie main contrib non-free-firmware
+deb http://security.debian.org/debian-security trixie-security main contrib non-free-firmware
+deb http://deb.debian.org/debian trixie-updates main contrib non-free-firmware
+SRCLIST
+
+# 5. Register the signed MurOS apt repository so the installed system
+#    receives MurOS updates online once it reaches a WAN, exactly like the
+#    install.sh path. This is offline-safe: build-iso.sh stages the
+#    pre-dearmored keyring on the ISO, so we only copy a file here (no
+#    network, no gpg in the d-i environment). If the keyring is missing
+#    (e.g. it could not be fetched at build time), we skip silently and
+#    the operator can still register the repo by hand later.
+if [ -f "$SRC/muros-archive-keyring.gpg" ]; then
+  mkdir -p /target/usr/share/keyrings
+  cp "$SRC/muros-archive-keyring.gpg" /target/usr/share/keyrings/muros-archive-keyring.gpg
+  chmod 0644 /target/usr/share/keyrings/muros-archive-keyring.gpg
+  echo 'deb [signed-by=/usr/share/keyrings/muros-archive-keyring.gpg] https://download.muros.org stable main' \
+    > /target/etc/apt/sources.list.d/muros.list
+fi
+
+exit 0
+ /target/etc/shells 2>/dev/null || \
+  echo /usr/local/sbin/muros-console >> /target/etc/shells
+
+mkdir -p /target/etc/systemd/system/getty@tty1.service.d
+cat > /target/etc/systemd/system/getty@tty1.service.d/muros-autologin.conf <<'GETTY'
+[Service]
+ExecStart=
+ExecStart=-/sbin/agetty --autologin root --noclear %I $TERM
+GETTY
+
+mkdir -p /target/etc/systemd/system/serial-getty@ttyS0.service.d
+cat > /target/etc/systemd/system/serial-getty@ttyS0.service.d/muros-autologin.conf <<'SGETTY'
+[Service]
+ExecStart=
+ExecStart=-/sbin/agetty --autologin root --keep-baud 115200,57600,38400,9600 %I $TERM
+SGETTY
+in-target systemctl enable serial-getty@ttyS0.service || true
+
+# First-boot marker consumed by /usr/local/sbin/muros-console: present means
+# the setup wizard has not run yet. The console removes it after the wizard.
+mkdir -p /target/conf
+: > /target/conf/.muros-console-setup
+
 # 4. Restore clean online sources for the installed system (used later,
 #    when it has a WAN), and drop the offline pool source.
 rm -f /target/etc/apt/sources.list.d/muros-offline.list
