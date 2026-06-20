@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!/usr/bin/python3
 
 """
     Copyright (c) 2019 Ad Schellevis <ad@opnsense.org>
@@ -30,9 +30,20 @@
 """
 import subprocess
 import sys
-import ujson
 import argparse
 import ipaddress
+import json
+
+
+def show_routes(family_arg):
+    """ return the routing table for one family as parsed by iproute2,
+        mirroring the representation used by show_routes.py """
+    try:
+        sp = subprocess.run(['/usr/sbin/ip', '-j', family_arg, 'route', 'show'],
+                            capture_output=True, text=True)
+        return json.loads(sp.stdout or '[]')
+    except Exception:
+        return []
 
 
 if __name__ == '__main__':
@@ -42,22 +53,24 @@ if __name__ == '__main__':
     parser.add_argument('--gateway', help='gateway', required=True)
     inputargs = parser.parse_args()
 
-    for flags in ['-rWn', '-rW']:
-        sp = subprocess.run(['/usr/bin/netstat', flags], capture_output=True, text=True)
-        for line in sp.stdout.split("\n"):
-            parts = line.split()
-            if len(parts) > 2 and parts[0] == inputargs.destination and parts[1] == inputargs.gateway:
-                # route entry found, try to delete
-                print ("found")
-                inet = '-6' if parts[0].find(':') > 0 else '-4'
-                try:
-                    ipaddress.ip_address(parts[1])
-                    # gateway is an ip address (v4/v6)
-                    subprocess.run(['/sbin/route', inet, 'delete', parts[0], parts[1]], capture_output=True)
-                except ValueError:
-                    subprocess.run(['/sbin/route', inet, 'delete', parts[0]], capture_output=True)
+    inet = '-6' if inputargs.destination.find(':') > 0 else '-4'
 
-                sys.exit(0)
+    for route in show_routes(inet):
+        dst = route.get('dst', '')
+        # show_routes.py reports connected routes (no gateway) as "link#0"
+        gateway = route.get('gateway', '') or 'link#0'
+        if dst == inputargs.destination and gateway == inputargs.gateway:
+            # route entry found, try to delete
+            print("found")
+            cmd = ['/usr/sbin/ip', inet, 'route', 'del', dst]
+            try:
+                ipaddress.ip_address(inputargs.gateway)
+                # gateway is an ip address (v4/v6)
+                cmd += ['via', inputargs.gateway]
+            except ValueError:
+                pass
+            subprocess.run(cmd, capture_output=True)
+            sys.exit(0)
 
     # not found
-    print ("not_found")
+    print("not_found")
