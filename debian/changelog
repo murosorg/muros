@@ -1,3 +1,13 @@
+muros (0.9.19) trixie; urgency=medium
+
+  * Web UI: remove the empty band across the top of every page. There is no
+    fixed top navbar any more (the brand and account block moved into the
+    sidebar), but the stylesheet still reserved a 62px strip for the old
+    .page-head element. Reset the top padding/margin so the content and the
+    sidebar start at the top of the viewport.
+
+ -- MurOS <dev@muros.org>  Sat, 20 Jun 2026 16:10:00 +0200
+
 muros (0.9.18) trixie; urgency=medium
 
   * Web UI: fix the sidebar header layout. The custom brand/account partial uses

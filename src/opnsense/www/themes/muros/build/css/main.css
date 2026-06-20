@@ -7450,3 +7450,15 @@ ul.jqtree-tree .jqtree-title {
 .muros-logout .fa {
   margin-right: 4px;
 }
+
+/* MurOS has no fixed top navbar: the brand and account block now live inside
+   the sidebar, so remove the 62px top band the legacy .page-head reserved.
+   Without this the layout shows a large empty strip across the top. */
+.page-content {
+  height: 100%;
+  padding-top: 0;
+}
+.page-side {
+  margin-top: 0;
+  height: 100% !important;
+}
