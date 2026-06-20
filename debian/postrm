@@ -9,5 +9,12 @@ case "$1" in
     fi
     ;;
 esac
+case "$1" in
+  purge)
+    # drop the journald sizing/persistence drop-in installed by postinst
+    rm -f /etc/systemd/journald.conf.d/muros.conf
+    rmdir /etc/systemd/journald.conf.d 2>/dev/null || true
+    ;;
+esac
 #DEBHELPER#
 exit 0

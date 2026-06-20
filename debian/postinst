@@ -38,6 +38,22 @@ case "$1" in
       chmod 700 "$d" 2>/dev/null || true
     done
 
+    # Persistent, size-bounded systemd journal. The firewall log viewer reads
+    # the kernel netfilter log lines from the journal, so it must survive reboots
+    # and keep enough history while staying bounded on an appliance disk.
+    if [ ! -e /etc/systemd/journald.conf.d/muros.conf ]; then
+      mkdir -p /etc/systemd/journald.conf.d
+      cat > /etc/systemd/journald.conf.d/muros.conf <<'JRN'
+[Journal]
+Storage=persistent
+SystemMaxUse=512M
+RuntimeMaxUse=64M
+JRN
+    fi
+    mkdir -p /var/log/journal
+    systemd-tmpfiles --create --prefix /var/log/journal >/dev/null 2>&1 || true
+    systemctl restart systemd-journald 2>/dev/null || true
+
     # Pick up the lighttpd drop-in and (re)start the front end.
     systemctl daemon-reload 2>/dev/null || true
     systemctl reload-or-restart php8.4-fpm 2>/dev/null || true
