@@ -26,6 +26,16 @@ stage_tree sbin      /usr/local
 stage_tree www       /usr/local
 stage_tree man       /usr/local/share
 
+# Stage vendored third-party libraries from the repo-root contrib/ tree into
+# /usr/local/opnsense/contrib. OPNsense keeps bundled PHP libs here (e.g.
+# base32, required by the TOTP auth connector) and loads them through the PHP
+# include_path. Without this the AuthenticationFactory fatals while it
+# enumerates the auth connectors at login (missing base32/Base32.php).
+if [ -d "$ROOTDIR/contrib" ]; then
+    mkdir -p "$DEST/usr/local/opnsense/contrib"
+    ( cd "$ROOTDIR/contrib" && tar -cf - . ) | ( cd "$DEST/usr/local/opnsense/contrib" && tar -xf - )
+fi
+
 # Resolve .in (token substitution), .link (symlinks); keep .sample verbatim.
 find "$DEST" -type f -name '*.in' | while read -r f; do
     out="${f%.in}"
