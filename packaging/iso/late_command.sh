@@ -39,6 +39,21 @@ mkdir -p /target/usr/local/etc/muros
 : > /target/usr/local/etc/muros/reserved.conf
 in-target systemctl enable muros-interface-assign.service muros-interfaces.service muros-firewall.service || true
 
+# 3c. Appliance boot robustness. A firewall is headless and must always come
+#     back on its own: keep the GRUB menu short, never wait for a keypress
+#     after an unclean shutdown (recordfail), use the plain text terminal
+#     (no gfxterm, which can render to a blank screen on a server BMC/VGA),
+#     and put the kernel console on both the VGA tty and the first serial
+#     port so a headless operator can watch the boot over serial.
+cat > /target/etc/default/grub.d/99-muros.cfg <<'GRUBCFG'
+GRUB_TIMEOUT=3
+GRUB_TIMEOUT_STYLE=menu
+GRUB_RECORDFAIL_TIMEOUT=3
+GRUB_TERMINAL=console
+GRUB_CMDLINE_LINUX_DEFAULT="console=tty0 console=ttyS0,115200n8"
+GRUBCFG
+in-target update-grub || true
+
 # 4. Restore clean online sources for the installed system (used later,
 #    when it has a WAN), and drop the offline pool source.
 rm -f /target/etc/apt/sources.list.d/muros-offline.list

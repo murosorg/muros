@@ -4,8 +4,8 @@
 [Unit]
 Description=MurOS interface configuration (iproute2)
 Documentation=https://github.com/ecritel/muros
-After=systemd-networkd.service network-online.target
-Wants=network-online.target
+After=systemd-networkd.service muros-interface-assign.service
+Before=network-online.target
 
 [Service]
 Type=oneshot

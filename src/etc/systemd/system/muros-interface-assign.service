@@ -6,9 +6,8 @@
 [Unit]
 Description=MurOS automatic interface assignment
 Documentation=https://github.com/ecritel/muros
-After=systemd-networkd.service network-online.target
-Wants=network-online.target
-Before=muros-interfaces.service
+After=systemd-networkd.service
+Before=muros-interfaces.service network-online.target
 
 [Service]
 Type=oneshot
