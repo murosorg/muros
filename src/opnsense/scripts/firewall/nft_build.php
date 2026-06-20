@@ -193,6 +193,13 @@ function alias_set_lines(array $aliases): array
                 $lines[] = '    set ' . $name . '_' . $fam . ' {';
                 $lines[] = '        type ' . $atype . ';';
                 $lines[] = '        flags interval;';
+                /*
+                 * auto-merge lets overlapping/adjacent entries coalesce instead
+                 * of being rejected. Dynamic aliases (GeoIP, URL tables) are
+                 * refreshed in place by update_tables.py and frequently contain
+                 * overlapping CIDRs, which would otherwise abort the load.
+                 */
+                $lines[] = '        auto-merge;';
                 if (!empty($al[$fam])) {
                     $lines[] = '        elements = { ' . implode(', ', array_unique($al[$fam])) . ' }';
                 }

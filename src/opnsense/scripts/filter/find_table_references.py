@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!/usr/bin/python3
 
 """
     Copyright (c) 2018-2019 Deciso B.V.
@@ -28,12 +28,10 @@
     --------------------------------------------------------------------------------------
     check which aliases match the given IP
 """
-import tempfile
-import subprocess
-import os
 import sys
 import ujson
 import ipaddress
+from lib.alias.pf import PF
 
 
 if __name__ == '__main__':
@@ -43,18 +41,12 @@ if __name__ == '__main__':
         try:
             ipaddress.ip_address(sys.argv[1])
             result = {'status': 'ok', 'matches': []}
-            tables = []
 
-            # Fetch tables
-            sp = subprocess.run(['/sbin/pfctl', '-sT'], capture_output=True, text=True)
-            for line in sp.stdout.strip().split('\n'):
-                tables.append(line.strip())
-
-            # Test given address against tables
-            for table in tables:
-                sp = subprocess.run(['/sbin/pfctl', '-t', table, '-Ttest', sys.argv[1]], capture_output=True, text=True)
-                if sp.stderr.strip().find("1/1") == 0:
-                   result['matches'].append(table)
+            # MurOS: iterate the configured aliases (nftables named sets) and
+            # test the address against each, interval aware.
+            for table, _info in PF.list_tables():
+                if PF.test_element(table, sys.argv[1]):
+                    result['matches'].append(table)
             print(ujson.dumps(result))
 
         except ValueError:
