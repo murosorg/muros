@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!/usr/bin/python3
 
 """
     Copyright (c) 2015 Ad Schellevis <ad@opnsense.org>
@@ -29,30 +29,18 @@
     returns the contents of a pf table
     usage : list_table.py [tablename]
 """
-import subprocess
 import sys
 import ujson
+from lib.alias.pf import PF
 
 if __name__ == '__main__':
-    result = dict()
+    # list the addresses contained in an alias (union of its v4 and v6 sets).
+    # nftables named sets do not keep per-element packet/byte counters the way
+    # pf tables with the "counters" option did, so only the addresses are
+    # reported.
+    result = []
     if len(sys.argv) > 1:
-        sp = subprocess.Popen(
-            ['/sbin/pfctl', '-t', sys.argv[1], '-vT', 'show'],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            text=True
-        )
-        this_entry=None
-        labels = {}
-        while (line := sp.stdout.readline()):
-            if line.startswith(' '):
-                this_entry = line.strip()
-                result[this_entry] = {'ip': this_entry}
-            elif this_entry and 'Packets:' in line and 'Packets: 0 ' not in line:
-                parts = line.split()
-                if this_entry and len(parts) > 6 and parts[3].isdigit() and parts[5].isdigit():
-                    topic = parts[0].lower().replace('/', '_').replace(':', '')
-                    result[this_entry]['%s_p' % topic] = int(parts[3])
-                    result[this_entry]['%s_b' % topic] = int(parts[5])
+        for value in PF.list_table(sys.argv[1]):
+            result.append({'ip': value})
 
-    print(ujson.dumps({'items': list(result.values())}))
+    print(ujson.dumps({'items': result}))
