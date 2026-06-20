@@ -24,11 +24,16 @@
     POSSIBILITY OF SUCH DAMAGE.
 
 """
-import fcntl
 import ipaddress
-import os
 import subprocess
 import ujson
+
+# MurOS: the firewall state table is the Linux connection tracking table
+# (nf_conntrack) instead of the FreeBSD pf state table. States are listed with
+# the conntrack(8) tool and identified for deletion by their original-direction
+# tuple. Unlike pf, conntrack does not associate a flow with the rule that
+# created it, so the rule/label/interface columns are left empty.
+CONNTRACK = '/usr/sbin/conntrack'
 
 
 class AddressParser:
@@ -69,47 +74,159 @@ class AddressParser:
 
 def fetch_rule_labels():
     """ Generate dict with labels per rule.
-        Since the output is directly related to the rules loaded by /tmp/rules.debug, we can safely cache the results
-        (into /tmp/cache_rule_labels.json) until /tmp/rules.debug changes.
+
+        The FreeBSD pf engine tagged every state with the number of the rule
+        that created it, which allowed mapping a state back to a rule label.
+        The Linux connection tracking subsystem keeps no such association, so
+        there are no rule labels to resolve and an empty mapping is returned.
+        The function is kept for API compatibility with the consumers.
         :return: dict
     """
-    pf_rules_file = '/tmp/rules.debug'
-    fhandle = open('/tmp/cache_rule_labels.json', 'a+')
-    try:
-        fhandle.seek(0)
-        cached_labels = ujson.loads(fhandle.read())
-    except ValueError:
-        cached_labels = {'labels': {}}
+    return {}
 
-    pfr_mtime = os.stat(pf_rules_file).st_mtime if os.path.isfile(pf_rules_file) else 0
-    if cached_labels.get('mtime', 0) != pfr_mtime or cached_labels.get('labels', None) is None:
-        descriptions = dict()
-        # query descriptions from active ruleset so we can search and display rule descriptions as well.
-        if os.path.isfile(pf_rules_file):
-            with open(pf_rules_file, "rt", encoding="utf-8") as f_in:
-                for line in f_in:
-                    lbl = line.split(' label ')[-1] if line.find(' label ') > -1 else ""
-                    rule_label = lbl.split('"')[1] if lbl.count('"') >= 2 else None
-                    descriptions[rule_label] = ''.join(lbl.split('"')[2:]).strip().strip('# : ')
 
-        sp = subprocess.run(['/sbin/pfctl', '-vvPsr'], capture_output=True, text=True)
-        for line in sp.stdout.strip().split('\n'):
-            if line.startswith('@'):
-                line_id = line.split()[0][1:]
-                if line.find(' label ') > -1:
-                    rid = ''.join(line.split(' label ')[-1:]).strip()[1:].split('"')[0]
-                    cached_labels['labels'][line_id] = {'rid': rid, 'descr': None}
-                    if rid in descriptions:
-                        cached_labels['labels'][line_id]['descr'] = descriptions[rid]
+def parse_conntrack_line(line):
+    """ Parse a single `conntrack -L -o extended,id` line into a normalized
+        dict with the layer 3/4 protocols, connection state, both directions
+        (orig/reply) and the conntrack id. Returns None for unparsable lines. """
+    parts = line.split()
+    if len(parts) < 5 or parts[0] not in ('ipv4', 'ipv6'):
+        return None
 
-        fcntl.flock(fhandle, fcntl.LOCK_EX)
-        cached_labels['mtime'] = pfr_mtime
-        fhandle.seek(0)
-        fhandle.truncate()
-        fhandle.write(ujson.dumps(cached_labels))
-        fhandle.close()
+    entry = {
+        'ipproto': parts[0],
+        'proto': parts[2],
+        'timeout': parts[4] if parts[4].isdigit() else None,
+        'state': '',
+        'orig': {},
+        'reply': {},
+        'flags': [],
+        'id': None,
+        'mark': None,
+    }
 
-    return cached_labels['labels']
+    idx = 5
+    # tcp (and a few others) print a connection state word before the tuples
+    if len(parts) > idx and '=' not in parts[idx] and not parts[idx].startswith('['):
+        entry['state'] = parts[idx]
+        idx += 1
+
+    seen_src = 0
+    target = entry['orig']
+    for token in parts[idx:]:
+        if token.startswith('[') and token.endswith(']'):
+            entry['flags'].append(token.strip('[]').lower())
+            continue
+        if '=' not in token:
+            continue
+        key, value = token.split('=', 1)
+        if key == 'src':
+            seen_src += 1
+            target = entry['orig'] if seen_src == 1 else entry['reply']
+        if key in ('src', 'dst', 'sport', 'dport', 'packets', 'bytes'):
+            target[key] = value
+        elif key == 'id':
+            entry['id'] = value
+        elif key == 'mark':
+            entry['mark'] = value
+
+    return entry
+
+
+def iter_conntrack():
+    """ Yield every connection tracking entry as a normalized dict. """
+    sp = subprocess.run([CONNTRACK, '-L', '-o', 'extended,id'], capture_output=True, text=True)
+    for line in sp.stdout.strip().split('\n'):
+        entry = parse_conntrack_line(line)
+        if entry is not None:
+            yield entry
+
+
+def delete_entry(entry):
+    """ Delete a single connection tracking entry by its original-direction
+        tuple. conntrack(8) cannot reliably delete by id (it may crash), so the
+        full tuple is used. Returns True when a flow was removed. """
+    orig = entry['orig']
+    if not orig.get('src') or not orig.get('dst'):
+        return False
+    args = [
+        CONNTRACK, '-D',
+        '-f', 'ipv6' if entry['ipproto'] == 'ipv6' else 'ipv4',
+        '-p', entry['proto'],
+        '-s', orig['src'],
+        '-d', orig['dst'],
+    ]
+    if orig.get('sport'):
+        args += ['--sport', orig['sport']]
+    if orig.get('dport'):
+        args += ['--dport', orig['dport']]
+    sp = subprocess.run(args, capture_output=True, text=True)
+    return sp.returncode == 0
+
+
+def delete_by_id(state_id):
+    """ Delete the connection tracking entry whose conntrack id matches the
+        given value, resolved to a tuple deletion. The id may be supplied as
+        "<id>/<creator>"; only the id segment is significant on Linux. """
+    state_id = str(state_id).split('/')[0]
+    for entry in iter_conntrack():
+        if entry['id'] == state_id:
+            return delete_entry(entry)
+    return False
+
+
+def derived_state(entry):
+    """ Provide a human readable state for protocols (udp, icmp) that carry no
+        explicit connection state in conntrack, based on the tracking flags. """
+    if entry['state']:
+        return entry['state']
+    if 'assured' in entry['flags']:
+        return 'ESTABLISHED'
+    if 'unreplied' in entry['flags']:
+        return 'UNREPLIED'
+    return 'NEW'
+
+
+def state_to_record(entry):
+    """ Convert a conntrack entry into the state record exposed to the GUI. """
+    orig = entry['orig']
+    reply = entry['reply']
+
+    nat_addr = None
+    nat_port = None
+    # source NAT: the address the peer replies to differs from the real source
+    if reply.get('dst') and orig.get('src') and reply['dst'] != orig['src']:
+        nat_addr = reply['dst']
+        nat_port = reply.get('dport')
+    # destination NAT: the address replying differs from the original target
+    elif reply.get('src') and orig.get('dst') and reply['src'] != orig['dst']:
+        nat_addr = reply['src']
+        nat_port = reply.get('sport')
+
+    return {
+        'label': '',
+        'descr': '',
+        'nat_addr': nat_addr,
+        'nat_port': nat_port,
+        'gateway': None,
+        'iface': '',
+        'proto': entry['proto'],
+        'ipproto': entry['ipproto'],
+        'flags': entry['flags'],
+        'direction': 'out',
+        'src_addr': orig.get('src'),
+        'src_port': orig.get('sport', '0'),
+        'dst_addr': orig.get('dst'),
+        'dst_port': orig.get('dport', '0'),
+        'state': derived_state(entry),
+        # keep a "/" so the GUI delete route receives a creator id segment
+        'id': '%s/0' % (entry['id'] or '0'),
+        'rule': '',
+        'age': 0,
+        'expires': int(entry['timeout']) if entry['timeout'] else 0,
+        'pkts': [int(orig.get('packets', 0)), int(reply.get('packets', 0))],
+        'bytes': [int(orig.get('bytes', 0)), int(reply.get('bytes', 0))],
+    }
 
 
 def split_filter_clauses(filter_str):
@@ -139,118 +256,50 @@ def query_states(rule_label, filter_str):
     result = list()
     filter_net_clauses, filter_clauses = split_filter_clauses(filter_str)
 
-    rule_labels = fetch_rule_labels()
-    lines = subprocess.run(['/sbin/pfctl', '-vvs', 'state'], capture_output=True, text=True).stdout.strip().split('\n')
-    record = None
-    for line in lines:
-        parts = line.split()
-        if line.startswith(" ") and len(parts) > 1 and record:
-            if parts[0] == 'age':
-                for part in line.split(","):
-                    part = part.strip()
-                    if part.startswith("rule "):
-                        record["rule"] = part.split()[-1]
-                        if record["rule"] in rule_labels:
-                            record["label"] = rule_labels[record["rule"]]["rid"]
-                            record["descr"] = rule_labels[record["rule"]]["descr"]
-                    elif part.startswith("age "):
-                        record["age"] = part.split()[-1]
-                    elif part.startswith("expires in"):
-                        record["expires"] = part.split()[-1]
-                    elif part.endswith("pkts"):
-                        record["pkts"] = [int(s) for s in part.split()[0].split(':')]
-                    elif part.endswith("bytes"):
-                        record["bytes"] = [int(s) for s in part.split()[0].split(':')]
-                    elif part in [
-                        'allow-opts', 'sloppy', 'no-sync', 'psync-ack', 'no-df', 'random-id', 'reassemble-tcp'
-                    ]:
-                        record["flags"].append(part)
-            elif parts[0] == "id:":
-                # XXX: in order to kill a state, we need to pass both the id and the creator, so it seeems to make
-                #      sense to uniquely identify the state by the combined number
-                record["id"] = "%s/%s" % (parts[1], parts[3])
-                if len(parts) > 5:
-                    # gateway, route-to, dup-to, reply-to option
-                    rt = parts[4].rstrip(':')
-                    if rt in ['route-to', 'dup-to', 'reply-to', 'gateway']:
-                        record[rt] = parts[5]
-                        if len(parts) > 7 and parts[7].isdigit():
-                            record['rtable'] = int(parts[7])
-                    elif rt == 'rtable' and  parts[5].isdigit():
-                        record['rtable'] = int(parts[5])
-            if rule_label != "" and record['label'].lower().find(rule_label) == -1:
-                # label
-                continue
-            elif parts[0] == "id:" and (filter_clauses or filter_net_clauses):
-                # enfore network when specified, otherwise only use filter clause
-                match = len(filter_net_clauses) == 0
-                for filter_net in filter_net_clauses:
-                    try:
-                        match = False
-                        for field in ['src_addr', 'dst_addr', 'nat_addr', 'gateway']:
-                            port_field = "%s_port" % field[0:3]
-                            if record[field] is not None and addr_parser.overlaps(filter_net[0], record[field]):
-                                if filter_net[1] is None or filter_net[1] == record[port_field]:
-                                    match = True
-                        if not match:
-                            break
-                    except:
-                        continue
+    for entry in iter_conntrack():
+        record = state_to_record(entry)
 
+        # rule based filtering cannot be honored: connection tracking does not
+        # record which firewall rule created a flow, so a rule selection yields
+        # no matches rather than a misleading result.
+        if rule_label != "":
+            continue
+
+        if filter_clauses or filter_net_clauses:
+            # enforce network when specified, otherwise only use filter clause
+            match = len(filter_net_clauses) == 0
+            for filter_net in filter_net_clauses:
+                match = False
+                for field in ['src_addr', 'dst_addr', 'nat_addr', 'gateway']:
+                    port_field = "%s_port" % field[0:3]
+                    try:
+                        if record[field] is not None and addr_parser.overlaps(filter_net[0], record[field]):
+                            if filter_net[1] is None or filter_net[1] == record[port_field]:
+                                match = True
+                    except ValueError:
+                        continue
+                if not match:
+                    break
+
+            if not match:
+                continue
+
+            if filter_clauses:
+                search_line = " ".join(str(item) for item in filter(None, record.values()))
+                for filter_clause in filter_clauses:
+                    if search_line.find(filter_clause) == -1:
+                        match = False
+                        break
                 if not match:
                     continue
 
-                if filter_clauses:
-                    search_line = " ".join(str(item) for item in filter(None, record.values()))
-                    for filter_clause in filter_clauses:
-                        if search_line.find(filter_clause) == -1:
-                            match = False
-                            break
-                    if not match:
-                        continue
-
-            if parts[0] == "id:":
-                # append to response
-                result.append(record)
-        elif len(parts) >= 6:
-            record = {
-                'label': '',
-                'descr': '',
-                'nat_addr': None,
-                'nat_port': None,
-                'gateway': None,
-                'iface': parts[0],
-                'proto': parts[1],
-                'ipproto': addr_parser.split_ip_port(parts[2])['ipproto'],
-                'flags': []
-            }
-            if parts[3].find('(') > -1:
-                # NAT enabled
-                nat_record = addr_parser.split_ip_port(parts[3][1:-1])
-                record['nat_addr'] = nat_record['addr']
-                if nat_record['port'] != '0':
-                    record['nat_port'] = nat_record['port']
-
-            if parts[-3] == '->':
-                record['direction'] = 'out'
-            else:
-                record['direction'] = 'in'
-
-            tmp_parts1 = addr_parser.split_ip_port(parts[2])
-            tmp_parts2 = addr_parser.split_ip_port(parts[-2])
-            record['dst_addr'] = tmp_parts2['addr'] if record['direction'] == 'out' else tmp_parts1['addr']
-            record['dst_port'] = tmp_parts2['port'] if record['direction'] == 'out' else tmp_parts1['port']
-            record['src_addr'] = tmp_parts1['addr'] if record['direction'] == 'out' else tmp_parts2['addr']
-            record['src_port'] = tmp_parts1['port'] if record['direction'] == 'out' else tmp_parts2['port']
-
-            record['state'] = parts[-1]
+        result.append(record)
 
     return result
 
 
 
 def query_top():
-    addr_parser = AddressParser()
     result = {
         'details': [],
         'metadata': {
@@ -258,66 +307,25 @@ def query_top():
         }
     }
 
-    sp = subprocess.run(
-        ['/usr/local/sbin/pftop', '-w', '1000', '-b','-v', 'long','200000'],
-        capture_output=True,
-        text=True
-    )
-
-    for rownum, line in enumerate(sp.stdout.strip().split('\n')):
-        parts = line.strip().split()
-        if rownum >= 2 and len(parts) > 5:
-            record = {
-                'proto': parts[0],
-                'dir': parts[1].lower(),
-                'src_addr': addr_parser.split_ip_port(parts[2])['addr'],
-                'src_port': addr_parser.split_ip_port(parts[2])['port'],
-                'dst_addr': addr_parser.split_ip_port(parts[3])['addr'],
-                'dst_port': addr_parser.split_ip_port(parts[3])['port'],
-                'gw_addr': None,
-                'gw_port': None
-            }
-            if parts[4].count(':') > 2 or parts[4].count('.') > 2:
-                record['gw_addr'] = addr_parser.split_ip_port(parts[4])['addr']
-                record['gw_port'] = addr_parser.split_ip_port(parts[4])['port']
-                idx = 5
-            else:
-                idx = 4
-
-            pows =  {
-                'K': 1,
-                'M': 2,
-                'G': 3,
-            }
-            time_marks =  {
-                'm': 60,
-                'h': 3600,
-                'd': 86400,
-            }
-            record['state'] = parts[idx]
-            record['age'] = parts[idx+1]
-            record['expire'] = parts[idx+2]
-            record['pkts'] = int(parts[idx+3]) if parts[idx+3].isdigit() else 0
-            if parts[idx+4].isdigit():
-                record['bytes'] = int(parts[idx+4])
-            elif parts[idx+4][:-1].isdigit() and parts[idx+4][-1] in pows:
-                record['bytes'] = int(parts[idx+4][:-1])*pow(1024, pows[parts[idx+4][-1]])
-            else:
-                record['bytes'] = 0
-            record['avg'] = int(parts[idx+5]) if parts[idx+5].isdigit() else 0
-            record['rule'] = parts[idx+6]
-            for timefield in ['age', 'expire']:
-                if ':' in record[timefield]:
-                    tmp = record[timefield].split(':')
-                    record[timefield] = int(tmp[0]) * 3600 + int(tmp[1]) * 60 + int(tmp[2]) if len(tmp) > 2 else 0
-                elif record[timefield].isdigit():
-                    record[timefield] = int(record[timefield])
-                elif record[timefield][-1] in time_marks and record[timefield][:-1].isdigit():
-                    record[timefield] = int(record[timefield][:-1])*time_marks[record[timefield][-1]]
-                else:
-                    record[timefield] = 0
-
-
-            result['details'].append(record)
+    for entry in iter_conntrack():
+        orig = entry['orig']
+        record = {
+            'proto': entry['proto'],
+            'dir': 'out',
+            'src_addr': orig.get('src'),
+            'src_port': orig.get('sport', '0'),
+            'dst_addr': orig.get('dst'),
+            'dst_port': orig.get('dport', '0'),
+            'gw_addr': None,
+            'gw_port': None,
+            'state': derived_state(entry),
+            'age': 0,
+            'expire': int(entry['timeout']) if entry['timeout'] else 0,
+            'pkts': int(orig.get('packets', 0)) + int(entry['reply'].get('packets', 0)),
+            'bytes': int(orig.get('bytes', 0)) + int(entry['reply'].get('bytes', 0)),
+            'avg': 0,
+            'rule': '',
+        }
+        result['details'].append(record)
 
     return result

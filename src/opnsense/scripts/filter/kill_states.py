@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!/usr/bin/python3
 
 """
     Copyright (c) 2021 Ad Schellevis <ad@opnsense.org>
@@ -27,26 +27,49 @@
 """
 import argparse
 import ujson
-import subprocess
-from lib.states import query_states
+from lib.states import iter_conntrack, state_to_record, delete_entry, split_filter_clauses, AddressParser
+
+
+def matches(record, addr_parser, filter_net_clauses, filter_clauses):
+    """ Reuse the same matching logic as query_states for the kill selection. """
+    if filter_net_clauses:
+        match = False
+        for filter_net in filter_net_clauses:
+            for field in ['src_addr', 'dst_addr', 'nat_addr', 'gateway']:
+                port_field = "%s_port" % field[0:3]
+                try:
+                    if record[field] is not None and addr_parser.overlaps(filter_net[0], record[field]):
+                        if filter_net[1] is None or filter_net[1] == record[port_field]:
+                            match = True
+                except ValueError:
+                    continue
+            if not match:
+                return False
+    if filter_clauses:
+        search_line = " ".join(str(item) for item in filter(None, record.values()))
+        for filter_clause in filter_clauses:
+            if search_line.find(filter_clause) == -1:
+                return False
+    return True
 
 
 if __name__ == '__main__':
-    result = dict()
     # parse input arguments
     parser = argparse.ArgumentParser()
     parser.add_argument('--filter', help='filter results', default='')
     parser.add_argument('--label', help='label / rule id', default='')
     inputargs = parser.parse_args()
 
-    # collect all unique state id's
-    commands = dict()
-    for record in query_states(rule_label=inputargs.label, filter_str=inputargs.filter):
-        commands[record['id']] = "/sbin/pfctl -k id -k %s" % record['id']
+    dropped = 0
+    # a rule selection cannot be honored: connection tracking keeps no rule
+    # association, so killing by rule id drops nothing.
+    if inputargs.label == '':
+        addr_parser = AddressParser()
+        filter_net_clauses, filter_clauses = split_filter_clauses(inputargs.filter)
+        for entry in iter_conntrack():
+            record = state_to_record(entry)
+            if matches(record, addr_parser, filter_net_clauses, filter_clauses):
+                if delete_entry(entry):
+                    dropped += 1
 
-    # drop list of states in chunks
-    chunk_size = 500
-    commands  = list(commands.values())
-    for chunk in [commands[i:i + chunk_size] for i in range(0, len(commands), chunk_size)]:
-        sp = subprocess.run([";\n".join(chunk)], capture_output=True, text=True, shell=True)
-    print(ujson.dumps({'dropped_states': len(commands)}))
+    print(ujson.dumps({'dropped_states': dropped}))

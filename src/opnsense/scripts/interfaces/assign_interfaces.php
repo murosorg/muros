@@ -65,6 +65,26 @@ function default_route_device()
     return $out === null ? '' : trim($out);
 }
 
+/* Devices the operator reserved for management. MurOS must never assign
+ * them to a logical interface, so an apt install on an existing host can
+ * never lose the uplink it is reached on. The factory/ISO install ships an
+ * empty list, so every physical device is assignable. */
+function reserved_devices()
+{
+    $file = '/usr/local/etc/muros/reserved.conf';
+    if (!is_readable($file)) {
+        return array();
+    }
+    $out = array();
+    foreach (file($file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
+        $line = trim($line);
+        if ($line !== '' && $line[0] !== '#') {
+            $out[$line] = true;
+        }
+    }
+    return $out;
+}
+
 $dom = new DOMDocument();
 $dom->preserveWhiteSpace = true;
 $dom->formatOutput = false;
@@ -79,7 +99,13 @@ if ($ifaceNodes === false || $ifaceNodes->length === 0) {
     exit(1);
 }
 
-$candidates = physical_devices();
+$reserved = reserved_devices();
+$candidates = array();
+foreach (physical_devices() as $d) {
+    if (!isset($reserved[$d])) {
+        $candidates[] = $d;
+    }
+}
 $assigned = array();
 $needing = array();
 
