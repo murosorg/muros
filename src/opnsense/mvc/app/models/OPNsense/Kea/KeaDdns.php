@@ -38,7 +38,7 @@ class KeaDdns extends BaseModel
         return $this->general->enabled->isEqual('1');
     }
 
-    public function generateConfig($target = '/usr/local/etc/kea/kea-dhcp-ddns.conf')
+    public function generateConfig($target = '/etc/kea/kea-dhcp-ddns.conf')
     {
         if ($this->general->enabled->isEmpty()) {
             return;
@@ -116,6 +116,6 @@ class KeaDdns extends BaseModel
             ]
         ];
 
-        File::file_put_contents($target, json_encode($cnf, JSON_PRETTY_PRINT, JSON_UNESCAPED_UNICODE), 0600);
+        File::file_put_contents($target, json_encode($cnf, JSON_PRETTY_PRINT, JSON_UNESCAPED_UNICODE), 0640, 0, 'root:_kea');
     }
 }

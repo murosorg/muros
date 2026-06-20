@@ -1,3 +1,27 @@
+muros (0.9.11) trixie; urgency=medium
+
+  * Kea DHCP server ported to Debian. OPNsense drives Kea through the FreeBSD
+    keactrl/rc.d mechanism, which does not exist on Debian; the config layout
+    and binary paths also differ. The Kea config generators now write to the
+    Debian-native /etc/kea (the stock daemons and their AppArmor profiles only
+    allow that path), the control sockets use the canonical /run/kea path that
+    Kea 2.6 validates (it rejects the /var/run symlink form), and the hook
+    libraries are loaded from the multiarch hooks directory. The ISC premium
+    libdhcp_host_cmds.so hook (not packaged for Debian) is dropped; host
+    reservations are written into the subnet configuration directly.
+  * Generated Kea configuration is now written 0640 root:_kea so the daemon
+    user can read it while the secrets (DDNS TSIG keys, HA) stay protected.
+  * New kea_service.sh wrapper drives the stock kea-dhcp4/6, ctrl-agent and
+    dhcp-ddns systemd units from the enabled flags rendered into keactrl.conf,
+    starting only the daemons enabled in the UI and stopping the rest. The Kea
+    configd actions (start/stop/restart/status) now call it instead of the
+    FreeBSD rc.d script and pluginctl.
+  * Add the Kea daemon packages to Depends and disable the stock units on
+    install so MurOS owns their lifecycle. Lease listing keeps working over the
+    dhcp4/dhcp6 control sockets (lease_cmds hook), validated end to end.
+
+ -- MurOS <dev@muros.org>  Sat, 20 Jun 2026 12:33:18 +0200
+
 muros (0.9.10) trixie; urgency=medium
 
   * Gateway monitoring now functional on Debian. The gateway-monitoring path

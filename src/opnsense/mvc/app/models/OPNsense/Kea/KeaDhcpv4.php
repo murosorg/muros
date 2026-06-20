@@ -321,7 +321,7 @@ class KeaDhcpv4 extends BaseModel
         return empty($config) ? null : $config;
     }
 
-    public function generateConfig($target = '/usr/local/etc/kea/kea-dhcp4.conf')
+    public function generateConfig($target = '/etc/kea/kea-dhcp4.conf')
     {
         $ddns = new KeaDdns();
         $ddns_enabled = !$ddns->general->enabled->isEmpty();
@@ -345,7 +345,9 @@ class KeaDhcpv4 extends BaseModel
                 ],
                 'control-socket' => [
                     'socket-type' => 'unix',
-                    'socket-name' => '/var/run/kea/kea4-ctrl-socket'
+                    /* MurOS: Kea on Debian validates the socket directory and
+                     * only accepts the canonical /run path (not /var/run). */
+                    'socket-name' => '/run/kea/kea4-ctrl-socket'
                 ],
                 'loggers' => [
                     [
@@ -359,9 +361,13 @@ class KeaDhcpv4 extends BaseModel
                     ]
                 ],
                 'subnet4' => $this->getConfigSubnets($ddns_enabled),
+                /* MurOS: Debian ships the open-source Kea hooks under the
+                 * multiarch hooks directory. libdhcp_host_cmds.so is an ISC
+                 * premium hook that is not packaged, so it is omitted here;
+                 * host reservations are written into the subnet configuration
+                 * directly rather than managed over the command channel. */
                 'hooks-libraries' => [
-                    ['library' => '/usr/local/lib/kea/hooks/libdhcp_lease_cmds.so'],
-                    ['library' => '/usr/local/lib/kea/hooks/libdhcp_host_cmds.so'],
+                    ['library' => '/usr/lib/x86_64-linux-gnu/kea/hooks/libdhcp_lease_cmds.so'],
                 ],
             ]
         ];
@@ -375,7 +381,7 @@ class KeaDhcpv4 extends BaseModel
         }
         if (!$this->ha->enabled->isEmpty()) {
             $record = [
-                'library' => '/usr/local/lib/kea/hooks/libdhcp_ha.so',
+                'library' => '/usr/lib/x86_64-linux-gnu/kea/hooks/libdhcp_ha.so',
                 'parameters' => [
                     'high-availability' => [
                         [
@@ -412,6 +418,6 @@ class KeaDhcpv4 extends BaseModel
         foreach ($this->general->compatibility->getValues() as $opt) {
             $cnf['Dhcp4']['compatibility'][$opt] = true;
         }
-        File::file_put_contents($target, json_encode($cnf, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE), 0600);
+        File::file_put_contents($target, json_encode($cnf, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE), 0640, 0, 'root:_kea');
     }
 }
