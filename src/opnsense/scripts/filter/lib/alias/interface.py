@@ -25,6 +25,7 @@
 
 """
 import ipaddress
+import json
 import subprocess
 from .base import BaseContentParser
 
@@ -36,23 +37,30 @@ class InterfaceParser(BaseContentParser):
 
     @classmethod
     def _update(cls):
-        this_interface = None
-        for line in subprocess.run(['/sbin/ifconfig'], capture_output=True, text=True).stdout.split('\n'):
-            if not line.startswith("\t") and line.find(':') > -1:
-                this_interface = line.strip().split(':')[0]
-            elif this_interface is not None and line.startswith("\tinet6"):
-                parts = line.strip().split()
-                addr = None
-                mask = None
-                for i in range(len(parts)):
-                    if parts[i] == 'inet6':
-                        addr = parts[i+1].split("%")[0]
-                    elif parts[i] == 'prefixlen':
-                        mask = parts[i+1]
+        # collect per interface IPv6 networks (ifconfig inet6 lines on FreeBSD ->
+        # iproute2 json on Linux). Link-local addresses are kept here and filtered
+        # out later in iter_addresses() which only acts on global addresses.
+        sp = subprocess.run(['/usr/sbin/ip', '-6', '-j', 'addr', 'show'], capture_output=True, text=True)
+        try:
+            links = json.loads(sp.stdout or '[]')
+        except ValueError:
+            links = []
+        for link in links:
+            this_interface = link.get('ifname')
+            if not this_interface:
+                continue
+            for addr_info in link.get('addr_info', []):
+                if addr_info.get('family') != 'inet6':
+                    continue
+                addr = addr_info.get('local')
+                mask = addr_info.get('prefixlen')
+                if addr is None or mask is None:
+                    continue
                 if this_interface not in cls._ipv6_networks:
                     cls._ipv6_networks[this_interface] = []
-                if mask and addr:
-                    cls._ipv6_networks[this_interface].append({"addr": ipaddress.IPv6Address(addr), "mask": mask})
+                cls._ipv6_networks[this_interface].append(
+                    {"addr": ipaddress.IPv6Address(addr), "mask": str(mask)}
+                )
 
     def __init__(self, interface, **kwargs):
         super().__init__(**kwargs)
