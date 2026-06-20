@@ -15,7 +15,7 @@ Depends: ${misc:Depends},
  php8.4-phalcon,
  python3 (>= 3.11), python3-jinja2, python3-dnspython, python3-ldap3, python3-ujson,
  nftables, iproute2, chrony, openssl,
- conntrack, tcpdump, iftop
+ conntrack, tcpdump, iftop, dpinger
 Recommends: unbound, openssh-server
 Suggests: openvpn, strongswan, isc-dhcp-server, kea, suricata, keepalived, conntrackd, wireguard-tools
 Description: MurOS firewall and routing platform
