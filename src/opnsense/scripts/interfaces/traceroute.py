@@ -43,11 +43,14 @@ inputargs = parser.parse_args()
 
 result = {'rows': []}
 if inputargs.ipproto == 'inet6':
-    cmd = ['/usr/sbin/traceroute6']
+    cmd = ['/usr/bin/traceroute6']
 else:
-    cmd = ['/usr/sbin/traceroute']
+    cmd = ['/usr/bin/traceroute']
 
-cmd = cmd + ['-a', '-w', '2', '-q', '%d' % inputargs.probes]
+# Debian ships the Butskoy traceroute: AS path lookups are -A (not -a), and the
+# AS number is printed after the address as [ASxxx] (FreeBSD prints it before
+# the host name).
+cmd = cmd + ['-A', '-w', '2', '-q', '%d' % inputargs.probes]
 if inputargs.source_address:
     cmd = cmd + ['-s', inputargs.source_address]
 if inputargs.protocol.lower() == 'icmp':
@@ -67,22 +70,43 @@ if errs:
     result['notice'] = errs.strip()
 
 
+last_ttl = ''
 for line in outs.strip().split('\n'):
     parts = line.split()
-    if len(parts) < 3:
+    if len(parts) < 2:
         continue
-    record = {'address': ''}
-    if parts[0].startswith('['):
-        parts = [result['rows'][-1]['ttl'] if len(result['rows']) > 0 else ''] + parts
+    # skip the "traceroute to host (addr), N hops max, ..." banner
+    if parts[0] in ('traceroute', 'traceroute6'):
+        continue
 
-    record['ttl'] = parts[0]
-    record['AS'] = parts[1][1:-1]
-    record['host'] = parts[2]
-    if parts[3].startswith('('):
-        record['address'] = parts[3][1:-1]
-        record['probes'] = ' '.join(parts[4:])
+    # a new hop starts with the ttl; otherwise it is a continuation line for an
+    # additional gateway answering for the previous ttl
+    if parts[0].isdigit():
+        last_ttl = parts[0]
+        fields = parts[1:]
     else:
-        record['probes'] = ' '.join(parts[3:])
+        fields = parts
+
+    record = {'ttl': last_ttl, 'AS': '', 'host': '', 'address': '', 'probes': ''}
+
+    if not fields or fields[0] == '*':
+        # the whole hop timed out
+        record['host'] = '*'
+        record['probes'] = ' '.join(fields)
+        result['rows'].append(record)
+        continue
+
+    idx = 0
+    record['host'] = fields[idx]
+    idx += 1
+    if idx < len(fields) and fields[idx].startswith('('):
+        record['address'] = fields[idx].strip('()')
+        idx += 1
+    if idx < len(fields) and fields[idx].startswith('['):
+        as_token = fields[idx].strip('[]')
+        record['AS'] = '' if as_token == '*' else as_token
+        idx += 1
+    record['probes'] = ' '.join(fields[idx:])
     result['rows'].append(record)
 
 print(json.dumps(result))

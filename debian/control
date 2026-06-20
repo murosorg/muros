@@ -16,6 +16,7 @@ Depends: ${misc:Depends},
  python3 (>= 3.11), python3-jinja2, python3-dnspython, python3-ldap3, python3-ujson,
  nftables, iproute2, chrony, openssl,
  conntrack, tcpdump, iftop, dpinger,
+ iputils-ping, traceroute,
  kea-dhcp4-server, kea-dhcp6-server, kea-ctrl-agent, kea-dhcp-ddns-server
 Recommends: unbound, openssh-server
 Suggests: openvpn, strongswan, suricata, keepalived, conntrackd, wireguard-tools
