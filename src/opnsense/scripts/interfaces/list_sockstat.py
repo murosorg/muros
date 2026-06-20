@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!/usr/bin/python3
 
 """
     Copyright (c) 2020 Ad Schellevis <ad@opnsense.org>
@@ -28,39 +28,60 @@
     --------------------------------------------------------------------------------------
     dump sockstat
 """
+import os
+import pwd
+import re
 import subprocess
 import ujson
 
+# matches each ("command",pid=N,fd=M) entry of the ss process column
+PROC_RE = re.compile(r'\("([^"]*)",pid=(\d+),fd=(\d+)\)')
+
+
+def owner(pid):
+    """ resolve the user owning a pid through procfs (ss only reports the
+        process name, pid and fd, not the user the old sockstat showed) """
+    try:
+        return pwd.getpwuid(os.stat('/proc/%s' % pid).st_uid).pw_name
+    except (OSError, KeyError, ValueError):
+        return ''
+
+
 if __name__ == '__main__':
-    netstat = dict()
-    for line in subprocess.run(['/usr/bin/netstat', '-anL'], capture_output=True, text=True).stdout.split('\n')[2:]:
-        parts = line.split()
-        if len(parts) >= 3:
-            tmp = parts[1].split('/')
-            key = parts[2].replace('.', ':') if parts[0] != 'unix' else parts[2]
-            netstat[key] = {'qlen': tmp[0], 'incqlen': tmp[1], 'maxqlen': tmp[2]}
-
     result = []
-    for line in subprocess.run(['/usr/bin/sockstat'], capture_output=True, text=True).stdout.split('\n')[1:]:
+    # -t tcp, -u udp, -n numeric, -a all states, -p processes, -H no header.
+    # ss is the iproute2 replacement for sockstat + netstat -anL. Unix domain
+    # sockets are intentionally left out: their ss layout carries extra inode
+    # columns and their addressing has no useful equivalent in this firewall
+    # diagnostics view, which is concerned with IP sockets.
+    sp = subprocess.run(['/usr/bin/ss', '-tunapH'], capture_output=True, text=True)
+    for line in sp.stdout.split('\n'):
         parts = line.split()
-        if len(parts) >= 6:
-            record = {
-                'user': parts[0],
-                'command': parts[1],
-                'pid': parts[2],
-                'fd': parts[3],
-                'proto': parts[4],
-                'local': "",
-                'remote': ""
-            }
-            if parts[5] == '->':
-                record['local'] = parts[6]
-            else:
-                record['local'] = parts[5]
-                if len(parts) > 6:
-                    record['remote'] = parts[6]
+        if len(parts) < 6:
+            continue
+        netid, state, recvq, sendq, local, peer = parts[:6]
+        process = parts[6] if len(parts) > 6 else ''
 
-            if record['local'] in netstat:
-                record['listen-queue-sizes'] = netstat[record['local']]
+        # listening sockets expose their accept/backlog queue depth through
+        # the Recv-Q (pending) and Send-Q (configured backlog) columns
+        queue = None
+        if state in ('LISTEN', 'UNCONN'):
+            queue = {'qlen': recvq, 'incqlen': '0', 'maxqlen': sendq}
+
+        matches = PROC_RE.findall(process)
+        if not matches:
+            matches = [('', '0', '0')]
+        for command, pid, fd in matches:
+            record = {
+                'user': owner(pid) if pid != '0' else '',
+                'command': command,
+                'pid': pid,
+                'fd': fd,
+                'proto': netid,
+                'local': local,
+                'remote': '' if peer in ('*', '0.0.0.0:*', '[::]:*', '*:*') else peer,
+            }
+            if queue is not None:
+                record['listen-queue-sizes'] = queue
             result.append(record)
     print(ujson.dumps(result))
