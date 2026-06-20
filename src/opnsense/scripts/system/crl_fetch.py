@@ -100,7 +100,7 @@ def main():
                             crl_files.append(target_filename)
                             # use local trust store to validate if the received CRL is valid
                             sp = subprocess.run(
-                                ['/usr/local/bin/openssl', 'crl', '-verify'],
+                                ['/usr/bin/openssl', 'crl', '-verify'],
                                 input=this_crl['pem'],
                                 capture_output=True,
                                 text=True

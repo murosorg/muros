@@ -581,7 +581,7 @@ class Store
      */
     public static function verify($cert)
     {
-        return static::proc_open('/usr/local/bin/openssl verify', $cert);
+        return static::proc_open('/usr/bin/openssl verify', $cert);
     }
 
     /**
@@ -590,7 +590,7 @@ class Store
      */
     public static function dumpX509($cert)
     {
-        return static::proc_open('/usr/local/bin/openssl x509 -fingerprint -sha256 -text', $cert);
+        return static::proc_open('/usr/bin/openssl x509 -fingerprint -sha256 -text', $cert);
     }
 
     /**
@@ -599,7 +599,7 @@ class Store
      */
     public static function dumpCSR($csr)
     {
-        return static::proc_open('/usr/local/bin/openssl req -text -noout', $csr);
+        return static::proc_open('/usr/bin/openssl req -text -noout', $csr);
     }
 
     /**
@@ -608,7 +608,7 @@ class Store
      */
     public static function dumpCRL($cert)
     {
-        return static::proc_open('/usr/local/bin/openssl crl -fingerprint -sha256 -text', $cert);
+        return static::proc_open('/usr/bin/openssl crl -fingerprint -sha256 -text', $cert);
     }
 
     /**

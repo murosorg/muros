@@ -169,7 +169,7 @@ class User extends BaseModel
         ) {
             /* compliance SHA-512 hashing */
             $process = proc_open(
-                '/usr/local/bin/openssl passwd -6 -stdin',
+                '/usr/bin/openssl passwd -6 -stdin',
                 [['pipe', 'r'], ['pipe', 'w']],
                 $pipes
             );

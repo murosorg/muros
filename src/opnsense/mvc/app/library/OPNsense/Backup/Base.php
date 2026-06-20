@@ -68,7 +68,7 @@ abstract class Base
         file_put_contents("{$file}.dec", $data);
 
         $retval = Shell::run_safe(
-            '/usr/local/bin/openssl enc -e -%s -md %s -pbkdf2 -iter %s -in %s -out %s -pass file:%s 2> /dev/null',
+            '/usr/bin/openssl enc -e -%s -md %s -pbkdf2 -iter %s -in %s -out %s -pass file:%s 2> /dev/null',
             [$cipher, $hash, $pbkdf2, "{$file}.dec", "{$file}.enc", $file]
         );
 
@@ -143,7 +143,7 @@ abstract class Base
         file_put_contents($file, $pass);
         file_put_contents("{$file}.enc", base64_decode($data));
 
-        $frmt = ['/usr/local/bin/openssl enc -d -%s -md %s'];
+        $frmt = ['/usr/bin/openssl enc -d -%s -md %s'];
         $args = [$cipher, $hash];
 
         if ($pbkdf2 !== null) {

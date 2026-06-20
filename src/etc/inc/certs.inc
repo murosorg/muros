@@ -221,7 +221,7 @@ function cert_get_modulus($str_crt, $decode = true, $type = 'crt')
     if (in_array($type, $type_list)) {
         $type = str_replace($type_list, $type_cmd, $type);
         $modulus = exec(sprintf(
-            'echo %s | /usr/local/bin/openssl %s -noout -modulus',
+            'echo %s | /usr/bin/openssl %s -noout -modulus',
             escapeshellarg($str_crt),
             escapeshellarg($type)
         ));
