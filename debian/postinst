@@ -40,9 +40,16 @@ case "$1" in
       ln -sf /usr/bin/php /usr/local/bin/php
     fi
 
-    # PHP runtime directories referenced by 99-muros.ini.
-    for d in /var/lib/php/tmp /var/lib/php/sessions; do
+    # MurOS runtime directories (/var/etc, PHP temp/session/cache). These are
+    # declared in /usr/lib/tmpfiles.d/muros.conf and recreated at every boot;
+    # create them now so the first configuration run after install succeeds
+    # without waiting for a reboot.
+    systemd-tmpfiles --create /usr/lib/tmpfiles.d/muros.conf >/dev/null 2>&1 || true
+    # Fallback in case the tmpfiles file is unavailable for any reason.
+    for d in /var/etc /var/lib/php/tmp /var/lib/php/sessions; do
       mkdir -p "$d"
+    done
+    for d in /var/lib/php/tmp /var/lib/php/sessions; do
       chown www-data:www-data "$d" 2>/dev/null || true
       chmod 700 "$d" 2>/dev/null || true
     done

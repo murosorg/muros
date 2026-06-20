@@ -911,6 +911,15 @@ function log_msg($msg, $prio = LOG_NOTICE)
 
 function file_safe($file, $text_or_source = '', $mode = 0644)
 {
+    /* make sure the destination directory exists before the rename below;
+     * on Debian the runtime tree under /var is created by systemd-tmpfiles,
+     * but a service may be configured before that ran (or for a brand new
+     * path), so create the parent directory defensively. */
+    $dir = dirname($file);
+    if (!is_dir($dir)) {
+        @mkdir($dir, 0755, true);
+    }
+
     $temp = tempnam('/tmp', str_replace('/', '_', $file) . '-');
 
     if (file_exists($text_or_source)) {

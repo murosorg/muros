@@ -140,4 +140,13 @@ expose_php = Off
 PHPINI
 done
 
+# systemd-tmpfiles is the Debian replacement for the FreeBSD mtree /var step:
+# it creates the MurOS runtime directories (notably /var/etc) at every boot.
+# systemd only scans the standard tmpfiles.d search paths, so the canonical
+# file shipped under the MurOS prefix is also installed where systemd reads it.
+if [ -f "$DEST/usr/local/etc/tmpfiles.d/muros.conf" ]; then
+    install -d "$DEST/usr/lib/tmpfiles.d"
+    cp "$DEST/usr/local/etc/tmpfiles.d/muros.conf" "$DEST/usr/lib/tmpfiles.d/muros.conf"
+fi
+
 echo "staged into $DEST"
