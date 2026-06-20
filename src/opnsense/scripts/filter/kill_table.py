@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!/usr/bin/python3
 
 """
     Copyright (c) 2016-2019 Ad Schellevis <ad@opnsense.org>
@@ -26,25 +26,23 @@
     POSSIBILITY OF SUCH DAMAGE.
 
     --------------------------------------------------------------------------------------
-    drop an existing pf alias table
+    drop an existing firewall alias (nftables named set)
 """
-import subprocess
 import os
 import sys
-import ujson
+from lib.alias.pf import PF
 
 if __name__ == '__main__':
-    sp = subprocess.run(['/sbin/pfctl', '-sT'], capture_output=True, text=True)
-    tables = list()
-    for line in sp.stdout.strip().split('\n'):
-        tables.append(line.strip())
-    # only try to remove alias if it exists
+    # collect the logical alias names currently loaded as nftables sets
+    tables = [name for name, _ in PF.list_tables()]
+    # only try to remove the alias if it exists
     if len(sys.argv) > 1 and sys.argv[1] in tables:
-        # cleanup related alias file
-        for suffix in  ['txt', 'md5.txt', 'self.txt']:
+        # cleanup related alias files
+        for suffix in ['txt', 'md5.txt', 'self.txt']:
             if os.path.isfile('/var/db/aliastables/%s.%s' % (sys.argv[1], suffix)):
                 os.remove('/var/db/aliastables/%s.%s' % (sys.argv[1], suffix))
-        subprocess.run(['/sbin/pfctl', '-t', sys.argv[1], '-T', 'kill'], capture_output=True)
+        # destroy both family sets backing the alias
+        PF.remove(sys.argv[1])
         # all good, exit 0
         sys.exit(0)
 
