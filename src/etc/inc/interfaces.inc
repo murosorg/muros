@@ -665,7 +665,7 @@ function _interfaces_hardware($device, $intf_details = null)
     }
 
     /* make a copy of the current global configuration to adjust below */
-    $hwsettings = $config['OPNsense']['Interfaces']['settings'];
+    $hwsettings = $config['OPNsense']['Interfaces']['settings'] ?? [];
 
     /* interface overwrites */
     foreach ($config['interfaces'] as $iface => $ifconf) {
@@ -720,7 +720,7 @@ function _interfaces_hardware($device, $intf_details = null)
         }
 
         // disable/enable hardware VLAN tags, will be skipped when "Leave default" (option 2) is selected
-        if ($hwsettings['disablevlanhwfilter'] != 2) {
+        if (($hwsettings['disablevlanhwfilter'] ?? 0) != 2) {
             // probe already selected options
             $selected_opts = [];
             foreach ($intf_details['options'] as $opt) {
@@ -2645,7 +2645,7 @@ function interface_track6_configure($interface, $lancfg, $reload = false)
         return;
     }
 
-    $trackcfg = $config['interfaces'][$lancfg['track6-interface']];
+    $trackcfg = $config['interfaces'][$lancfg['track6-interface']] ?? [];
     if (!isset($trackcfg['enable'])) {
         log_msg("Interface {$interface} tracking nonexistent interface {$lancfg['track6-interface']}", LOG_ERR);
         return;

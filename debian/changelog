@@ -1,3 +1,21 @@
+muros (0.9.16) trixie; urgency=medium
+
+  * Runtime directories: create /var/etc (and the PHP temp/session/cache tree)
+    at boot through a systemd-tmpfiles drop-in installed at the path systemd
+    actually scans (/usr/lib/tmpfiles.d/muros.conf). On FreeBSD this tree came
+    from the mtree /var specification applied by the rc boot scripts, which do
+    not run on Debian, so generated service configuration could not be written
+    (rename() of dnsmasq hosts/leases and similar files failed with "No such
+    file or directory"). The package now also creates the directories during
+    install so the first configuration run succeeds without a reboot.
+  * util.inc: file_safe() now creates the destination directory before the
+    atomic rename, making config writers robust against a missing target path.
+  * interfaces.inc: guard hardware-offload settings and IPv6 tracking against a
+    minimal configuration (avoid PHP "undefined array key" / "access on null"
+    warnings on OPNsense/Interfaces/settings and interfaces.<name>).
+
+ -- MurOS <dev@muros.org>  Sat, 20 Jun 2026 14:30:00 +0200
+
 muros (0.9.15) trixie; urgency=medium
 
   * Web UI: consolidated the theme set down to a single dark MurOS theme
