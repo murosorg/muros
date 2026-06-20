@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!/usr/bin/python3
 
 """
     Copyright (c) 2022 Ad Schellevis <ad@opnsense.org>
@@ -43,14 +43,24 @@ if __name__ == '__main__':
     result['ip'] = []
     result['ip6'] = []
     result['org'] = OUI().get_vendor(cmd_args.mac, '***')
-    for cmd in ['/usr/sbin/arp', '/usr/sbin/ndp']:
-        args = [cmd, '-na']
-        for line in subprocess.run(args, capture_output=True, text=True).stdout.split('\n'):
-            if line.find(cmd_args.mac) > -1:
-                parts = line.split()
-                if cmd.endswith('ndp'):
-                    result['ip6'].append(parts[0])
-                else:
-                    result['ip'].append(parts[1].strip('()'))
+
+    # iproute2 unifies the ARP (IPv4) and NDP (IPv6) neighbour tables; match the
+    # requested MAC against every entry and split the addresses by family.
+    mac = cmd_args.mac.lower()
+    sp = subprocess.run(['/usr/sbin/ip', '-j', 'neigh', 'show'], capture_output=True, text=True)
+    try:
+        neigh = ujson.loads(sp.stdout or '[]')
+    except ValueError:
+        neigh = []
+    for entry in neigh:
+        if entry.get('lladdr', '').lower() != mac:
+            continue
+        dst = entry.get('dst', '')
+        if not dst:
+            continue
+        if ':' in dst:
+            result['ip6'].append(dst)
+        else:
+            result['ip'].append(dst)
 
     print (ujson.dumps(result))
