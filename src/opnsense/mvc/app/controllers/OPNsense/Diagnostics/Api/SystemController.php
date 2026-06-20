@@ -157,30 +157,16 @@ class SystemController extends ApiControllerBase
     {
         $result = [];
 
-        $mem = json_decode((new Backend())->configdpRun('system sysctl values', implode(',', [
-            'hw.physmem',
-            'vm.stats.vm.v_page_count',
-            'vm.stats.vm.v_inactive_count',
-            'vm.stats.vm.v_cache_count',
-            'vm.stats.vm.v_free_count',
-            'kstat.zfs.misc.arcstats.size'
-        ])), true);
+        /* memory usage is derived from /proc/meminfo on Linux; "used" is the
+           total minus the kernel's MemAvailable estimate (memory reclaimable
+           for new work without swapping), which matches what users expect. */
+        $mem = json_decode((new Backend())->configdRun('system show meminfo'), true);
 
-        if (!empty($mem['vm.stats.vm.v_page_count'])) {
-            $pc = $mem['vm.stats.vm.v_page_count'];
-            $ic = $mem['vm.stats.vm.v_inactive_count'];
-            $cc = $mem['vm.stats.vm.v_cache_count'];
-            $fc = $mem['vm.stats.vm.v_free_count'];
-            $result['memory']['total'] = $mem['hw.physmem'];
-            $result['memory']['total_frmt'] = sprintf('%d', $mem['hw.physmem'] / 1024 / 1024);
-            $result['memory']['used'] = round(((($pc - ($ic + $cc + $fc))) / $pc) * $mem['hw.physmem'], 0);
-            $result['memory']['used_frmt'] = sprintf('%d', $result['memory']['used'] / 1024 / 1024);
-            if (!empty($mem['kstat.zfs.misc.arcstats.size'])) {
-                $arc_size = $mem['kstat.zfs.misc.arcstats.size'];
-                $result['memory']['arc'] = $arc_size;
-                $result['memory']['arc_frmt'] = sprintf('%d', $arc_size / 1024 / 1024);
-                $result['memory']['arc_txt'] = sprintf(gettext('ARC size %d MB'), $arc_size / 1024 / 1024);
-            }
+        if (!empty($mem['total'])) {
+            $result['memory']['total'] = $mem['total'];
+            $result['memory']['total_frmt'] = sprintf('%d', $mem['total'] / 1024 / 1024);
+            $result['memory']['used'] = $mem['used'];
+            $result['memory']['used_frmt'] = sprintf('%d', $mem['used'] / 1024 / 1024);
         } else {
             $result['memory']['used'] = gettext('N/A');
         }
@@ -230,39 +216,19 @@ class SystemController extends ApiControllerBase
 
     public function systemTemperatureAction()
     {
-        $backend = new Backend();
-        $result = [];
-
-        /* read temperatures individually from previously derived sensors */
-        $sensors = explode("\n", $backend->configdRun('system sensors'));
-        $temps = json_decode($backend->configdpRun('system sysctl values', join(',', $sensors)), true);
-
-        foreach ($temps as $name => $value) {
-            $tempItem = [];
-            $tempItem['device'] = $name;
-            $tempItem['device_seq'] = (int)filter_var($tempItem['device'], FILTER_SANITIZE_NUMBER_INT);
-            $tempItem['temperature'] = trim(str_replace('C', '', $value));
-            $tempItem['type_translated'] = gettext('Other');
-            $tempItem['type'] = 'other';
-
-            /* try to categorize a few of the readings just for labels */
-            if (str_starts_with($tempItem['device'], 'hw.acpi.')) {
-                $tempItem['type_translated'] = gettext('Zone');
-                $tempItem['type'] = 'zone';
-            } elseif (str_starts_with($tempItem['device'], 'dev.amdtemp.')) {
-                $tempItem['type_translated'] = gettext('AMD');
-                $tempItem['type'] = 'amd';
-            } elseif (str_starts_with($tempItem['device'], 'dev.pchtherm.')) {
-                $tempItem['type_translated'] = gettext('Platform');
-                $tempItem['type'] = 'platform';
-            } elseif (str_starts_with($tempItem['device'], 'dev.cpu.')) {
-                $tempItem['type_translated'] = gettext('CPU');
-                $tempItem['type'] = 'cpu';
-            }
-
-            $result[] = $tempItem;
+        /* temperatures come from /sys/class/thermal and hwmon on Linux; the
+           script already classifies each reading and translates the labels. */
+        $sensors = json_decode((new Backend())->configdRun('system show temperature'), true);
+        if (!is_array($sensors)) {
+            return [];
         }
 
-        return $result;
+        foreach ($sensors as &$tempItem) {
+            if (!empty($tempItem['type_translated'])) {
+                $tempItem['type_translated'] = gettext($tempItem['type_translated']);
+            }
+        }
+
+        return $sensors;
     }
 }
