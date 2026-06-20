@@ -24,7 +24,7 @@
  # POSSIBILITY OF SUCH DAMAGE.
  #}
 
-{% set theme_name = ui_theme|default('opnsense') %}
+{% set theme_name = ui_theme|default('muros') %}
 <!-- required for gridstack calculations -->
 <link href="{{ cache_safe('/ui/css/gridstack.min.css') }}" rel="stylesheet">
 <!-- required for any amount of columns < 12 -->
