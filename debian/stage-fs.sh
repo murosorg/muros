@@ -110,4 +110,24 @@ ExecStart=
 ExecStart=/usr/sbin/lighttpd -D -f /usr/local/etc/muros/lighttpd.conf
 DROPIN
 
+# PHP runtime settings for the web UI and the CLI tools (configd helpers).
+# The include_path is what lets the MVC stack and the legacy .inc libraries
+# resolve, sized limits match an appliance. Applied to both SAPIs.
+for sapi in fpm cli; do
+  install -d "$DEST/etc/php/8.4/$sapi/conf.d"
+  cat > "$DEST/etc/php/8.4/$sapi/conf.d/99-muros.ini" <<'PHPINI'
+include_path = "/usr/local/etc/inc:/usr/local/www:/usr/local/opnsense/mvc:/usr/local/opnsense/contrib:/usr/local/share/pear:/usr/local/share"
+memory_limit = 1G
+max_execution_time = 300
+max_input_vars = 5000
+post_max_size = 200M
+upload_max_filesize = 200M
+upload_tmp_dir = /var/lib/php/tmp
+session.save_path = /var/lib/php/sessions
+error_log = /var/lib/php/tmp/PHP_errors.log
+date.timezone = "Etc/UTC"
+expose_php = Off
+PHPINI
+done
+
 echo "staged into $DEST"
