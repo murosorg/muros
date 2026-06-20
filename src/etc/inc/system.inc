@@ -141,65 +141,61 @@ function system_sysctl_defaults()
      *    compile time options unset (like debugging)
      */
 
+    /*
+     * MurOS: this table was a list of FreeBSD sysctl OIDs. It has been
+     * translated to their Linux (procfs) equivalents. FreeBSD-only tunables
+     * with no Linux counterpart (enc(4) ipsec masks, CARP, pf.share_forward,
+     * ZFS, NUMA boot flags, driver knobs like hw.ixl/hw.vtnet, ...) were
+     * dropped. set_sysctl() filters this list against the keys actually
+     * present on the running kernel, so entries that do not exist (for
+     * example the IPv6 keys when IPv6 is disabled) are skipped silently.
+     */
     return [
-        'debug.kassert.warn_only' => [ 'default' => '1', 'description' => 'KASSERT triggers a panic (0) or just a warning (1)', 'type' => 'w' ],
-        'hw.ixl.enable_head_writeback' => [ 'default' => '0' ],
-        'hw.syscons.kbd_reboot' => [ 'default' => '0' ],
-        'hw.vtnet.csum_disable' => [ 'default' => '1' ],
-        'kern.coredump' => [ 'default' => '0' ],
-        'kern.ipc.maxsockbuf' => [ 'default' => '4262144' ],
-        'kern.msgbuf_show_timestamp' => [ 'default' => '1' ],
-        'kern.randompid' => [ 'default' => '1' ],
-        'net.enc.in.ipsec_bpf_mask' => [ 'default' => '2' ], /* after processing */
-        'net.enc.in.ipsec_filter_mask' => [ 'default' => '2' ], /* after processing */
-        'net.enc.out.ipsec_bpf_mask' => [ 'default' => '1' ], /* before processing */
-        'net.enc.out.ipsec_filter_mask' => [ 'default' => '1' ], /* before processing */
-        'net.inet.carp.senderr_demotion_factor' => [ 'default' => '0' ],
-        'net.inet.icmp.drop_redirect' => [ 'default' => '1' ],
-        'net.inet.icmp.icmplim' => [ 'default' => '0' ],
-        'net.inet.icmp.log_redirect' => [ 'default' => '0' ],
-        'net.inet.icmp.reply_from_interface' => [ 'default' => '1' ],
-        'net.inet.ip.accept_sourceroute' => [ 'default' => '0' ],
-        'net.inet.ip.forwarding' => [ 'default' => '1' ],
-        'net.inet.ip.intr_queue_maxlen' => [ 'default' => '1000' ],
-        'net.inet.ip.portrange.first' => [ 'default' => '1024' ],
-        'net.inet.ip.random_id' => [ 'default' => '1' ],
-        'net.inet.ip.redirect' => [ 'default' => '0' ],
-        'net.inet.ip.sourceroute' => [ 'default' => '0' ],
-        'net.inet.tcp.blackhole' => [ 'default' => '2' ],
-        'net.inet.tcp.delayed_ack' => [ 'default' => '0' ],
-        'net.inet.tcp.drop_synfin' => [ 'default' => '1' ],
-        'net.inet.tcp.log_debug' => [ 'default' => '0' ],
-        'net.inet.tcp.recvspace' => [ 'default' => '65228' ],
-        'net.inet.tcp.sendspace' => [ 'default' => '65228' ],
-        'net.inet.tcp.syncookies' => [ 'default' => '1' ],
-        'net.inet.tcp.tso' => [ 'default' => '1' ],
-        'net.inet.udp.blackhole' => [ 'default' => '1' ],
-        'net.inet.udp.checksum' => [ 'default' => 1 ],
-        'net.inet.udp.maxdgram' => [ 'default' => '57344' ],
-        'net.inet6.ip6.forwarding' => [ 'default' => '1' ],
-        'net.inet6.ip6.intr_queue_maxlen' => [ 'default' => '1000' ],
-        'net.inet6.ip6.log_cannot_forward' => [ 'default' => '0' ],
-        'net.inet6.ip6.prefer_tempaddr' => [ 'default' => '0' ],
-        'net.inet6.ip6.redirect' => [ 'default' => '0' ],
-        'net.inet6.ip6.rfc6204w3' => [ 'default' => is_ipv6_allowed() ? '1' : '0' ],
-        'net.inet6.ip6.use_tempaddr' => [ 'default' => '0' ],
-        'net.link.bridge.pfil_bridge' => [ 'default' => '0' ],
-        'net.link.bridge.pfil_local_phys' => [ 'default' => '0' ],
-        'net.link.bridge.pfil_member' => [ 'default' => '1' ],
-        'net.link.bridge.pfil_onlyip' => [ 'default' => '0' ],
-        'net.link.tap.user_open' => [ 'default' => '1' ],
-        'net.link.vlan.mtag_pcp' => [ 'default' => '1' ],
-        'net.local.dgram.maxdgram' => [ 'default' => '8192' ],
-        'net.pf.share_forward' => [ 'default' => !empty($config['system']['pf_share_forward']) ? '1' : '0' ],
-        'net.pf.share_forward6' => [ 'default' => !empty($config['system']['pf_share_forward']) ? '1' : '0' ],
-        'net.route.multipath' => [ 'default' => '0' ],
-        'security.bsd.see_other_gids' => [ 'default' => '0' ],
-        'security.bsd.see_other_uids' => [ 'default' => '0' ],
-        'vfs.read_max' => [ 'default' => '32' ],
-        'vfs.zfs.dirty_data_sync_percent' => [ 'default' => '5' ],
-        'vfs.zfs.txg.timeout' => [ 'default' => '90' ],
-        'vm.numa.disabled' => [ 'default' => '1' ],
+        /* routing: this is a router/firewall. Forwarding is also shipped as a
+         * sysctl.d drop-in (applied at boot before this runs); kept here so it
+         * shows on the GUI Tunables page and can be overridden. */
+        'net.ipv4.ip_forward' => [ 'default' => '1', 'description' => 'Enable IPv4 packet forwarding (routing)' ],
+        'net.ipv6.conf.all.forwarding' => [ 'default' => '1', 'description' => 'Enable IPv6 packet forwarding (routing)' ],
+
+        /* a router decides routing from its own table, it neither accepts nor
+         * sends ICMP redirects (was net.inet.icmp.drop_redirect / ip.redirect) */
+        'net.ipv4.conf.all.accept_redirects' => [ 'default' => '0', 'description' => 'Accept ICMP redirects (IPv4)' ],
+        'net.ipv4.conf.default.accept_redirects' => [ 'default' => '0' ],
+        'net.ipv4.conf.all.secure_redirects' => [ 'default' => '0', 'description' => 'Accept ICMP redirects from listed gateways only (IPv4)' ],
+        'net.ipv4.conf.default.secure_redirects' => [ 'default' => '0' ],
+        'net.ipv4.conf.all.send_redirects' => [ 'default' => '0', 'description' => 'Send ICMP redirects (IPv4)' ],
+        'net.ipv4.conf.default.send_redirects' => [ 'default' => '0' ],
+        'net.ipv6.conf.all.accept_redirects' => [ 'default' => '0', 'description' => 'Accept ICMP redirects (IPv6)' ],
+        'net.ipv6.conf.default.accept_redirects' => [ 'default' => '0' ],
+
+        /* reject source-routed packets (was net.inet.ip.accept_sourceroute) */
+        'net.ipv4.conf.all.accept_source_route' => [ 'default' => '0', 'description' => 'Accept source-routed packets (IPv4)' ],
+        'net.ipv4.conf.default.accept_source_route' => [ 'default' => '0' ],
+        'net.ipv6.conf.all.accept_source_route' => [ 'default' => '0', 'description' => 'Accept source-routed packets (IPv6)' ],
+        'net.ipv6.conf.default.accept_source_route' => [ 'default' => '0' ],
+
+        /* log impossible (martian) source addresses */
+        'net.ipv4.conf.all.log_martians' => [ 'default' => '1', 'description' => 'Log packets with impossible source addresses' ],
+        'net.ipv4.conf.default.log_martians' => [ 'default' => '1' ],
+
+        /* SYN flood mitigation (was net.inet.tcp.syncookies) */
+        'net.ipv4.tcp_syncookies' => [ 'default' => '1', 'description' => 'Enable TCP SYN cookies' ],
+
+        /* ICMP hardening (was net.inet.icmp.*) */
+        'net.ipv4.icmp_echo_ignore_broadcasts' => [ 'default' => '1', 'description' => 'Ignore ICMP echo/timestamp sent to broadcast (smurf protection)' ],
+        'net.ipv4.icmp_ignore_bogus_error_responses' => [ 'default' => '1', 'description' => 'Ignore bogus ICMP error responses' ],
+        'net.ipv4.icmp_errors_use_inbound_ifaddr' => [ 'default' => '1', 'description' => 'Source ICMP errors from the inbound interface address' ],
+
+        /* a firewall does not use IPv6 privacy (temporary) addresses
+         * (was net.inet6.ip6.use_tempaddr / prefer_tempaddr) */
+        'net.ipv6.conf.all.use_tempaddr' => [ 'default' => '0', 'description' => 'Use IPv6 privacy (temporary) addresses' ],
+        'net.ipv6.conf.default.use_tempaddr' => [ 'default' => '0' ],
+
+        /* socket / input queue sizing (was kern.ipc.maxsockbuf and
+         * net.inet.ip.intr_queue_maxlen) */
+        'net.core.rmem_max' => [ 'default' => '4262144', 'description' => 'Maximum socket receive buffer (bytes)' ],
+        'net.core.wmem_max' => [ 'default' => '4262144', 'description' => 'Maximum socket send buffer (bytes)' ],
+        'net.core.netdev_max_backlog' => [ 'default' => '1000', 'description' => 'Maximum input packet queue length per CPU' ],
     ];
 }
 
