@@ -33,24 +33,25 @@ use OPNsense\Base\BaseModel;
 
 class KeaCtrlAgent extends BaseModel
 {
-    public function generateConfig($target = '/usr/local/etc/kea/kea-ctrl-agent.conf')
+    public function generateConfig($target = '/etc/kea/kea-ctrl-agent.conf')
     {
         $cnf = [
             'Control-agent' => [
                 'http-host' => $this->general->http_host->getValue(),
                 'http-port' => $this->general->http_port->asInt(),
+                /* MurOS: Kea on Debian only accepts the canonical /run path. */
                 'control-sockets' => [
                     'dhcp4' => [
                         'socket-type' => 'unix',
-                        'socket-name' => '/var/run/kea/kea4-ctrl-socket',
+                        'socket-name' => '/run/kea/kea4-ctrl-socket',
                     ],
                     'dhcp6' => [
                         'socket-type' => 'unix',
-                        'socket-name' => '/var/run/kea/kea6-ctrl-socket',
+                        'socket-name' => '/run/kea/kea6-ctrl-socket',
                     ],
                     'd2' => [
                         'socket-type' => 'unix',
-                        'socket-name' => '/var/run/kea/kea-ddns-ctrl-socket',
+                        'socket-name' => '/run/kea/kea-ddns-ctrl-socket',
                     ]
                 ],
                 'loggers' => [
@@ -68,6 +69,6 @@ class KeaCtrlAgent extends BaseModel
             ]
         ];
 
-        File::file_put_contents($target, json_encode($cnf, JSON_PRETTY_PRINT, JSON_UNESCAPED_UNICODE), 0600);
+        File::file_put_contents($target, json_encode($cnf, JSON_PRETTY_PRINT, JSON_UNESCAPED_UNICODE), 0640, 0, 'root:_kea');
     }
 }

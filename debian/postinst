@@ -63,6 +63,14 @@ JRN
     systemd-tmpfiles --create --prefix /var/log/journal >/dev/null 2>&1 || true
     systemctl restart systemd-journald 2>/dev/null || true
 
+    # Kea DHCP is driven by MurOS: configd renders /etc/kea/*.conf from the
+    # stored configuration and the kea_service.sh wrapper starts only the
+    # daemons enabled in the UI. Keep the stock units from auto-starting at
+    # boot with their packaged default configuration; MurOS owns their state.
+    for u in kea-dhcp4-server kea-dhcp6-server kea-ctrl-agent kea-dhcp-ddns-server; do
+      systemctl disable --now "$u" 2>/dev/null || true
+    done
+
     # Pick up the lighttpd drop-in and (re)start the front end.
     systemctl daemon-reload 2>/dev/null || true
     systemctl reload-or-restart php8.4-fpm 2>/dev/null || true

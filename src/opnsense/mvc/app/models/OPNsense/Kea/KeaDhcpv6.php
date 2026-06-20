@@ -549,7 +549,7 @@ class KeaDhcpv6 extends BaseModel
         return empty($config) ? null : $config;
     }
 
-    public function generateConfig($target = '/usr/local/etc/kea/kea-dhcp6.conf')
+    public function generateConfig($target = '/etc/kea/kea-dhcp6.conf')
     {
         $ddns = new KeaDdns();
         $ddns_enabled = !$ddns->general->enabled->isEmpty();
@@ -574,7 +574,8 @@ class KeaDhcpv6 extends BaseModel
                 ],
                 'control-socket' => [
                     'socket-type' => 'unix',
-                    'socket-name' => '/var/run/kea/kea6-ctrl-socket'
+                    /* MurOS: Kea on Debian only accepts the canonical /run path. */
+                    'socket-name' => '/run/kea/kea6-ctrl-socket'
                 ],
                 'loggers' => [
                     [
@@ -588,9 +589,11 @@ class KeaDhcpv6 extends BaseModel
                     ]
                 ],
                 'subnet6' => $this->getConfigSubnets($ddns_enabled, $needs_no_leases_class),
+                /* MurOS: Debian multiarch hooks dir; libdhcp_host_cmds.so is an
+                 * unavailable ISC premium hook (reservations are written into
+                 * the subnet configuration directly). */
                 'hooks-libraries' => [
-                    ['library' => '/usr/local/lib/kea/hooks/libdhcp_lease_cmds.so'],
-                    ['library' => '/usr/local/lib/kea/hooks/libdhcp_host_cmds.so']
+                    ['library' => '/usr/lib/x86_64-linux-gnu/kea/hooks/libdhcp_lease_cmds.so'],
                 ],
             ]
         ];
@@ -614,7 +617,7 @@ class KeaDhcpv6 extends BaseModel
         }
         if (!$this->ha->enabled->isEmpty()) {
             $record = [
-                'library' => '/usr/local/lib/kea/hooks/libdhcp_ha.so',
+                'library' => '/usr/lib/x86_64-linux-gnu/kea/hooks/libdhcp_ha.so',
                 'parameters' => [
                     'high-availability' => [
                         [
@@ -647,6 +650,6 @@ class KeaDhcpv6 extends BaseModel
                 'server-port' => $ddns->general->server_port->asInt(),
             ];
         }
-        File::file_put_contents($target, json_encode($cnf, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE), 0600);
+        File::file_put_contents($target, json_encode($cnf, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE), 0640, 0, 'root:_kea');
     }
 }

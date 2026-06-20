@@ -35,9 +35,9 @@ class KeaCtrl:
     def send_command(command, args = None, service = "dhcp4"):
         path = ""
         if service == "dhcp4":
-            path = "/var/run/kea/kea4-ctrl-socket"
+            path = "/run/kea/kea4-ctrl-socket"
         elif service == "dhcp6":
-            path = "/var/run/kea/kea6-ctrl-socket"
+            path = "/run/kea/kea6-ctrl-socket"
 
         if not os.path.exists(path):
             return {"result": 1, "text": f"kea-{service} control socket path \"{path}\" does not exist"}
