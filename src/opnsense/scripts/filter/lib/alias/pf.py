@@ -195,6 +195,19 @@ class PF:
             PF._run(['delete', 'set', NFT_FAMILY, NFT_TABLE, PF._set_name(table_name, family)])
 
     @staticmethod
+    def add_element(table_name, value):
+        """ add a single address/CIDR to the matching family set """
+        value = value.strip()
+        try:
+            family = 'v6' if ipaddress.ip_address(value.split('/')[0]).version == 6 else 'v4'
+        except ValueError:
+            return
+        PF._run([
+            'add', 'element', NFT_FAMILY, NFT_TABLE,
+            PF._set_name(table_name, family), '{ %s }' % value
+        ])
+
+    @staticmethod
     def delete_element(table_name, value):
         """ remove a single address/CIDR from the matching family set """
         value = value.strip()
