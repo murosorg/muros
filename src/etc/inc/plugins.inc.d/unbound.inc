@@ -104,6 +104,16 @@ function unbound_optimization()
 
 function unbound_service_mount_sync($umount = false)
 {
+    /*
+     * FreeBSD ran Unbound inside a manually maintained chroot at /var/unbound
+     * and replicated /dev, the Python runtime and shared libraries into it
+     * using devfs and nullfs bind mounts. On Debian the unbound package runs
+     * under systemd with its own confinement and does not need this hand-built
+     * chroot, so this is a no-op here. Keeping the function avoids touching the
+     * many call sites while preventing spurious "/sbin/mount: not found" errors.
+     */
+    return;
+
     $mountpoints = [
         '/var/unbound/dev' => [
             'special' => 'devfs',
