@@ -1,5 +1,13 @@
 muros (0.9.12) trixie; urgency=medium
 
+  * Default credentials changed from root/opnsense to root/muros. The root
+    bcrypt hash seeded in config.xml.sample (web UI login) now matches the
+    'muros' password, aligning with the installer console root default.
+
+ -- MurOS <dev@muros.org>  Sat, 20 Jun 2026 13:00:00 +0200
+
+muros (0.9.12) trixie; urgency=medium
+
   * Network Time (NTP) ported from the ntp.org daemon to chrony, the time
     daemon MurOS already ships on Debian. ntpd is not packaged for Debian and
     its configuration and query interfaces differ from chrony. ntpd_configure_do
