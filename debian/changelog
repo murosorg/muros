@@ -1,3 +1,13 @@
+muros (0.9.18) trixie; urgency=medium
+
+  * Web UI: fix the sidebar header layout. The custom brand/account partial uses
+    .muros-* classes for which no stylesheet rule existed, so the wordmark SVG
+    rendered at its intrinsic 320x80 size and overflowed the menu column. Added
+    the missing theme rules: the logo is constrained to a 34px height and the
+    version/identity/logout block is laid out compactly.
+
+ -- MurOS <dev@muros.org>  Sat, 20 Jun 2026 16:00:00 +0200
+
 muros (0.9.17) trixie; urgency=medium
 
   * Default configuration: set the seeded system hostname to "MurOS" instead of

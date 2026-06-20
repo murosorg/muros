@@ -7396,3 +7396,57 @@ ul.jqtree-tree .jqtree-title {
 .active-menu a.active > span.fa,
 .active-menu-title.active,
 .active-menu-title.active > span.fa { color: #1a1a1a !important; }
+
+/* MurOS sidebar brand + account header (custom menu partial).
+   The markup uses .muros-* classes, so the generic .navbar-brand sizing does
+   not apply; constrain the wordmark and lay out the identity block here. */
+.muros-brand {
+  padding: 16px 16px 4px 16px;
+}
+.muros-brand-logo {
+  display: inline-block;
+  line-height: 0;
+}
+.muros-brand-logo img {
+  display: block;
+  height: 34px;
+  width: auto;
+  max-width: 100%;
+}
+.muros-version {
+  display: block;
+  margin-top: 8px;
+  font-size: 11px;
+  letter-spacing: 0.3px;
+  color: #868d97;
+}
+.muros-account {
+  padding: 0 16px 14px 16px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 12px;
+}
+.muros-identity {
+  display: block;
+  margin-bottom: 4px;
+  color: #c7ccd3;
+}
+.muros-user {
+  font-weight: 600;
+  color: #ffffff;
+}
+.muros-host {
+  margin-left: 2px;
+  color: #868d97;
+}
+.muros-logout {
+  color: #F5C518;
+}
+.muros-logout:hover,
+.muros-logout:focus {
+  color: #e6b813;
+  text-decoration: none;
+}
+.muros-logout .fa {
+  margin-right: 4px;
+}
