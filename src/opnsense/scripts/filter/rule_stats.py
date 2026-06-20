@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!/usr/bin/python3
 
 """
     Copyright (c) 2019-2025 Ad Schellevis <ad@opnsense.org>
@@ -30,38 +30,53 @@
 import ujson
 import subprocess
 
-if __name__ == '__main__':
+
+def collect_rule_stats():
+    """ Aggregate per-rule packet/byte counters from the nftables ruleset.
+
+        The MurOS ruleset generator (nft_build.php) attaches a `counter` and a
+        `comment` carrying the rule uuid to every rule it emits. A single GUI
+        rule can expand to several nft rules (e.g. an inet46 rule produces one
+        line per family), so counters sharing the same uuid are summed.
+
+        nftables exposes packet and byte counters but no separate "evaluations"
+        or live "states" metric like pf did. We map evaluations to the matched
+        packet count and report states as 0, which keeps the GUI columns
+        populated with the information actually available on Linux.
+    """
     results = dict()
-    hex_digits = set("0123456789abcdef")
-    sp = subprocess.run(['/sbin/pfctl', '-sr', '-v'], capture_output=True, text=True)
-    stats = dict()
-    prev_line = ''
-    for rline in sp.stdout.split('\n') + []:
-        line = rline.strip()
-        if len(line) == 0 or line[0] != '[':
-            if prev_line.find(' label ') > -1:
-                lbl = prev_line.split(' label ')[-1]
-                if lbl.count('"') >= 2:
-                    rule_md5 = lbl.split('"')[1]
-                    if len(rule_md5) >= 32 and set(rule_md5.replace('-', '')).issubset(hex_digits):
-                        if rule_md5 in results:
-                            # aggregate raw pf rules (a single rule in out ruleset could be expanded)
-                            for key in stats:
-                                if key in results[rule_md5]:
-                                    if key == 'pf_rules':
-                                        results[rule_md5][key] += 1
-                                    else:
-                                        results[rule_md5][key] += stats[key]
-                                else:
-                                    results[rule_md5][key] = stats[key]
-                        else:
-                            results[rule_md5] = stats
-            # reset for next rule
-            prev_line = line
-            stats = {'pf_rules': 1}
-        elif line[0] == '['  and line.find('Evaluations') > 0:
-            parts = line.strip('[ ]').replace(':', ' ').split()
-            for i in range(0, len(parts)-1, 2):
-                if parts[i+1].isdigit():
-                    stats[parts[i].lower()] = int(parts[i+1])
-    print (ujson.dumps(results))
+    sp = subprocess.run(['/usr/sbin/nft', '-j', 'list', 'ruleset'], capture_output=True, text=True)
+    try:
+        ruleset = ujson.loads(sp.stdout)
+    except ValueError:
+        return results
+
+    for item in ruleset.get('nftables', []):
+        rule = item.get('rule') if isinstance(item, dict) else None
+        if not rule:
+            continue
+        uuid = rule.get('comment')
+        if not uuid:
+            continue
+        packets = 0
+        nbytes = 0
+        found = False
+        for expr in rule.get('expr', []):
+            if isinstance(expr, dict) and 'counter' in expr:
+                counter = expr['counter']
+                packets += int(counter.get('packets', 0))
+                nbytes += int(counter.get('bytes', 0))
+                found = True
+        if not found:
+            continue
+        if uuid not in results:
+            results[uuid] = {'evaluations': 0, 'packets': 0, 'bytes': 0, 'states': 0}
+        results[uuid]['packets'] += packets
+        results[uuid]['evaluations'] += packets
+        results[uuid]['bytes'] += nbytes
+
+    return results
+
+
+if __name__ == '__main__':
+    print(ujson.dumps(collect_rule_stats()))
