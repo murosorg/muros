@@ -1,3 +1,10 @@
+muros (0.9.8) trixie; urgency=medium
+
+  * Ship 99-muros.ini (fpm+cli): include_path and appliance PHP limits so the
+    MVC stack and .inc libraries resolve (fixes web UI HTTP 500).
+
+ -- MurOS <dev@muros.org>  Sat, 20 Jun 2026 09:15:00 +0200
+
 muros (0.9.7) trixie; urgency=medium
 
   * Web UI works out of the box: ship MurOS lighttpd config via a systemd

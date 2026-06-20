@@ -31,6 +31,13 @@ case "$1" in
       ln -sf /conf/config.xml /usr/local/etc/config.xml
     fi
 
+    # PHP runtime directories referenced by 99-muros.ini.
+    for d in /var/lib/php/tmp /var/lib/php/sessions; do
+      mkdir -p "$d"
+      chown www-data:www-data "$d" 2>/dev/null || true
+      chmod 700 "$d" 2>/dev/null || true
+    done
+
     # Pick up the lighttpd drop-in and (re)start the front end.
     systemctl daemon-reload 2>/dev/null || true
     systemctl reload-or-restart php8.4-fpm 2>/dev/null || true
