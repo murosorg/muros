@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!/usr/bin/python3
 
 """
     Copyright (c) 2022-2025 Ad Schellevis <ad@opnsense.org>
@@ -54,16 +54,11 @@ def capture_pids(jobid):
 
 def netmap_interfaces():
     """
-        :return: interfaces in netmap mode
+        netmap is a FreeBSD packet I/O framework with no standard Linux
+        equivalent, so no interface is ever in netmap mode on MurOS.
+        :return: interfaces in netmap mode (always empty)
     """
-    result = []
-    this_if = None
-    for line in subprocess.run(['/sbin/ifconfig'], capture_output=True, text=True).stdout.split("\n"):
-        if not line.startswith('\t') and line.find(':') > -1:
-            this_if = line.split()[0].rstrip(':')
-        elif this_if is not None and line.find('options=') > -1 and line.find('NETMAP') > -1:
-            result.append(this_if)
-    return result
+    return []
 
 
 def load_settings(filename):
@@ -73,7 +68,7 @@ def load_settings(filename):
         return {}
 
 def pcap_reader(filename, eargs=None):
-    args = ['/usr/sbin/tcpdump', '-n', '-e', '-tt', '-r', filename]
+    args = ['/usr/bin/tcpdump', '-n', '-e', '-tt', '-r', filename]
     if eargs:
         args = args + eargs
     sp = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
@@ -123,9 +118,7 @@ if __name__ == '__main__':
             for intf in settings.get('interface', '').split(','):
                 result['started_processes'] += 1
                 args = [
-                    '/usr/sbin/daemon',
-                    '-f',
-                    '/usr/sbin/tcpdump',
+                    '/usr/bin/tcpdump',
                     '-i', intf if intf not in netmap_ifs else "netmap:%s/tr" % intf,
                     '-n',
                     '-U',
@@ -168,7 +161,17 @@ if __name__ == '__main__':
 
                 if len(filters) > 0:
                     args.append(' and '.join(filters))
-                subprocess.run(args)
+                # FreeBSD used daemon(8) to background tcpdump; on Linux we
+                # detach it ourselves with a new session (setsid) so the
+                # capture keeps running after this script and its configd
+                # action have returned.
+                subprocess.Popen(
+                    args,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True
+                )
     elif cmd_args.action == 'stop' and cmd_args.job in all_jobs:
         result['status'] = 'ok'
         result['stopped_processes'] = 0
