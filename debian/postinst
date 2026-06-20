@@ -82,6 +82,11 @@ JRN
       systemctl disable --now "$u" 2>/dev/null || true
     done
 
+    # Purge the compiled Volt template cache so the UI/template changes shipped
+    # in this package are recompiled from the new sources on the next request,
+    # instead of being served from stale compiled copies left by a prior version.
+    rm -f /var/lib/php/cache/*.php 2>/dev/null || true
+
     # Pick up the lighttpd drop-in and (re)start the front end.
     systemctl daemon-reload 2>/dev/null || true
     systemctl reload-or-restart php8.4-fpm 2>/dev/null || true

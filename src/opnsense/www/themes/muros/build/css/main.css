@@ -7468,14 +7468,27 @@ ul.jqtree-tree .jqtree-title {
 .page-side {
   margin-top: 0;
   height: 100% !important;
-  display: flex;
-  flex-direction: column;
   padding-left: 0;
   padding-right: 0;
 }
-/* drop the bootstrap row negative margins so the menu hugs the left edge */
-.page-side > .row {
+/* Expanded sidebar only (not the collapsed icon mode, whose submenus fly out
+   absolutely and must not be clipped): pin the brand to the top and the account
+   block to the bottom, and let the menu scroll on its own in between so the
+   account block stays put when a submenu is expanded. */
+.page-side:not(.col-sidebar-left) {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.page-side:not(.col-sidebar-left) > .row {
   margin-left: 0;
   margin-right: 0;
   flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.page-side:not(.col-sidebar-left) > .muros-brand,
+.page-side:not(.col-sidebar-left) > .muros-account {
+  flex-shrink: 0;
 }
