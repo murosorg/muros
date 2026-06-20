@@ -1,3 +1,16 @@
+muros (0.9.23) trixie; urgency=medium
+
+  * Web UI sidebar: keep the account block (user@host and Logout) anchored to the
+    bottom of the menu instead of moving when a submenu is expanded. The brand
+    stays pinned at the top, the account block at the bottom, and the menu now
+    scrolls on its own in between. The collapsed icon sidebar mode is left
+    untouched so its fly-out submenus are not clipped.
+  * Packaging: purge the compiled Volt template cache on upgrade so UI and
+    template changes are recompiled from the new sources, instead of the previous
+    version's compiled templates being served from cache.
+
+ -- MurOS <dev@muros.org>  Sat, 20 Jun 2026 17:20:00 +0200
+
 muros (0.9.22) trixie; urgency=medium
 
   * Ported the SSH daemon configuration (openssh.inc) from FreeBSD to Debian, so
