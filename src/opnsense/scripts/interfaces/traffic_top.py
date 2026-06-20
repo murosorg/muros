@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!/usr/bin/python3
 
 """
     Copyright (c) 2020 Ad Schellevis <ad@opnsense.org>
@@ -42,9 +42,12 @@ from concurrent.futures import ThreadPoolExecutor
 
 def iftop(interface, target):
     try:
+        # force a C locale: iftop formats rates following the active locale, and
+        # a comma decimal separator (e.g. "62,3Kb") would break the rate parsing.
+        iftop_env = dict(os.environ, LC_ALL='C', LC_NUMERIC='C')
         sp = subprocess.run(
-            ['/usr/local/sbin/iftop', '-nNb', '-i', interface, '-s', '2', '-t'],
-            capture_output=True, text=True, timeout=10
+            ['/usr/sbin/iftop', '-nNb', '-i', interface, '-s', '2', '-t'],
+            capture_output=True, text=True, timeout=10, env=iftop_env
         )
         target[interface] = sp.stdout
     except subprocess.TimeoutExpired:
@@ -52,15 +55,18 @@ def iftop(interface, target):
 
 def local_addresses():
     result = []
-    sp = subprocess.run(['/sbin/ifconfig'], capture_output=True, text=True)
-    for line in sp.stdout.split('\n'):
-        if line.find('\tinet') > -1:
+    sp = subprocess.run(['/usr/sbin/ip', '-j', 'addr', 'show'], capture_output=True, text=True)
+    try:
+        links = ujson.loads(sp.stdout or '[]')
+    except ValueError:
+        links = []
+    for link in links:
+        for addr in link.get('addr_info', []):
             try:
-                ip = ipaddress.ip_address(line.split()[1].split('%')[0])
+                ip = ipaddress.ip_address(addr.get('local', ''))
             except ValueError:
-                ip = None
-
-            if ip and not ip.is_loopback and not ip.is_link_local:
+                continue
+            if not ip.is_loopback and not ip.is_link_local:
                 result.append(ip)
     return result
 
