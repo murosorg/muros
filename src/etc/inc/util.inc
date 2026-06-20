@@ -1062,7 +1062,9 @@ function get_sysctl($names)
         $names = [$names];
     }
 
-    $frmt = ['/sbin/sysctl -i'];
+    /* Linux sysctl(8): -e ignores unknown keys, output is "name = value"
+     * (FreeBSD used -i and "name: value"). */
+    $frmt = ['/sbin/sysctl -e'];
     $args = [];
 
     foreach ($names as $name) {
@@ -1073,9 +1075,9 @@ function get_sysctl($names)
     $values = [];
 
     foreach (shell_safe($frmt, $args, true) as $line) {
-        $line = explode(': ', $line, 2);
+        $line = explode(' = ', $line, 2);
         if (count($line) == 2) {
-            $values[$line[0]] = $line[1];
+            $values[trim($line[0])] = trim($line[1]);
         }
     }
 
@@ -1116,11 +1118,14 @@ function set_sysctl($values, $filter = true)
 
     $sysctls = null;
 
+    /* Linux sysctl(8) lists all key names with -aN (FreeBSD used -WaN to limit
+     * to writable keys; Linux has no such flag, so we filter on existence and
+     * let -e skip read-only / unknown keys without erroring). */
     if ($filter) {
-        $sysctls = shell_safe('/sbin/sysctl -WaN', [], true);
+        $sysctls = shell_safe('/sbin/sysctl -aN 2> /dev/null', [], true);
     }
 
-    $frmt = ['/sbin/sysctl'];
+    $frmt = ['/sbin/sysctl -e -w'];
     $args = [];
 
     foreach ($values as $key => $value) {
@@ -1135,9 +1140,9 @@ function set_sysctl($values, $filter = true)
 
     if (count($args)) {
         foreach (shell_safe($frmt, $args, true) as $line) {
-            $line = explode(': ', $line, 2);
+            $line = explode(' = ', $line, 2);
             if (count($line) == 2) {
-                $ret[$line[0]] = true;
+                $ret[trim($line[0])] = true;
             }
         }
     }
