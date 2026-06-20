@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!/usr/bin/python3
 
 """
     Copyright (c) 2021 Ad Schellevis <ad@opnsense.org>
@@ -25,107 +25,107 @@
     ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
     POSSIBILITY OF SUCH DAMAGE.
 
+    --------------------------------------------------------------------------------------
+    MurOS: report firewall engine statistics from the Linux netfilter stack.
+
+    The FreeBSD pf engine exposed these numbers through `pfctl -s*`. On Debian
+    the stateful firewall is driven by nftables and connection tracking
+    (nf_conntrack), so the figures that have a direct equivalent are sourced
+    from procfs:
+      - the state table maps to the conntrack table (count / max),
+      - state timeouts map to the nf_conntrack_* timeout sysctls,
+      - uptime comes from /proc/uptime.
+
+    The pf per-interface and per-rule packet/byte accounting has no built-in
+    netfilter counterpart (it would require explicit named counters in the
+    ruleset), so those sections are returned empty rather than fabricated.
 """
-import datetime
 import sys
-import subprocess
 import ujson
 
+CONNTRACK_DIR = '/proc/sys/net/netfilter'
 
-def pfctl_info():
-    result = dict()
-    heading_line = None
-    info_sections = ['state-table', 'source-tracking-table', 'counters', 'limit-counters']
-    for line in subprocess.run(['/sbin/pfctl', '-vvsinfo'], capture_output=True, text=True).stdout.split("\n"):
-        if len(line) > 0:
-            if line[1] != ' ':
-                heading_line = line[:30].strip().lower().replace(' ', '-')
-            elif line.startswith('Status'):
-                result['uptime'] = line[7:30].strip()
-            elif heading_line in info_sections:
-                if heading_line not in result:
-                    result[heading_line] = {}
-                parts = line[30:].strip().split()
-                prop = line[:30].strip().lower().replace(' ', '-')
-                result[heading_line][prop] = {
-                    'total': int(parts[-2]) if len(parts) > 1 else int(parts[-1])
-                }
-                if len(parts) > 1:
-                    result[heading_line][prop]['rate'] = float(parts[-1][:-2])
+# nf_conntrack timeout sysctl -> readable key mirroring the old pf naming
+TIMEOUT_MAP = {
+    'nf_conntrack_generic_timeout': 'generic',
+    'nf_conntrack_tcp_timeout_syn_sent': 'tcp.first',
+    'nf_conntrack_tcp_timeout_syn_recv': 'tcp.opening',
+    'nf_conntrack_tcp_timeout_established': 'tcp.established',
+    'nf_conntrack_tcp_timeout_fin_wait': 'tcp.closing',
+    'nf_conntrack_tcp_timeout_close_wait': 'tcp.finwait',
+    'nf_conntrack_tcp_timeout_close': 'tcp.closed',
+    'nf_conntrack_udp_timeout': 'udp.single',
+    'nf_conntrack_udp_timeout_stream': 'udp.multiple',
+    'nf_conntrack_icmp_timeout': 'icmp.first',
+}
+
+
+def read_int(path):
+    try:
+        with open(path) as handle:
+            return int(handle.read().strip())
+    except (OSError, ValueError):
+        return None
+
+
+def uptime():
+    try:
+        with open('/proc/uptime') as handle:
+            seconds = int(float(handle.read().split()[0]))
+    except (OSError, ValueError, IndexError):
+        return ''
+    days, rem = divmod(seconds, 86400)
+    hours, rem = divmod(rem, 3600)
+    minutes, secs = divmod(rem, 60)
+    return '%dd %02d:%02d:%02d' % (days, hours, minutes, secs)
+
+
+def info():
+    result = {'uptime': uptime(), 'state-table': {}}
+    current = read_int('%s/nf_conntrack_count' % CONNTRACK_DIR)
+    maximum = read_int('%s/nf_conntrack_max' % CONNTRACK_DIR)
+    if current is not None:
+        result['state-table']['current-entries'] = {'total': current}
+    if maximum is not None:
+        result['state-table']['max-entries'] = {'total': maximum}
     return result
 
-def pfctl_memory():
-    result = dict()
-    for line in subprocess.run(['/sbin/pfctl', '-vvsmemory'], capture_output=True, text=True).stdout.split("\n"):
-        parts = line.split()
-        if len(parts) > 1 and parts[-1].isdigit():
-            result[parts[0]] = int(parts[-1])
 
+def memory():
+    result = {}
+    maximum = read_int('%s/nf_conntrack_max' % CONNTRACK_DIR)
+    if maximum is not None:
+        # the pf "states" hard limit maps to the conntrack table size
+        result['states'] = maximum
     return result
 
-def pfctl_timeouts():
-    result = dict()
-    for line in subprocess.run(['/sbin/pfctl', '-vvstimeouts'], capture_output=True, text=True).stdout.split("\n"):
-        parts = line.split(maxsplit=1)
-        if len(parts) > 1:
-            result[parts[0]] = parts[1]
 
+def timeouts():
+    result = {}
+    for sysctl, key in TIMEOUT_MAP.items():
+        value = read_int('%s/%s' % (CONNTRACK_DIR, sysctl))
+        if value is not None:
+            result[key] = str(value)
     return result
 
-def pfctl_interfaces():
-    result = dict()
-    heading_line = None
-    for line in subprocess.run(['/sbin/pfctl', '-vvsInterfaces'], capture_output=True, text=True).stdout.split("\n"):
-        if len(line) > 0 and line[0] not in ["\t", " "]:
-            heading_line = line.strip()
-            result[heading_line] = dict()
-        elif heading_line is not None and len(line) > 10:
-            line = line.strip()
-            topic, line = line.split(maxsplit=1)
-            topic = topic.rstrip(':').lower().replace('/', '_')
-            if topic == 'cleared':
-                result[heading_line][topic] = datetime.datetime.strptime(
-                    line.split(maxsplit=1)[-1], "%b %d %H:%M:%S %Y"
-                ).isoformat()
-            elif topic == 'references':
-                result[heading_line][topic] = int(line)
-            elif line.find('Packets') > -1 and line.find('Bytes') > -1:
-                parts = line.split()
-                result[heading_line]["%s_packets" % topic] = int(parts[2])
-                result[heading_line]["%s_bytes" % topic] = int(parts[4])
 
-    return result
+def interfaces():
+    # no built-in per-interface pass/block accounting in netfilter
+    return {}
 
-def pfctl_rules():
-    result = dict()
-    headings = {
-        "rules": "filter rules",
-        "nat": "nat rules"
-    }
-    for key in headings:
-        result[headings[key]] = dict()
-        rule = None
-        for line in subprocess.run(['/sbin/pfctl', '-vvs' + key], capture_output=True, text=True).stdout.split("\n"):
-            sline = line.strip()
-            if len(line) > 0 and line[0] not in ["\t", " "]:
-                rule = sline
-                result[headings[key]][rule] = dict()
-            elif rule is not None and sline.startswith('[') and sline.endswith(']'):
-                items = sline[1:].strip().lower().split(':')
-                for idx, item in enumerate(items[1:],1):
-                    opt = 'state_creations' if items[idx-1].find('creations') >  -1 else items[idx-1].split()[-1]
-                    val = " ".join(item.split()[:-1]).replace('state', '')
-                    result[headings[key]][rule][opt] = int(val) if val.isdigit() else val
 
-    return result
+def rules():
+    # no built-in per-rule accounting without explicit named counters
+    return {}
+
 
 def main():
     sections = {
-        'info': pfctl_info,
-        'memory': pfctl_memory,
-        'timeouts': pfctl_timeouts,
-        'interfaces': pfctl_interfaces,
-        'rules': pfctl_rules
+        'info': info,
+        'memory': memory,
+        'timeouts': timeouts,
+        'interfaces': interfaces,
+        'rules': rules,
     }
     result = dict()
     for section in sections:
