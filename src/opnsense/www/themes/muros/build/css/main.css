@@ -7401,7 +7401,7 @@ ul.jqtree-tree .jqtree-title {
    The markup uses .muros-* classes, so the generic .navbar-brand sizing does
    not apply; constrain the wordmark and lay out the identity block here. */
 .muros-brand {
-  padding: 12px 12px 10px 12px;
+  padding: 12px 12px 8px 12px;
 }
 .muros-brand-logo {
   display: inline-block;
@@ -7422,14 +7422,18 @@ ul.jqtree-tree .jqtree-title {
 }
 .muros-account {
   margin-top: auto;
-  padding: 10px 12px 12px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   font-size: 12px;
 }
 .muros-identity {
-  display: block;
-  margin-bottom: 4px;
   color: #c7ccd3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .muros-user {
   font-weight: 600;
@@ -7441,6 +7445,9 @@ ul.jqtree-tree .jqtree-title {
 }
 .muros-logout {
   color: #F5C518;
+  flex-shrink: 0;
+  margin-left: 10px;
+  white-space: nowrap;
 }
 .muros-logout:hover,
 .muros-logout:focus {
