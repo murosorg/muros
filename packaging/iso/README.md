@@ -77,7 +77,7 @@ package `postinst` uses to install the Python dependencies with
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `MUROS_ROOT_PASSWORD` | `root` | Root password of the installed system (AZERTY/QWERTY-safe default). Change it after first login. |
+| `MUROS_ROOT_PASSWORD` | `muros` | Root password of the installed system (AZERTY/QWERTY-safe default). Change it after first login. |
 | `MUROS_OFFLINE_DIR` | `./offline` | Where the offline bundle lives / is built. |
 | `MUROS_REUSE_BUNDLE` | `0` | Set to `1` to reuse a cached offline bundle for speed. Default rebuilds it from scratch every run so an ISO never ships a stale muros .deb. |
 | `MUROS_KEEP_CACHED_DEB` | `0` | With `MUROS_REUSE_BUNDLE=1`, set to `1` to also reuse the cached muros .deb instead of refreshing it (fully offline; may ship an old muros package). |
@@ -141,7 +141,7 @@ Users, or `passwd` at the console). If you built the ISO with a custom
 
 - The default entry wipes the first disk. Only boot it on the target
   machine, or pick a stock Debian entry to control partitioning.
-- The default `root` / `root` credentials are a convenience for lab use
+- The default `root` / `muros` credentials are a convenience for lab use
   and a safe first console login. Set `MUROS_ROOT_PASSWORD` for anything
   else and rotate it from the UI (Access > Users) after install.
 - MurOS uses the system `root` account for both the web UI and SSH, so

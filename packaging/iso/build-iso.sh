@@ -66,7 +66,7 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-ROOT_PASSWORD="${MUROS_ROOT_PASSWORD:-root}"
+ROOT_PASSWORD="${MUROS_ROOT_PASSWORD:-muros}"
 DEBIAN_VERSION="${DEBIAN_VERSION:-}"
 ARCH="${DEBIAN_ARCH:-amd64}"
 OUTPUT="${OUTPUT:-${HERE}/muros-installer-${ARCH}.iso}"
@@ -506,6 +506,6 @@ echo "Boot menu: 'Install MurOS' (default, 30s). The install is fully"
 echo "unattended; networking is not configured by the installer. On first"
 echo "boot MurOS assigns the interfaces (WAN on DHCP, LAN static) and loads"
 echo "the firewall; reach the web UI on the LAN at https://192.168.1.1"
-echo "(login root / opnsense). The stock Debian entries remain for a plain"
+echo "(login root / muros). The stock Debian entries remain for a plain"
 echo "manual install. Console root password for the installed system: ${ROOT_PASSWORD}"
 echo "Write it to a USB key:  sudo dd if=${OUTPUT} of=/dev/sdX bs=4M status=progress oflag=sync"
