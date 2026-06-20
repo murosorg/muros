@@ -1,3 +1,16 @@
+muros (0.9.24) trixie; urgency=medium
+
+  * Dashboard: fixed the Memory widget, which always showed N/A because the
+    backend queried FreeBSD page-count sysctls. Memory usage is now read from
+    /proc/meminfo (new system/meminfo.py + "system show meminfo" action) and
+    "used" is total minus MemAvailable.
+  * Dashboard: fixed the Thermal Sensors widget, which probed FreeBSD sysctl
+    temperature OIDs. Readings now come from /sys/class/thermal and hwmon (new
+    system/temperature.py + "system show temperature" action), with each sensor
+    classified (CPU, Zone, AMD, Platform, Other).
+
+ -- MurOS <dev@muros.org>  Sat, 20 Jun 2026 17:45:00 +0200
+
 muros (0.9.23) trixie; urgency=medium
 
   * Web UI sidebar: keep the account block (user@host and Logout) anchored to the
