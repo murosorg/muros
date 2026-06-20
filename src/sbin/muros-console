@@ -1,0 +1,20 @@
+#!/bin/sh
+
+# MurOS console entry point. Installed as root's login shell on the appliance
+# console (and on the serial line). On the first interactive login it runs the
+# one-time setup wizard, then hands over to the operator menu. Non-interactive
+# invocations (ssh host "command", which calls the login shell with -c) are
+# passed straight through to a real shell so remote automation keeps working.
+
+if [ "$1" = "-c" ]; then
+    shift
+    exec /bin/bash -c "$@"
+fi
+
+PENDING=/conf/.muros-console-setup
+if [ -t 0 ] && [ -f "$PENDING" ]; then
+    /usr/local/sbin/muros-console-setup
+    rm -f "$PENDING" 2>/dev/null || true
+fi
+
+exec /usr/local/sbin/opnsense-shell "$@"

@@ -22,7 +22,7 @@ CMD_RELOAD="/usr/local/etc/rc.reload_all"
 CMD_RESTORE="/usr/local/opnsense/scripts/shell/restore.sh"
 CMD_SETADDR="/usr/local/opnsense/scripts/shell/setaddr.php"
 CMD_SETPORTS="/usr/local/opnsense/scripts/shell/setports.php"
-CMD_SHELL="/bin/csh"
+CMD_SHELL="/bin/bash"
 
 # rc.d may call this while being root using `su -m user -c ...'
 # and it has arguments to pass through to the shell.  It creates

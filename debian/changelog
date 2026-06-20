@@ -7,6 +7,16 @@ muros (0.9.10) trixie; urgency=medium
     pulled in as a dependency, so per-gateway latency, loss and availability
     monitoring (the basis for multi-WAN failover) work out of the box.
   * Add dpinger to Depends (served from the MurOS apt repository).
+  * Interactive first-boot console (OPNsense-style). The appliance console
+    (local VGA tty1 and the first serial port) now autologin as root into the
+    MurOS console. On first boot a one-time wizard runs: keyboard layout, then
+    interface assignment (setports) and interface IP address (setaddr: static
+    IP, mask, gateway or DHCP). Hostname, DNS, timezone and language stay in
+    the web setup wizard. Each console step is skippable to keep the factory
+    default, so a headless boot is never blocked.
+  * Console menu fixes: provide /usr/local/bin/php (the FreeBSD interpreter
+    path used by the ported shebangs) so the menu scripts run, and use
+    /bin/bash for the shell option instead of the absent /bin/csh.
 
  -- MurOS <dev@muros.org>  Sat, 20 Jun 2026 11:35:00 +0000
 

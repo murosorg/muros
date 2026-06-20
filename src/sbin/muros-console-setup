@@ -1,0 +1,77 @@
+#!/bin/sh
+
+# MurOS first-boot console setup wizard.
+#
+# Runs once on the appliance console, before the operator menu, to cover the
+# few things that genuinely need a local keyboard and screen: the keyboard
+# layout (so the operator types on the right keymap), the interface assignment
+# (which NIC is WAN, LAN, optX) and an interface IPv4 address (static IP, mask
+# and gateway, or DHCP). Hostname, DNS, timezone and language belong to the web
+# setup wizard on first login and are intentionally not duplicated here.
+#
+# Every step can be skipped with Enter so a headless boot is never blocked
+# waiting for input; the factory defaults then remain in effect.
+
+PHP=/usr/local/bin/php
+SHELL_DIR=/usr/local/opnsense/scripts/shell
+
+# Without a real terminal (e.g. serial line not connected) do nothing.
+[ -t 0 ] || exit 0
+
+# Ignore the interrupt/quit keys so a stray Ctrl-C does not drop the operator
+# out of the guided setup.
+trap : 2 3
+
+printf '\n'
+printf '====================== MurOS setup ======================\n'
+printf 'First-time console setup. Press Enter at a prompt to keep\n'
+printf 'the current value. These steps are also available later from\n'
+printf 'the menu (1 = assign interfaces, 2 = set interface IP).\n'
+printf '=========================================================\n\n'
+
+# 1) Keyboard layout ------------------------------------------------------
+cur=us
+if [ -r /etc/default/keyboard ]; then
+    . /etc/default/keyboard 2>/dev/null
+    cur=${XKBLAYOUT:-us}
+fi
+printf 'Keyboard layout (e.g. us, fr, de, es, it, uk, be, ch, pt).\n'
+printf 'Current layout [%s]: ' "$cur"
+read -r kl
+if [ -n "$kl" ] && [ "$kl" != "$cur" ]; then
+    layout_line="XKBLAYOUT=\"$kl\""
+    if [ -e /etc/default/keyboard ] && grep -q '^XKBLAYOUT=' /etc/default/keyboard; then
+        sed -i "s|^XKBLAYOUT=.*|$layout_line|" /etc/default/keyboard
+    else
+        echo "$layout_line" >> /etc/default/keyboard
+    fi
+    if command -v setupcon >/dev/null 2>&1; then
+        setupcon --save >/dev/null 2>&1 || loadkeys "$kl" >/dev/null 2>&1
+    else
+        loadkeys "$kl" >/dev/null 2>&1
+    fi
+    printf 'Keyboard layout set to %s.\n\n' "$kl"
+else
+    printf 'Keeping %s.\n\n' "$cur"
+fi
+
+# 2) Assign interfaces ----------------------------------------------------
+printf 'Assign the network interfaces now (WAN/LAN/optX)? [y/N]: '
+read -r ans
+case "$ans" in
+    y|Y|yes|YES) "$PHP" "$SHELL_DIR/setports.php" ;;
+    *) printf 'Keeping the current interface assignment.\n' ;;
+esac
+printf '\n'
+
+# 3) Set an interface IP address ------------------------------------------
+printf 'Set an interface IP address now (IP, mask, gateway or DHCP)? [y/N]: '
+read -r ans
+case "$ans" in
+    y|Y|yes|YES) "$PHP" "$SHELL_DIR/setaddr.php" ;;
+    *) printf 'Keeping the current addressing.\n' ;;
+esac
+printf '\n'
+
+printf 'Console setup complete. Finish the rest (hostname, DNS,\n'
+printf 'timezone, language) from the web interface setup wizard.\n\n'
