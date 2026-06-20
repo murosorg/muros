@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 
 """
-    Copyright (c) 2021-2024 Ad Schellevis <ad@opnsense.org>
+    Copyright (c) 2021 Ad Schellevis <ad@opnsense.org>
     All rights reserved.
 
     Redistribution and use in source and binary forms, with or without
@@ -24,10 +24,17 @@
     CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
     ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
     POSSIBILITY OF SUCH DAMAGE.
-"""
-import ujson
-from lib.states import query_top
 
+    kill a single firewall state by its connection tracking id
+    usage : kill_state.py <id>[/<creator>] [<creator>]
+"""
+import sys
+from lib.states import delete_by_id
 
 if __name__ == '__main__':
-    print(ujson.dumps(query_top()))
+    if len(sys.argv) > 1:
+        # MurOS: the creator id (argv[2]) has no meaning on Linux and is ignored
+        if delete_by_id(sys.argv[1]):
+            print('1 flow deleted')
+        else:
+            print('no matching state')

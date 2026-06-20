@@ -10,7 +10,12 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
+# Render the addressing of the assigned data interfaces into systemd-networkd
+# units (DHCP for WAN, static for LAN), then run the iproute2 pass for any
+# interface that networkd does not own. The management link is never touched.
+ExecStart=/usr/bin/php /usr/local/opnsense/scripts/interfaces/render_networkd.php
 ExecStart=/usr/bin/php /usr/local/opnsense/scripts/interfaces/apply_linux.php
+ExecReload=/usr/bin/php /usr/local/opnsense/scripts/interfaces/render_networkd.php
 ExecReload=/usr/bin/php /usr/local/opnsense/scripts/interfaces/apply_linux.php
 
 [Install]
