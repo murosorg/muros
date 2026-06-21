@@ -1143,15 +1143,15 @@ function ipsec_configure_do($verbose = false, $interface_map = null)
     $a_client = isset($config['ipsec']['client']) ? $config['ipsec']['client'] : [];
 
     if (!isset($ipseccfg['enable'])) {
-        mwexecfm('/usr/local/etc/rc.d/strongswan onestop');
-        mwexecfm('/sbin/ifconfig enc0 down');
+        mwexecfm('/usr/local/sbin/ipsec stop');
         return;
     }
 
-    if (get_single_sysctl('net.inet.ipsec.def_policy') == '') {
-        mwexecf('/sbin/kldload ipsec');
-    }
-    mwexecf('/sbin/ifconfig enc0 up');
+    /*
+     * Linux provides IPsec through the in-kernel XFRM stack: there is no kernel
+     * module to load and no enc0 encapsulation interface to bring up like on
+     * FreeBSD. charon installs its policies and states directly via netlink.
+     */
 
     service_log('Configuring IPsec VPN...', $verbose);
 
@@ -1458,11 +1458,12 @@ function ipsec_configure_do($verbose = false, $interface_map = null)
 
     file_put_contents("/usr/local/etc/swanctl/swanctl.conf", $swanctltxt);
 
-    if (isvalidpid('/var/run/charon.pid')) {
-        mwexecfb('/usr/local/etc/rc.d/strongswan onereload');
-    } else {
-        mwexecfb('/usr/local/etc/rc.d/strongswan onestart');
+    /* start charon when it is not running yet, then (re)load the connection,
+       pool and secret definitions we just wrote to swanctl.conf */
+    if (!isvalidpid('/var/run/charon.pid')) {
+        mwexecf('/usr/local/sbin/ipsec start');
     }
+    mwexecfb('/usr/local/sbin/swanctl --load-all');
 
     ipsec_configure_spd();
 
