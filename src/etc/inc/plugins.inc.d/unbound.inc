@@ -214,7 +214,18 @@ function unbound_generate_config()
 
     $optimization = unbound_optimization();
 
-    $module_config = 'python ';
+    /*
+     * The DNSBL feature is implemented as an embedded Python module. On Debian
+     * the unbound build does not ship the unboundmodule.py helper the embedded
+     * interpreter needs to bootstrap, so only load the Python module (and emit
+     * the python: section below) when DNSBL is actually enabled. This keeps the
+     * recursive resolver working out of the box without the DNSBL dependency.
+     */
+    $dnsbl = config_read_array('OPNsense', 'unboundplus', 'dnsbl');
+    $module_config = !empty($dnsbl['enabled']) ? 'python ' : '';
+    $python_section = !empty($dnsbl['enabled'])
+        ? "python:\npython-script: unbound-dnsbl/dnsbl_module.py\n\n"
+        : '';
     $anchor_file = '';
     $dns64_config = '';
 
@@ -395,10 +406,7 @@ include: /var/unbound/etc/*.conf
 
 {$forward_conf}
 
-python:
-python-script: unbound-dnsbl/dnsbl_module.py
-
-remote-control:
+{$python_section}remote-control:
     control-enable: yes
     control-interface: 127.0.0.1
     control-port: 953

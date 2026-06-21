@@ -13,6 +13,13 @@ muros (0.9.37) trixie; urgency=medium
   * Unbound: fix the FreeBSD "find -depth 1" calls in start.sh, which GNU find
     rejects, to "-mindepth 1 -maxdepth 1", and derive num-threads from nproc
     instead of the FreeBSD kern.smp.cpus sysctl.
+  * Unbound: only load the embedded Python module (DNSBL) and emit the python:
+    section when DNSBL is enabled. The Debian unbound build does not ship the
+    unboundmodule.py helper the interpreter needs to bootstrap, so loading it
+    unconditionally broke startup; gating it keeps the recursive resolver
+    working out of the box (DNSBL stays a follow-up). Validated end to end under
+    configd orchestration: the generated config passes unbound-checkconf,
+    unbound binds :53 multi-threaded, and queries resolve with AD set.
   * Packaging: stop and disable the stock unbound/unbound-resolvconf systemd
     units (MurOS owns the resolver lifecycle) and disable the packaged AppArmor
     profile that would otherwise confine unbound to /etc/unbound and deny
