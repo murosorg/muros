@@ -26,30 +26,22 @@
 
 . /usr/local/opnsense/scripts/firmware/config.sh
 
-MUSTCHECK="yes"
+export DEBIAN_FRONTEND=noninteractive
+
+DID_INSTALL=
 
 for PACKAGE in $(/usr/local/sbin/pluginctl -g system.firmware.plugins | \
     /usr/bin/sed 's/,/ /g'); do
-	if ! ${PKG} query %n ${PACKAGE} > /dev/null; then
-		if [ -n "${MUSTCHECK}" ] ; then
-			COREPKG=$(opnsense-version -n)
-			COREVER=$(opnsense-version -v)
-			REPOVER=$(${PKG} rquery %v ${COREPKG})
-
-			# plugins must pass a version check on up-to-date core package
-			if [ "$(${PKG} version -t ${COREVER} ${REPOVER})" = "<" ]; then
-				output_txt "Installation out of date. The update to ${COREPKG}-${REPOVER} is required."
-				break
-			fi
-
-			MUSTCHECK=
-		fi
-
-		output_cmd ${PKG} install -y "${PACKAGE}"
+	# install any configured plugin that is not present yet; apt resolves the
+	# dependency on the core package itself, so the FreeBSD core-version gate is
+	# no longer needed.
+	if [ -z "$(dpkg-query -W -f='${Version}' "${PACKAGE}" 2> /dev/null)" ]; then
+		output_cmd apt-get install -y "${PACKAGE}"
 		output_cmd ${BASEDIR}/register.php install "${PACKAGE}"
+		DID_INSTALL=1
 	fi
 done
 
-if [ -z "${MUSTCHECK}" ]; then
-	output_cmd ${PKG} autoremove -y
+if [ -n "${DID_INSTALL}" ]; then
+	output_cmd apt-get autoremove -y
 fi
