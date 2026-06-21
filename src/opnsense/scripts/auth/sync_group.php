@@ -41,7 +41,7 @@ if (isset($opts['h']) || empty($opts['g'])) {
     $groupname = $opts['g'];
 
     $localgroups = [];
-    foreach (shell_safe('/usr/sbin/pw %s -a', 'groupshow', true) as $record) {
+    foreach (shell_safe('/usr/bin/getent group', [], true) as $record) {
         $line = explode(':', $record);
         // filter system managed users and groups
         if (count($line) < 3 || !strncmp($line[0], '_', 1) || $line[2] < 2000 || $line[2] > 65000) {
@@ -63,7 +63,7 @@ if (isset($opts['h']) || empty($opts['g'])) {
     /* rename/delete situations */
     foreach ($localgroups as $item) {
         if (!in_array($item[0], $groupdb)) {
-            mwexecf('/usr/sbin/pw groupdel -n %s', [$item[0]]);
+            mwexecf('/usr/sbin/groupdel %s', [$item[0]]);
         }
     }
 
