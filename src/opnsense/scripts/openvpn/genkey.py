@@ -39,7 +39,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     with tempfile.NamedTemporaryFile(mode='w') as fh:
         cmd = [
-            '/usr/local/sbin/openvpn',
+            '/usr/sbin/openvpn',
             '--genkey',
             args.type
         ]
