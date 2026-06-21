@@ -30,43 +30,30 @@
 set -e
 
 DESTDIR="/usr/local/opnsense/changelog"
-FETCH="fetch -qT 30"
 
 changelog_remove()
 {
 	mkdir -p ${DESTDIR}
 
-	for FILE in $(find ${DESTDIR} -depth 1 \! -name 'changelog.txz*'); do
+	for FILE in $(find ${DESTDIR} -mindepth 1 -maxdepth 1 \! -name 'changelog.txz*'); do
 		rm -rf ${FILE}
 	done
 
 	echo '[]' > ${DESTDIR}/index.json
 }
 
-changelog_checksum()
-{
-	echo $(sha256 -q "${1}" 2> /dev/null || true)
-}
-
 changelog_url()
 {
-	echo "$(opnsense-update -X)/sets/changelog.txz"
+	# MurOS does not publish a signed changelog set yet
+	echo ""
 }
 
 changelog_fetch()
 {
+	# No remote changelog feed on Debian yet; keep an empty but valid index so
+	# the GUI renders cleanly instead of erroring on a missing file.
 	mkdir -p ${DESTDIR}
-
-	URL=$(changelog_url)
-
-	${FETCH} -mo ${DESTDIR}/changelog.txz "${URL}"
-	${FETCH} -o ${DESTDIR}/changelog.txz.sig "${URL}.sig"
-
-	opnsense-verify -q ${DESTDIR}/changelog.txz
-
-	changelog_remove
-
-	tar -C ${DESTDIR} -xJf ${DESTDIR}/changelog.txz
+	[ -f ${DESTDIR}/index.json ] || echo '[]' > ${DESTDIR}/index.json
 }
 
 changelog_show()
@@ -84,12 +71,13 @@ VERSION=${2}
 if [ "${COMMAND}" = "fetch" ]; then
 	changelog_fetch
 elif [ "${COMMAND}" = "cron" ]; then
-	# pause for at least 10 minutes spread out over the next 12 hours
-	sleep $(jot -r 1 600 43800)
+	# spread the (currently no-op) refresh over the next 12 hours
+	sleep $(shuf -i 600-43800 -n 1)
 	changelog_fetch
 elif [ "${COMMAND}" = "remove" ]; then
 	changelog_remove
 elif [ "${COMMAND}" = "list" ]; then
+	changelog_fetch
 	changelog_show index.json
 elif [ "${COMMAND}" = "url" ]; then
 	changelog_url
@@ -98,6 +86,5 @@ elif [ "${COMMAND}" = "html" -a -n "${VERSION}" ]; then
 elif [ "${COMMAND}" = "text" -a -n "${VERSION}" ]; then
 	changelog_show "$(basename ${VERSION}).txt"
 elif [ "${COMMAND}" = "date" -a -n "${VERSION}" ]; then
-	# added here for completeness, but called directly in backend action
 	/usr/local/opnsense/scripts/firmware/changelog-date.php "$(basename ${VERSION})"
 fi

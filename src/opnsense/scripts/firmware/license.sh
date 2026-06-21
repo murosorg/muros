@@ -29,13 +29,10 @@
 
 PACKAGE=${1}
 
-LICENSES=$(${PKG} query %L ${PACKAGE})
-VERSION=$(${PKG} query %v ${PACKAGE})
+# Debian ships each package's licensing terms in
+# /usr/share/doc/<package>/copyright.
+COPYRIGHT="/usr/share/doc/${PACKAGE}/copyright"
 
-IFS=', '
-
-for LICENSE in ${LICENSES}; do
-	if [ -f "${LICENSEDIR}/${PACKAGE}-${VERSION}/${LICENSE}" ]; then
-		cat "${LICENSEDIR}/${PACKAGE}-${VERSION}/${LICENSE}"
-	fi
-done
+if [ -f "${COPYRIGHT}" ]; then
+	cat "${COPYRIGHT}"
+fi
