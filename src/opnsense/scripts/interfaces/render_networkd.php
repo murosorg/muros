@@ -68,12 +68,30 @@ foreach ($cfg->interfaces->children() as $key => $node) {
         continue;
     }
 
+    /*
+     * Never render a loopback or virtual interface (e.g. the OPNsense lo0
+     * entry) onto a physical device. On FreeBSD lo0 is the loopback device;
+     * after assignment its <if> may point at a spare NIC, but its loopback
+     * addressing (127.0.0.1/::1) belongs to the kernel 'lo' device, which
+     * Linux configures on its own. systemd-networkd also refuses to assign a
+     * loopback address to a real NIC, which would otherwise leave that
+     * interface stuck with 127.0.0.1/8 and no usable addressing.
+     */
+    if (!empty((string)$node->virtual) || !empty((string)$node->internal_dynamic)) {
+        continue;
+    }
+
     $ip4 = trim((string)$node->ipaddr);
     $sub4 = trim((string)$node->subnet);
     $gw4 = trim((string)$node->gateway);
     $ip6 = trim((string)$node->ipaddrv6);
     $sub6 = trim((string)$node->subnetv6);
     $mtu = trim((string)$node->mtu);
+
+    /* Skip the kernel loopback device and any loopback addressing. */
+    if ($dev === 'lo' || strncmp($ip4, '127.', 4) === 0 || $ip6 === '::1') {
+        continue;
+    }
 
     $v4dhcp = ($ip4 === 'dhcp');
     $v6dhcp = ($ip6 === 'dhcp6');
