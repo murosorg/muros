@@ -59,6 +59,42 @@ $reserved = reserved_devices($reservedFile);
 @mkdir($netDir, 0755, true);
 $wanted = array();
 
+/*
+ * Interfaces reference their upstream by gateway name (e.g. LAN_GW), not by
+ * address. Build a name -> address map from the gateway definitions so the
+ * default route can be written into the .network unit, mirroring how FreeBSD
+ * resolved the named gateway before installing the route. Both the modern
+ * OPNsense.Gateways model and the legacy <gateways> section are honoured.
+ */
+function gateway_map($cfg)
+{
+    $map = array('inet' => array(), 'inet6' => array());
+    $sources = array();
+    if (isset($cfg->OPNsense->Gateways->gateway_item)) {
+        $sources[] = $cfg->OPNsense->Gateways->gateway_item;
+    }
+    if (isset($cfg->gateways->gateway_item)) {
+        $sources[] = $cfg->gateways->gateway_item;
+    }
+    foreach ($sources as $items) {
+        foreach ($items as $gw) {
+            if (!empty((string)$gw->disabled)) {
+                continue;
+            }
+            $name = trim((string)$gw->name);
+            $addr = trim((string)$gw->gateway);
+            if ($name === '' || !filter_var($addr, FILTER_VALIDATE_IP)) {
+                continue;
+            }
+            $proto = (trim((string)$gw->ipprotocol) === 'inet6') ? 'inet6' : 'inet';
+            $map[$proto][$name] = $addr;
+        }
+    }
+    return $map;
+}
+
+$gwmap = gateway_map($cfg);
+
 foreach ($cfg->interfaces->children() as $key => $node) {
     $dev = trim((string)$node->if);
     if (!dev_exists($dev) || isset($reserved[$dev])) {

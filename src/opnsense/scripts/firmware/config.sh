@@ -26,8 +26,12 @@
 
 # source of common configuration related subroutines and variables
 
-LOGFILE="/var/cache/opnsense-update/.update.log"
+LOGFILE="/var/log/muros/firmware.log"
 LOCKFILE=${LOCKFILE:-/tmp/pkg_upgrade.progress}
+
+# the firmware action log is persisted here on completion; make sure the
+# directory exists so the copy in output_done/output_reboot succeeds
+mkdir -p "$(dirname "${LOGFILE}")" 2>/dev/null
 BASEDIR="/usr/local/opnsense/scripts/firmware"
 LICENSEDIR="/usr/local/share/licenses"
 PIPEFILE="/tmp/pkg_upgrade.pipe"

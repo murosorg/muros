@@ -29,6 +29,33 @@ in-target env DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true \
     -o Acquire::Retries=0 -o Acquire::http::Timeout=5 -o Acquire::https::Timeout=5 \
     muros
 
+# 3a. Unify the root credential. The web UI authenticates root against
+#     config.xml while the console and SSH authenticate against /etc/shadow.
+#     The preseed already set /etc/shadow from the chosen password; seed the
+#     SAME password into config.xml's root user (postinst has just created
+#     /conf/config.xml from config.xml.sample) so both stores describe one
+#     single account. On the installed system the account sync (local_user_set)
+#     then keeps /etc/shadow in lockstep with config.xml on every later change.
+#     Best effort: if anything fails the shipped default hash is kept and the
+#     install still succeeds.
+if [ -f "$SRC/root_password" ]; then
+  in-target env MUROS_ROOT_PW="$(cat "$SRC/root_password")" php -r '
+    $cfg = "/conf/config.xml";
+    if (!is_file($cfg)) { exit(0); }
+    $doc = simplexml_load_file($cfg);
+    if ($doc === false || !isset($doc->system->user)) { exit(0); }
+    $hash = password_hash(getenv("MUROS_ROOT_PW"), PASSWORD_BCRYPT, ["cost" => 10]);
+    $changed = false;
+    foreach ($doc->system->user as $user) {
+        if ((string)$user->uid === "0" || (string)$user->name === "root") {
+            $user->password = $hash;
+            $changed = true;
+        }
+    }
+    if ($changed) { $doc->asXML($cfg); }
+  ' || true
+fi
+
 # 3b. Appliance mode: enable the data-plane units so the box assigns its
 #     interfaces and loads the firewall on first boot. The package ships
 #     them disabled on purpose (an apt install on an existing host must
