@@ -89,7 +89,7 @@ function unbound_optimization()
 {
     $optimization = [];
 
-    $numprocs = intval(get_single_sysctl('kern.smp.cpus'));
+    $numprocs = intval(trim(shell_safe('/usr/bin/nproc')));
     $numprocs = $numprocs <= 0 ? 1 : $numprocs;
     $numslabs = pow(2, floor(log($numprocs, 2)) + 1);
 
@@ -349,7 +349,7 @@ EOD;
 # Server configuration
 ##
 server:
-chroot: /var/unbound
+chroot: ""
 username: unbound
 directory: /var/unbound
 pidfile: /var/run/unbound.pid

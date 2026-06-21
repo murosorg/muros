@@ -57,7 +57,7 @@ def unbound_control(commands, input=None, output_stream=None):
 
     # XXX invoke can fail (non-zero exit code), but unclear why and what to do
     subprocess.run(['/usr/sbin/chroot', '-u', 'unbound', '-g', 'unbound', '/',
-                    '/usr/local/sbin/unbound-control', '-c', '/var/unbound/unbound.conf'] + commands,
+                    '/usr/sbin/unbound-control', '-c', '/var/unbound/unbound.conf'] + commands,
                    input=input_string, stdout=output_stream, stderr=subprocess.STDOUT, text=True)
 
     if output_stream:

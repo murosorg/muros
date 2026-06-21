@@ -86,6 +86,21 @@ JRN
       systemctl disable --now "$u" 2>/dev/null || true
     done
 
+    # Unbound is driven by MurOS, not by the packaged systemd unit: configd
+    # renders /var/unbound/unbound.conf and the unbound start.sh script launches
+    # the daemon from there. Stop the stock unit so it does not hold port 53 with
+    # its default /etc/unbound configuration, and keep it from starting at boot.
+    systemctl disable --now unbound 2>/dev/null || true
+    systemctl disable --now unbound-resolvconf 2>/dev/null || true
+    # The packaged AppArmor profile confines unbound to /etc/unbound and
+    # /var/lib/unbound, which would deny the MurOS working directory
+    # /var/unbound. Disable the profile so unbound can run from there.
+    if [ -e /etc/apparmor.d/usr.sbin.unbound ]; then
+      mkdir -p /etc/apparmor.d/disable
+      ln -sf /etc/apparmor.d/usr.sbin.unbound /etc/apparmor.d/disable/usr.sbin.unbound
+      apparmor_parser -R /etc/apparmor.d/usr.sbin.unbound 2>/dev/null || true
+    fi
+
     # strongSwan (charon-systemd) is driven by MurOS as well: configd renders
     # /etc/swanctl/swanctl.conf and the IPsec apply starts the daemon and loads
     # the connections itself. The packaged unit runs "swanctl --load-all" as an

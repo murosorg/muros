@@ -37,7 +37,7 @@ import shutil
 import syslog
 
 def unbound_control_reader(action):
-    sp = subprocess.run(['/usr/local/sbin/unbound-control', '-c', '/var/unbound/unbound.conf', action],
+    sp = subprocess.run(['/usr/sbin/unbound-control', '-c', '/var/unbound/unbound.conf', action],
                         capture_output=True, text=True)
     for line in sp.stdout.strip().split("\n"):
         yield line

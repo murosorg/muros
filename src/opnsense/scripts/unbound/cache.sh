@@ -27,7 +27,7 @@
 
 set -e
 
-UNBOUNDCTL="/usr/local/sbin/unbound-control -c /var/unbound/unbound.conf"
+UNBOUNDCTL="/usr/sbin/unbound-control -c /var/unbound/unbound.conf"
 CACHE="/var/unbound/cache.dump.gz"
 COMMAND=${1}
 

@@ -30,37 +30,34 @@
 
 DOMAIN=${1}
 
-for FILE in $(find /var/unbound/etc -depth 1); do
+for FILE in $(find /var/unbound/etc -mindepth 1 -maxdepth 1 2>/dev/null); do
 	rm -rf ${FILE}
 done
 
-# if the root.key file is missing or damaged, run unbound-anchor
 cd /var/unbound/
-if ! /usr/local/sbin/unbound-checkconf /var/unbound/unbound.conf 2> /dev/null; then
-	# unbound-anchor has undefined behaviour if file is corrupted, start clean
-	rm -f /var/unbound/root.key
 
-	# if we are in forwarding mode, prefer to use the configured system nameservers
-	if [ -s /var/unbound/resolv.conf.root ]; then
-		OPT_RESOLVE="-Rf /var/unbound/resolv.conf.root"
-	fi
-
-	# unbound-anchor exits with 1 on failover, since we would still like to start unbound,
-	# always let this succeed
-	chroot -u unbound -g unbound / /usr/local/sbin/unbound-anchor -a /var/unbound/root.key ${OPT_RESOLVE}
+# Ensure the DNSSEC root trust anchor exists. FreeBSD bootstrapped it with
+# unbound-anchor, which Debian does not ship as a separate binary; seed it from
+# the maintained copy in the dns-root-data package instead and let unbound keep
+# it current through RFC 5011 once it is running.
+if [ ! -s /var/unbound/root.key ] && [ -s /usr/share/dns/root.key ]; then
+	cp /usr/share/dns/root.key /var/unbound/root.key
 fi
 
+# Generate the unbound-control TLS material on first start. Privileges are
+# dropped to the unbound user with runuser; the FreeBSD "chroot -u user -g group /"
+# trick has no GNU equivalent and no chroot is used here anyway.
 if [ ! -f /var/unbound/unbound_control.key ]; then
-	chroot -u unbound -g unbound / /usr/local/sbin/unbound-control-setup -d /var/unbound
+	runuser -u unbound -- /usr/sbin/unbound-control-setup -d /var/unbound
 fi
 
-for FILE in $(find /usr/local/etc/unbound.opnsense.d -depth 1 -name '*.conf'); do
+for FILE in $(find /usr/local/etc/unbound.opnsense.d -mindepth 1 -maxdepth 1 -name '*.conf' 2>/dev/null); do
 	cp ${FILE} /var/unbound/etc/
 done
 
 chown -R unbound:unbound /var/unbound
 
-/usr/local/sbin/unbound -c /var/unbound/unbound.conf
+/usr/sbin/unbound -c /var/unbound/unbound.conf
 /usr/local/opnsense/scripts/unbound/cache.sh load
 
 if [ -n "${DOMAIN}" ]; then

@@ -28,5 +28,5 @@
 set -e
 
 cd /var/unbound/
-/usr/local/sbin/unbound-checkconf /var/unbound/unbound.conf 2>&1 | \
+/usr/sbin/unbound-checkconf /var/unbound/unbound.conf 2>&1 | \
     sed -e 's/^unbound-checkconf:[[:space:]]//g'

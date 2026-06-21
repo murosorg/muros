@@ -1,3 +1,27 @@
+muros (0.9.37) trixie; urgency=medium
+
+  * Unbound (recursive DNS): port the resolver integration from FreeBSD to
+    Debian. The internal chroot is disabled (chroot: "") since the FreeBSD
+    nullfs/devfs chroot under /var/unbound has no Debian equivalent and the mount
+    sync is already a no-op; unbound now runs directly from its /var/unbound
+    working directory as the unbound user. All control/check/anchor binaries use
+    their Debian /usr/sbin paths.
+  * Unbound: replace the missing unbound-anchor bootstrap with the maintained
+    DNSSEC root key from the dns-root-data package (/usr/share/dns/root.key),
+    and drop privileges with runuser instead of the FreeBSD "chroot -u user -g
+    group /" idiom for unbound-control-setup.
+  * Unbound: fix the FreeBSD "find -depth 1" calls in start.sh, which GNU find
+    rejects, to "-mindepth 1 -maxdepth 1", and derive num-threads from nproc
+    instead of the FreeBSD kern.smp.cpus sysctl.
+  * Packaging: stop and disable the stock unbound/unbound-resolvconf systemd
+    units (MurOS owns the resolver lifecycle) and disable the packaged AppArmor
+    profile that would otherwise confine unbound to /etc/unbound and deny
+    /var/unbound. Validated on Debian unbound 1.22: recursion resolves with the
+    AD bit set (DNSSEC validated) and a deliberately broken DNSSEC zone is
+    correctly rejected with SERVFAIL.
+
+ -- MurOS <dev@muros.org>  Sun, 21 Jun 2026 09:45:00 +0000
+
 muros (0.9.36) trixie; urgency=medium
 
   * IPsec: port the strongSwan integration from FreeBSD to Debian. Configuration
