@@ -1264,7 +1264,19 @@ function system_cron_configure($verbose = false)
     @chown($crontab_root, 'root');
     @chgrp($crontab_root, 'crontab');
 
+    /*
+     * The user-defined jobs are rendered by configd into the 'nobody' spool
+     * crontab. Debian's cron refuses any crontab that is group/other writable
+     * ("INSECURE MODE"), so tighten the rendered file to 0600. The run-as user
+     * is taken from the file name (nobody), not its owner.
+     */
     configd_run('template reload OPNsense/Cron');
+
+    $crontab_nobody = '/var/spool/cron/crontabs/nobody';
+    if (file_exists($crontab_nobody)) {
+        chmod($crontab_nobody, 0600);
+        @chgrp($crontab_nobody, 'crontab');
+    }
 
     mwexecf('/usr/bin/systemctl restart cron');
 
