@@ -68,6 +68,8 @@ if [ -n "${DOMAIN}" ]; then
 fi
 
 if [ -f /var/unbound/data/stats ]; then
-    /usr/sbin/daemon -p /var/run/unbound_logger.pid -f -S -m 2 -s err -l local4 \
+    # MurOS: muros-daemon is the Debian replacement for FreeBSD daemon(8); it
+    # detaches the logger and writes its pidfile, accepting the same flags.
+    /usr/local/sbin/muros-daemon -p /var/run/unbound_logger.pid -f -S -m 2 -s err -l local4 \
         -T unbound /usr/local/opnsense/scripts/unbound/logger.py
 fi
