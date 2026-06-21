@@ -11,6 +11,20 @@ muros (0.9.33) trixie; urgency=medium
 
  -- MurOS <dev@muros.org>  Sun, 21 Jun 2026 08:55:00 +0000
 
+muros (0.9.33) trixie; urgency=medium
+
+  * Captive portal: make the nftables enforcement survive a firewall reload.
+    The main ruleset is applied with "flush ruleset", which wipes the dedicated
+    inet captiveportal table; nft_apply.sh now rebuilds it from the running
+    config once the main ruleset is committed, guarded by a cheap check so it
+    only runs when a captive portal section exists and never fails the firewall
+    reload. Authenticated client sets are repopulated by the background process
+    on its next cycle.
+  * setup_fw.py accepts an optional config path argument so the firewall apply
+    can pass the same configuration file it just built from.
+
+ -- MurOS <dev@muros.org>  Sun, 21 Jun 2026 08:55:00 +0000
+
 muros (0.9.32) trixie; urgency=medium
 
   * Captive portal: add native nftables enforcement, completing the data plane

@@ -103,8 +103,9 @@ def load_zones(config_xml=CONFIG_XML):
 
 
 def main():
+    config_xml = sys.argv[1] if len(sys.argv) > 1 else CONFIG_XML
     try:
-        zones = load_zones()
+        zones = load_zones(config_xml)
     except (OSError, ET.ParseError) as exc:
         print('captiveportal setup_fw: cannot read config (%s)' % exc)
         return 1
