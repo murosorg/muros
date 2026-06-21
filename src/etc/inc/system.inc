@@ -1246,11 +1246,21 @@ function system_cron_configure($verbose = false)
         $crontab_contents .= "({$item['command']}) > /dev/null\n";
     }
 
-    file_put_contents('/var/cron/tabs/root', $crontab_contents);
+    /*
+     * MurOS: FreeBSD keeps per-user crontabs under /var/cron/tabs and reloads
+     * them through cron's rc.d script. Debian's cron reads per-user crontabs
+     * from /var/spool/cron/crontabs (no user field, mode 0600, owned by the
+     * target user and group crontab) and reloads them through systemd.
+     */
+    $crontab_root = '/var/spool/cron/crontabs/root';
+    file_put_contents($crontab_root, $crontab_contents);
+    chmod($crontab_root, 0600);
+    @chown($crontab_root, 'root');
+    @chgrp($crontab_root, 'crontab');
 
     configd_run('template reload OPNsense/Cron');
 
-    mwexecf('/etc/rc.d/cron restart');
+    mwexecf('/usr/bin/systemctl restart cron');
 
     service_log("done.\n", $verbose);
 }
