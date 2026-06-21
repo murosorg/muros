@@ -30,53 +30,46 @@ REQUEST="UPDATE"
 . /usr/local/opnsense/scripts/firmware/config.sh
 
 CMD=${1}
-FORCE=
 
-# figure out if we are crossing ABIs
-if [ "$(opnsense-version -a)" != "$(opnsense-version -x)" ]; then
-	FORCE="-f"
-fi
-
-# figure out the release type from config
-SUFFIX="-$(/usr/local/sbin/pluginctl -g system.firmware.type)"
-if [ "${SUFFIX}" = "-" ]; then
-	SUFFIX=
-fi
-
-# read reboot flag and record current package name and version state
 ALWAYS_REBOOT=$(/usr/local/sbin/pluginctl -g system.firmware.reboot)
-PKGS_HASH=$(${PKG} query %n-%v 2> /dev/null | sha256)
+PKGS_HASH=$(dpkg-query -W -f='${Package}-${Version}\n' 2> /dev/null | sha256sum | awk '{print $1}')
 UPDATE_FAILED=
 
-# update all packages if possible
-if ! output_cmd opnsense-update ${FORCE} -pt "opnsense${SUFFIX}"; then
+export DEBIAN_FRONTEND=noninteractive
+APT_OPTS="-o Dpkg::Use-Pty=0 -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold"
+
+# refresh metadata, then apply every pending package change non-interactively
+if ! output_cmd apt-get -o Dpkg::Use-Pty=0 update; then
 	UPDATE_FAILED=1
 fi
 
-# restart the web server
+if [ -z "${UPDATE_FAILED}" ]; then
+	if ! output_cmd apt-get -y ${APT_OPTS} dist-upgrade; then
+		UPDATE_FAILED=1
+	fi
+fi
+
+# the GUI may have been replaced underneath us, restart it
 output_cmd /usr/local/etc/rc.restart_webgui
 
-# if the update failed then abort and and try to recover
 if [ -n "${UPDATE_FAILED}" ]; then
-	output_txt "Partial update failure detected: report this error log to OPNsense."
+	output_txt "Partial update failure detected: review this update log."
 	output_txt "No further actions will be taken. Please restart the update now."
 	output_done keep-log
 fi
 
-# run plugin resolver if requested
 if [ "${CMD}" = "sync" ]; then
 	/usr/local/opnsense/scripts/firmware/sync.subr.sh
 fi
 
-# if we can update base, we'll do that as well
-if opnsense-update ${FORCE} -bk -c; then
-	if output_cmd opnsense-update ${FORCE} -bk; then
-		output_reboot keep-log
-	fi
+# reboot when the kernel or core libraries were refreshed (apt marks this), or
+# when the appliance is configured to always reboot after a package change
+if [ -e /var/run/reboot-required ]; then
+	output_reboot keep-log
 fi
 
 if [ "${ALWAYS_REBOOT}" = "1" ]; then
-	if [ "${PKGS_HASH}" != "$(${PKG} query %n-%v 2> /dev/null | sha256)" ]; then
+	if [ "${PKGS_HASH}" != "$(dpkg-query -W -f='${Package}-${Version}\n' 2> /dev/null | sha256sum | awk '{print $1}')" ]; then
 		output_reboot keep-log
 	fi
 fi
