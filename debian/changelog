@@ -1,3 +1,31 @@
+muros (0.9.32) trixie; urgency=medium
+
+  * Captive portal: add native nftables enforcement, completing the data plane
+    port. lib/cpfw.py gains build()/teardown(): the dedicated inet captiveportal
+    table now carries three hook chains rebuilt atomically from the running
+    config:
+      - rdr (nat/prerouting): authenticated and allowed clients are returned
+        untouched, everyone else has tcp 80/443 redirected to the local portal
+        ports (zoneid+9000 / zoneid+8000).
+      - gate (filter/forward): counts per client traffic, lets established,
+        authenticated, allowed (address and MAC) and DNS/DHCP through and drops
+        the rest, so unauthenticated clients cannot reach the network.
+      - portal_in (filter/input): lets clients reach the local portal ports and
+        core services.
+    Member and accounting set elements are preserved across a rebuild.
+  * New scripts/captiveportal/setup_fw.py reads the zones from /conf/config.xml,
+    resolves their interface devices and per zone allowed v4/v6/MAC entries and
+    applies the ruleset; disabled or removed zones are cleared. Exposed as the
+    "captiveportal setup_fw" configd action.
+  * ServiceController reconfigure now rebuilds the nftables enforcement instead
+    of reloading the removed FreeBSD IPFW templates; the rc script applies it on
+    start and tears the table down on stop.
+  * Note: a subsequent unrelated filter reload (flush ruleset) still clears the
+    table until the next captive portal reconfigure; hooking setup_fw into the
+    main filter reload remains the final integration step.
+
+ -- MurOS <dev@muros.org>  Sun, 21 Jun 2026 08:35:00 +0000
+
 muros (0.9.31) trixie; urgency=medium
 
   * Captive portal: port the data plane off FreeBSD pf and ipfw to nftables.

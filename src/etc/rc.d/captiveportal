@@ -116,6 +116,10 @@ captiveportal_start()
         captiveportal_cleanup_zones
         echo "start captiveportal background process"
         /usr/local/opnsense/scripts/captiveportal/cp-background-process.py start
+
+        # build the nftables captive portal enforcement
+        echo "setup captiveportal firewall"
+        /usr/local/opnsense/scripts/captiveportal/setup_fw.py
     else
         echo "already running"
     fi
@@ -155,6 +159,9 @@ captiveportal_stop()
         echo "stop captiveportal background process"
         /bin/pkill -TERM -F /var/run/captiveportal.db.pid
     fi
+
+    # remove the nftables captive portal enforcement
+    /usr/sbin/nft delete table inet captiveportal 2> /dev/null
 
     captiveportal_cleanup_zones
 }
