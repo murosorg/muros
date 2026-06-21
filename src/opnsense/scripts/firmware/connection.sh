@@ -28,47 +28,40 @@ REQUEST="AUDIT CONNECTIVITY"
 
 . /usr/local/opnsense/scripts/firmware/config.sh
 
-POPT="-c4 -s1500"
+POPT="-c 4 -s 1500"
 
 HOSTS=$(/usr/local/opnsense/scripts/firmware/hostnames.sh)
 HOST=${HOSTS%%'
 '*}
 
-IPV4=$(host -t A ${HOST} | head -n 1 | cut -d\  -f4)
-IPV6=$(host -t AAAA ${HOST} | head -n 1 | cut -d\  -f5)
-
-# do not taint existing repository state by using an isolated database folder
-export PKG_DBDIR=/tmp/firmware.repo.check
-rm -rf ${PKG_DBDIR}
-mkdir -p ${PKG_DBDIR}
+IPV4=$(getent ahostsv4 "${HOST}" 2>/dev/null | awk '{print $1; exit}')
+IPV6=$(getent ahostsv6 "${HOST}" 2>/dev/null | awk '{print $1; exit}')
 
 output_txt
 output_txt "Current repository configuration:"
-output_cmd opnsense-update -O
+output_cmd sh -c 'cat /etc/apt/sources.list 2>/dev/null; cat /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources 2>/dev/null'
 
-if [ -n "${IPV4}" -a -z "${IPV4%%*.*}" ]; then
+if [ -n "${IPV4}" ]; then
 	output_txt
 	output_txt "Checking connectivity for host: ${HOST} -> ${IPV4}"
 	output_cmd ping -4 ${POPT} "${IPV4}"
 
 	output_txt
 	output_txt -n "Checking connectivity for repository (IPv4): "
-	output_cmd opnsense-update -M
-	output_cmd ${PKG} -4 update -f
+	output_cmd apt-get -o Acquire::ForceIPv4=true -o Dpkg::Use-Pty=0 update
 else
 	output_txt
 	output_txt "No IPv4 address could be found for host: ${HOST}"
 fi
 
-if [ -n "${IPV6}" -a -z "${IPV6%%*:*}" ]; then
+if [ -n "${IPV6}" ]; then
 	output_txt
 	output_txt "Checking connectivity for host: ${HOST} -> ${IPV6}"
 	output_cmd ping -6 ${POPT} "${IPV6}"
 
 	output_txt
 	output_txt -n "Checking connectivity for repository (IPv6): "
-	output_cmd opnsense-update -M
-	output_cmd ${PKG} -6 update -f
+	output_cmd apt-get -o Acquire::ForceIPv6=true -o Dpkg::Use-Pty=0 update
 else
 	output_txt
 	output_txt "No IPv6 address could be found for host: ${HOST}"
@@ -77,7 +70,6 @@ fi
 output_txt
 for HOST in ${HOSTS}; do
 	output_txt "Checking server certificate for host: ${HOST}"
-	# XXX -crl_check and -crl_check_all are possible but -CRL pass is not working
 	echo | output_cmd openssl s_client -quiet -no_ign_eof "${HOST}:443"
 done
 
