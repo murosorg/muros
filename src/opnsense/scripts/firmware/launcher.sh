@@ -34,7 +34,7 @@ DO_VERBOSE=
 while getopts r:Ss:uV OPT; do
 	case ${OPT} in
 	r)
-		DO_RANDOM="-r $(jot -r 1 1 ${OPTARG})"
+		DO_RANDOM="-r $(shuf -i 1-${OPTARG} -n 1)"
 		;;
 	S)
 		DO_SCRIPT="-S"
