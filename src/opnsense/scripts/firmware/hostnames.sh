@@ -24,40 +24,20 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-# collect HTTPS URLs related to firmware and provide the
-# deduplicated host names thereof for further processing
+# Collect the HTTP(S) repository URLs from apt's configuration and print the
+# deduplicated host names for connectivity and certificate checks.
 
-URLS=$(opnsense-update -M; opnsense-update -X)
-
-# Make a few assumptions about plugged package repositories:
-#
-# * grab the "url" key, delimited with double quotes
-# * remove the spurious "pkg+" prefix to treat it as raw HTTP(S)
-# * match config name against known enabled repos
-
-REPOS=$(opnsense-verify -l | awk '{ print $1 }')
-
-for CONF in $(find /etc/pkg /usr/local/etc/pkg/repos -name '*.conf' -type f); do
-	for REPO in ${REPOS}; do
-		if [ "${REPO}.conf" = "$(basename ${CONF})" ]; then
-			URL=$(grep 'url:.*"' ${CONF})
-			if [ -n "${URL}" ]; then
-				URL=${URL#*'"'}
-				URL=${URL#pkg+}
-				URLS="${URLS}
-${URL%%'"'*}"
-			fi
-			continue 2
-		fi
-	done
-done
+URLS=$(
+	{ cat /etc/apt/sources.list 2>/dev/null
+	  cat /etc/apt/sources.list.d/*.list 2>/dev/null
+	} | grep -oE 'https?://[^ ]+'
+	grep -rhiE '^[[:space:]]*URIs:' /etc/apt/sources.list.d/ 2>/dev/null | \
+		sed -E 's/^[[:space:]]*[Uu][Rr][Ii][Ss]:[[:space:]]*//' | tr ' \t' '\n\n' | grep -E '^https?://'
+)
 
 for HOST in $( (for URL in ${URLS}; do
-	if [ -n "${URL##https://*}" ]; then
-		continue
-	fi
-
 	HOST=${URL#*://}
 	echo ${HOST%%/*}
-
-done) | awk '!_[$0]++'); do echo ${HOST}; done
+done) | awk 'NF && !_[$0]++'); do
+	echo ${HOST}
+done
