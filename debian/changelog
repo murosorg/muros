@@ -1,3 +1,16 @@
+muros (0.9.33) trixie; urgency=medium
+
+  * Dashboard live widgets: fix the CPU, network traffic and firewall log graphs
+    staying empty. These widgets consume server-sent event streams that the MVC
+    layer writes line by line as configd produces them. The stock Debian php.ini
+    ships output_buffering = 4096 and implicit_flush = Off, so php-fpm held the
+    small per-second chunks in its output buffer and the browser never received
+    a single event, leaving the graphs blank. debian/stage-fs.sh now appends
+    output_buffering = Off and implicit_flush = On to the web SAPI 99-muros.ini
+    so streamed responses are flushed on every write.
+
+ -- MurOS <dev@muros.org>  Sun, 21 Jun 2026 08:55:00 +0000
+
 muros (0.9.32) trixie; urgency=medium
 
   * Captive portal: add native nftables enforcement, completing the data plane

@@ -176,6 +176,15 @@ PHPINI
 opcache.enable = 1
 opcache.enable_cli = 0
 opcache.memory_consumption = 256
+
+; The dashboard live widgets (CPU, traffic graph, firewall log) are server-sent
+; event streams that never reach end of file. The MVC response writes each line
+; as it arrives from configd, so the FPM SAPI must not hold the output back. The
+; stock Debian php.ini ships output_buffering = 4096 and implicit_flush = Off,
+; which keeps the small per-second chunks in the buffer and the streams never
+; start in the browser. Disable buffering and flush every write for the web SAPI.
+output_buffering = Off
+implicit_flush = On
 PHPINI
   else
     cat >> "$DEST/etc/php/8.4/$sapi/conf.d/99-muros.ini" <<'PHPINI'
