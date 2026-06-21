@@ -47,13 +47,16 @@ class ServiceController extends ApiMutableServiceControllerBase
 
         if ($this->request->isPost()) {
             $backend = new Backend();
-            $backend->configdRun('template reload OPNsense/IPFW');
-            $result = trim($backend->configdRun("ipfw reload"));
-            if ($result != "OK") {
-                return ["status" => "error reloading ipfw (" . $result . ")"];
-            }
 
+            // reload templates and (re)start the captive portal services
             $status = parent::reconfigureAction();
+
+            // (re)build the nftables captive portal enforcement (redirect,
+            // forward gate and portal input rules) from the running config.
+            $result = trim($backend->configdRun("captiveportal setup_fw"));
+            if (strpos($result, 'OK') !== 0) {
+                return ["status" => "error building captive portal firewall (" . $result . ")"];
+            }
         }
 
         return $status;

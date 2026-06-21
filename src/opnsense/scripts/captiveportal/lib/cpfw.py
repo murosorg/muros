@@ -70,7 +70,28 @@ def set_names(zoneid):
         ('out', 4): 'acc_%d_out_v4' % z,
         ('in', 6): 'acc_%d_in_v6' % z,
         ('out', 6): 'acc_%d_out_v6' % z,
+        ('allow', 4): 'allow_%d_v4' % z,
+        ('allow', 6): 'allow_%d_v6' % z,
+        ('allowmac', 0): 'allowmac_%d' % z,
     }
+
+
+def _set_decls(zoneid):
+    """ return the nft "add set" statements for a zone (idempotent, element
+        preserving). Member and accounting sets hold single addresses; the
+        allowed sets accept networks so they carry the interval flag. """
+    names = set_names(zoneid)
+    return [
+        'add set %s %s %s { type ipv4_addr; }' % (TABLE_FAMILY, TABLE_NAME, names[('member', 4)]),
+        'add set %s %s %s { type ipv6_addr; }' % (TABLE_FAMILY, TABLE_NAME, names[('member', 6)]),
+        'add set %s %s %s { type ipv4_addr; counter; }' % (TABLE_FAMILY, TABLE_NAME, names[('in', 4)]),
+        'add set %s %s %s { type ipv4_addr; counter; }' % (TABLE_FAMILY, TABLE_NAME, names[('out', 4)]),
+        'add set %s %s %s { type ipv6_addr; counter; }' % (TABLE_FAMILY, TABLE_NAME, names[('in', 6)]),
+        'add set %s %s %s { type ipv6_addr; counter; }' % (TABLE_FAMILY, TABLE_NAME, names[('out', 6)]),
+        'add set %s %s %s { type ipv4_addr; flags interval; auto-merge; }' % (TABLE_FAMILY, TABLE_NAME, names[('allow', 4)]),
+        'add set %s %s %s { type ipv6_addr; flags interval; auto-merge; }' % (TABLE_FAMILY, TABLE_NAME, names[('allow', 6)]),
+        'add set %s %s %s { type ether_addr; }' % (TABLE_FAMILY, TABLE_NAME, names[('allowmac', 0)]),
+    ]
 
 
 def family_of(address):
@@ -90,27 +111,14 @@ def _load(script):
 
 
 def ensure_zone(zoneid):
-    """ idempotently create the table, sets and accounting chain for a zone """
-    z = _zid(zoneid)
-    names = set_names(z)
-    chain = 'acct_%d' % z
-    script = [
-        'add table %s %s' % (TABLE_FAMILY, TABLE_NAME),
-        'add set %s %s %s { type ipv4_addr; }' % (TABLE_FAMILY, TABLE_NAME, names[('member', 4)]),
-        'add set %s %s %s { type ipv6_addr; }' % (TABLE_FAMILY, TABLE_NAME, names[('member', 6)]),
-        'add set %s %s %s { type ipv4_addr; counter; }' % (TABLE_FAMILY, TABLE_NAME, names[('in', 4)]),
-        'add set %s %s %s { type ipv4_addr; counter; }' % (TABLE_FAMILY, TABLE_NAME, names[('out', 4)]),
-        'add set %s %s %s { type ipv6_addr; counter; }' % (TABLE_FAMILY, TABLE_NAME, names[('in', 6)]),
-        'add set %s %s %s { type ipv6_addr; counter; }' % (TABLE_FAMILY, TABLE_NAME, names[('out', 6)]),
-        'add chain %s %s %s { type filter hook forward priority -160; policy accept; }' % (
-            TABLE_FAMILY, TABLE_NAME, chain
-        ),
-        'flush chain %s %s %s' % (TABLE_FAMILY, TABLE_NAME, chain),
-        'add rule %s %s %s ip saddr @%s' % (TABLE_FAMILY, TABLE_NAME, chain, names[('in', 4)]),
-        'add rule %s %s %s ip daddr @%s' % (TABLE_FAMILY, TABLE_NAME, chain, names[('out', 4)]),
-        'add rule %s %s %s ip6 saddr @%s' % (TABLE_FAMILY, TABLE_NAME, chain, names[('in', 6)]),
-        'add rule %s %s %s ip6 daddr @%s' % (TABLE_FAMILY, TABLE_NAME, chain, names[('out', 6)]),
-    ]
+    """ idempotently create the table and the per zone sets.
+
+        Only the sets are created here so the membership and accounting data
+        plane works even before the enforcement chains are built (or after the
+        main ruleset is flushed). The hook chains that count and gate traffic
+        are owned by build() and (re)applied from setup_fw.py. """
+    script = ['add table %s %s' % (TABLE_FAMILY, TABLE_NAME)]
+    script += _set_decls(zoneid)
     _load('\n'.join(script) + '\n')
 
 
@@ -207,3 +215,104 @@ def list_accounting_all():
             bucket['%s_pkts' % direction] += int(counter.get('packets', 0))
             bucket['%s_bytes' % direction] += int(counter.get('bytes', 0))
     return result
+
+
+def _ifmatch(keyword, devices):
+    """ build an nft iifname/oifname match for one or more devices """
+    devs = [d for d in devices if d]
+    if not devs:
+        return None
+    if len(devs) == 1:
+        return '%s "%s"' % (keyword, devs[0])
+    return '%s { %s }' % (keyword, ', '.join('"%s"' % d for d in devs))
+
+
+def build(zones):
+    """ (re)build the captive portal enforcement for all enabled zones.
+
+        zones is a list of dicts:
+          { 'zoneid', 'devices': [dev,...], 'http_port', 'https_port',
+            'allowed_v4': [..], 'allowed_v6': [..], 'allowed_macs': [..] }
+
+        Member and accounting sets are preserved (add set is idempotent and
+        does not flush elements); the allowed sets and the hook chains are
+        rebuilt from scratch. The whole program is applied atomically. """
+    script = ['add table %s %s' % (TABLE_FAMILY, TABLE_NAME)]
+
+    for zone in zones:
+        script += _set_decls(zone['zoneid'])
+
+    # base hook chains, created idempotently then flushed so only the current
+    # set of zones contributes rules.
+    script += [
+        'add chain %s %s rdr { type nat hook prerouting priority -100; policy accept; }' % (TABLE_FAMILY, TABLE_NAME),
+        'add chain %s %s gate { type filter hook forward priority -150; policy accept; }' % (TABLE_FAMILY, TABLE_NAME),
+        'add chain %s %s portal_in { type filter hook input priority -150; policy accept; }' % (TABLE_FAMILY, TABLE_NAME),
+        'flush chain %s %s rdr' % (TABLE_FAMILY, TABLE_NAME),
+        'flush chain %s %s gate' % (TABLE_FAMILY, TABLE_NAME),
+        'flush chain %s %s portal_in' % (TABLE_FAMILY, TABLE_NAME),
+    ]
+
+    for zone in zones:
+        z = _zid(zone['zoneid'])
+        names = set_names(z)
+        iif = _ifmatch('iifname', zone.get('devices', []))
+        oif = _ifmatch('oifname', zone.get('devices', []))
+        if iif is None:
+            continue
+        http_port = int(zone['http_port'])
+        https_port = int(zone['https_port'])
+
+        # populate the static allowed sets
+        if zone.get('allowed_v4'):
+            script.append('add element %s %s %s { %s }' % (
+                TABLE_FAMILY, TABLE_NAME, names[('allow', 4)], ', '.join(zone['allowed_v4'])))
+        if zone.get('allowed_v6'):
+            script.append('add element %s %s %s { %s }' % (
+                TABLE_FAMILY, TABLE_NAME, names[('allow', 6)], ', '.join(zone['allowed_v6'])))
+        if zone.get('allowed_macs'):
+            script.append('add element %s %s %s { %s }' % (
+                TABLE_FAMILY, TABLE_NAME, names[('allowmac', 0)], ', '.join(zone['allowed_macs'])))
+
+        # redirect chain: authenticated/allowed clients are returned untouched,
+        # everyone else has their web traffic redirected to the local portal.
+        script += [
+            'add rule %s %s rdr %s ip saddr @%s return' % (TABLE_FAMILY, TABLE_NAME, iif, names[('member', 4)]),
+            'add rule %s %s rdr %s ip6 saddr @%s return' % (TABLE_FAMILY, TABLE_NAME, iif, names[('member', 6)]),
+            'add rule %s %s rdr %s ip saddr @%s return' % (TABLE_FAMILY, TABLE_NAME, iif, names[('allow', 4)]),
+            'add rule %s %s rdr %s ip6 saddr @%s return' % (TABLE_FAMILY, TABLE_NAME, iif, names[('allow', 6)]),
+            'add rule %s %s rdr %s ether saddr @%s return' % (TABLE_FAMILY, TABLE_NAME, iif, names[('allowmac', 0)]),
+            'add rule %s %s rdr %s tcp dport 80 redirect to :%d' % (TABLE_FAMILY, TABLE_NAME, iif, http_port),
+            'add rule %s %s rdr %s tcp dport 443 redirect to :%d' % (TABLE_FAMILY, TABLE_NAME, iif, https_port),
+        ]
+
+        # accounting (non terminating) followed by the forward gate.
+        script += [
+            'add rule %s %s gate %s ip saddr @%s' % (TABLE_FAMILY, TABLE_NAME, iif, names[('in', 4)]),
+            'add rule %s %s gate %s ip6 saddr @%s' % (TABLE_FAMILY, TABLE_NAME, iif, names[('in', 6)]),
+            'add rule %s %s gate %s ip daddr @%s' % (TABLE_FAMILY, TABLE_NAME, oif, names[('out', 4)]),
+            'add rule %s %s gate %s ip6 daddr @%s' % (TABLE_FAMILY, TABLE_NAME, oif, names[('out', 6)]),
+            'add rule %s %s gate %s ct state established,related accept' % (TABLE_FAMILY, TABLE_NAME, iif),
+            'add rule %s %s gate %s ip saddr @%s accept' % (TABLE_FAMILY, TABLE_NAME, iif, names[('member', 4)]),
+            'add rule %s %s gate %s ip6 saddr @%s accept' % (TABLE_FAMILY, TABLE_NAME, iif, names[('member', 6)]),
+            'add rule %s %s gate %s ip saddr @%s accept' % (TABLE_FAMILY, TABLE_NAME, iif, names[('allow', 4)]),
+            'add rule %s %s gate %s ip6 saddr @%s accept' % (TABLE_FAMILY, TABLE_NAME, iif, names[('allow', 6)]),
+            'add rule %s %s gate %s ether saddr @%s accept' % (TABLE_FAMILY, TABLE_NAME, iif, names[('allowmac', 0)]),
+            'add rule %s %s gate %s udp dport { 53, 67, 68 } accept' % (TABLE_FAMILY, TABLE_NAME, iif),
+            'add rule %s %s gate %s tcp dport 53 accept' % (TABLE_FAMILY, TABLE_NAME, iif),
+            'add rule %s %s gate %s drop' % (TABLE_FAMILY, TABLE_NAME, iif),
+        ]
+
+        # input chain: let clients reach the local portal and core services.
+        script += [
+            'add rule %s %s portal_in %s tcp dport { %d, %d } accept' % (TABLE_FAMILY, TABLE_NAME, iif, http_port, https_port),
+            'add rule %s %s portal_in %s udp dport { 53, 67 } accept' % (TABLE_FAMILY, TABLE_NAME, iif),
+            'add rule %s %s portal_in %s tcp dport 53 accept' % (TABLE_FAMILY, TABLE_NAME, iif),
+        ]
+
+    return _load('\n'.join(script) + '\n')
+
+
+def teardown():
+    """ remove the whole captive portal table (used on service stop) """
+    _run(['delete', 'table', TABLE_FAMILY, TABLE_NAME])
