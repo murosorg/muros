@@ -1,6 +1,7 @@
 import unittest
 import sys
 import os
+import json
 import subprocess
 sys.path.insert(0, "%s/../lib" % os.path.dirname(__file__))
 from alias.arpcache import ArpCache
@@ -38,9 +39,9 @@ class TestAliasMethods(unittest.TestCase):
         self.assertGreater(len(payload), 1000, 'AS13335 is smaller than expected')
 
     def test_parse_interface(self):
-        subprocess.run(['/sbin/ifconfig', 'lo0', 'inet6', '2001:fff:faaa::4f31', 'alias'], capture_output=True)
+        subprocess.run(['/usr/sbin/ip', '-6', 'addr', 'add', '2001:fff:faaa::4f31/128', 'dev', 'lo'], capture_output=True)
         payload = list(InterfaceParser(**self.properties).iter_addresses('::1005'))
-        subprocess.run(['/sbin/ifconfig', 'lo0', 'inet6', '2001:fff:faaa::4f31', '-alias'], capture_output=True)
+        subprocess.run(['/usr/sbin/ip', '-6', 'addr', 'del', '2001:fff:faaa::4f31/128', 'dev', 'lo'], capture_output=True)
         self.assertEqual(payload, ['2001:0fff:faaa:0000:0000:0000:0000:1005/128'], 'Unexpected address received')
 
     def test_parse_uri(self):

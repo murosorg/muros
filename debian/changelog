@@ -1,3 +1,17 @@
+muros (0.9.30) trixie; urgency=medium
+
+  * Firewall aliases: declare the python3-jq dependency. The URL Table (JSON)
+    alias parser imports the jq module to apply jq filters to downloaded
+    content, but the package was missing, which broke importing the whole alias
+    library (and therefore any alias relying on it) on a clean install.
+  * Tests: port the firewall alias test suite off the FreeBSD arp(8)/ifconfig(8)
+    tooling. MAC lookup now reads the neighbour table with iproute2 (ip -j
+    neigh) and the interface-parser test adds/removes its probe address with
+    ip -6 addr on the Linux loopback (lo) instead of ifconfig aliases on lo0,
+    so the suite runs natively on Debian.
+
+ -- MurOS <dev@muros.org>  Sun, 21 Jun 2026 07:55:00 +0000
+
 muros (0.9.29) trixie; urgency=medium
 
   * Diagnostics: port the last stubbed network-diagnostics backends from the
