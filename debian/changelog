@@ -1,3 +1,22 @@
+muros (0.9.27) trixie; urgency=medium
+
+  * Performance: backend actions (applying settings, dashboard widgets, any
+    operation routed through the configd action layer) were slow because the
+    CLI PHP processes that configd spawns per action had no opcode cache and
+    recompiled the whole codebase every time. OPcache was previously enabled
+    for the FPM web pool only, which fixed login latency but not actions. The
+    CLI SAPI now uses a persistent on-disk OPcache (opcache.file_cache under
+    /var/lib/php/opcache), which a short-lived process can reuse across
+    invocations. Compiling the full code set drops from roughly 600 ms to about
+    50 ms, so per-action latency is cut by an order of magnitude.
+  * Diagnostics: three ported backend scripts (system/diag_disk.py,
+    diagnostics/empty_json.py, interfaces/netstat_interfaces.py) had lost their
+    executable bit, so configd could not run them and returned exit status 126.
+    This broke the Disk dashboard widget and a few diagnostics actions and made
+    the dashboard retry failing requests. The executable bit is restored.
+
+ -- MurOS <dev@muros.org>  Sun, 21 Jun 2026 07:30:00 +0000
+
 muros (0.9.26) trixie; urgency=medium
 
   * Sidebar: the account block (user@host + Logout) jumped to the top of the

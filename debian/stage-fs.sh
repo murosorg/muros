@@ -139,14 +139,13 @@ date.timezone = "Etc/UTC"
 expose_php = Off
 
 ; OPcache. The web UI is a large PHP codebase (the MVC stack plus the legacy
-; .inc libraries and compiled Volt templates). Without a primed opcode cache
-; every request recompiles hundreds of files, which is the main reason the UI
-; feels slow and the dashboard looks like it hangs while its widgets load in
-; parallel. Timestamp validation stays on at a low frequency so package
-; upgrades are still picked up (and postinst reloads php-fpm on upgrade).
-opcache.enable = 1
-opcache.enable_cli = 0
-opcache.memory_consumption = 256
+; .inc libraries and compiled Volt templates) and the configd action layer
+; spawns a fresh php process for every backend action. Without an opcode cache
+; each of them recompiles hundreds of files, which is the main reason the UI
+; feels slow on login and the dashboard looks like it hangs while its widgets
+; load in parallel, and why applying settings is slow. Timestamp validation
+; stays on at a low frequency so package upgrades are still picked up (and
+; postinst clears the caches on upgrade).
 opcache.interned_strings_buffer = 32
 opcache.max_accelerated_files = 24000
 opcache.validate_timestamps = 1
@@ -158,6 +157,29 @@ opcache.save_comments = 1
 realpath_cache_size = 4M
 realpath_cache_ttl = 300
 PHPINI
+
+  # The OPcache backing store differs per SAPI. FPM is a long-lived worker
+  # pool, so it keeps a shared-memory cache. The CLI SAPI is what backs the
+  # configd action layer: each backend action (firewall apply, service
+  # reconfigure, dashboard widget) runs as its own short-lived php process and
+  # a shared-memory cache does not survive between them. The CLI therefore uses
+  # a persistent on-disk opcode cache, which turns the full per-action recompile
+  # into a cache read and removes most of the backend action latency.
+  if [ "$sapi" = "fpm" ]; then
+    cat >> "$DEST/etc/php/8.4/$sapi/conf.d/99-muros.ini" <<'PHPINI'
+opcache.enable = 1
+opcache.enable_cli = 0
+opcache.memory_consumption = 256
+PHPINI
+  else
+    cat >> "$DEST/etc/php/8.4/$sapi/conf.d/99-muros.ini" <<'PHPINI'
+opcache.enable = 1
+opcache.enable_cli = 1
+opcache.file_cache = /var/lib/php/opcache
+opcache.file_cache_only = 1
+opcache.file_cache_consistency_checks = 1
+PHPINI
+  fi
 done
 
 # systemd-tmpfiles is the Debian replacement for the FreeBSD mtree /var step:
