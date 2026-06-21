@@ -609,6 +609,23 @@ flush();
 write_config(sprintf('%s configuration from console menu', $interface));
 echo "done.\n";
 
+/*
+ * MurOS: the assigned data interfaces are addressed by systemd-networkd from
+ * the /etc/systemd/network/10-muros-<dev>.network units rendered by
+ * render_networkd.php (run at boot by muros-interfaces.service). The console
+ * historically applied the address with the FreeBSD interface_reset()/
+ * interface_configure() path only, which never regenerated those units, so
+ * the unit kept the previous address (typically the 192.168.1.1 LAN default)
+ * and networkd re-added it next to the new one. Regenerate the units from the
+ * configuration we just wrote, then reconfigure the device so networkd drops
+ * the addresses no longer present in the unit before the iproute2 pass runs.
+ */
+$realif = $config['interfaces'][$interface]['if'] ?? '';
+mwexecf('/usr/bin/php /usr/local/opnsense/scripts/interfaces/render_networkd.php', [], true);
+if ($realif !== '' && is_dir('/sys/class/net/' . $realif)) {
+    mwexecf('/usr/bin/networkctl reconfigure %s', [$realif], true);
+}
+
 system_resolver_configure(true);
 interface_reset($interface);
 interface_configure(true, $interface, true);
