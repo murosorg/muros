@@ -1,7 +1,16 @@
 MurOS
 =====
 
-A web-managed open source firewall, rebuilt on Debian Linux.
+[![Website](https://img.shields.io/badge/website-muros.org-2563eb)](https://muros.org)
+[![Docs](https://img.shields.io/badge/docs-muros.org%2Fdocs-2563eb)](https://muros.org/docs)
+[![Debian](https://img.shields.io/badge/Debian-13%20Trixie-A81D33)](https://www.debian.org/)
+[![License](https://img.shields.io/badge/license-BSD--2--Clause-green)](https://opensource.org/licenses/BSD-2-Clause)
+[![Status](https://img.shields.io/badge/status-beta-orange)](https://muros.org/features.html)
+
+A web-managed open source firewall, rebuilt on Debian Linux. MurOS is an
+OPNsense fork ported to Debian 13, a free, self-hosted alternative to pfSense
+and commercial firewall appliances, with stateful filtering, NAT, routing, VPN
+and high availability driven from the familiar OPNsense web interface.
 
 MurOS is a fork of OPNsense that does more than swap an operating system.
 The whole platform has been re-engineered to run natively on Debian 13: the
