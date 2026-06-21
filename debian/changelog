@@ -1,3 +1,20 @@
+muros (0.9.29) trixie; urgency=medium
+
+  * Diagnostics: port the last stubbed network-diagnostics backends from the
+    FreeBSD netstat/pfctl tooling to Linux equivalents.
+    - Socket statistics (Diagnostics: Network: Socket Statistics) now lists the
+      live socket table built from iproute2 ss (TCP/UDP plus UNIX domain
+      sockets) instead of returning an empty set, and is still enriched with the
+      owning process from the ss-based sockstat backend.
+    - Protocol statistics (Diagnostics: Network: Protocol Statistics) now report
+      real per-protocol counters parsed from /proc/net/snmp, /proc/net/netstat
+      and /proc/net/snmp6 (IPv4, IPv6 and the IP/TCP extensions).
+    - pfsync peer listing no longer shells out to the absent pfctl: it derives
+      the local host id from the machine id and reports conntrackd peers when
+      state synchronisation is configured, empty otherwise.
+
+ -- MurOS <dev@muros.org>  Sun, 21 Jun 2026 07:30:00 +0000
+
 muros (0.9.28) trixie; urgency=medium
 
   * Fix the whole dashboard failing to load ("Failed to load widget" on every
