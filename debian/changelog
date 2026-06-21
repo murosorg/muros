@@ -1,3 +1,15 @@
+muros (0.9.38) trixie; urgency=medium
+
+  * Setup wizard: fix the Next button being blocked on every step. The wizard
+    model validates the whole form at once and always reports issues for later
+    steps (such as an unassigned WAN device), so the Next handler now suppresses
+    the validation dialog and only blocks advancing when a field of the current
+    step itself failed, leaving the remaining checks for the final Apply step.
+    This restores the original behaviour that an earlier sidebar/UI change had
+    regressed.
+
+ -- murosorg <contact@muros.org>  Sun, 21 Jun 2026 12:01:26 +0000
+
 muros (0.9.37) trixie; urgency=medium
 
   * Unbound (recursive DNS): port the resolver integration from FreeBSD to
