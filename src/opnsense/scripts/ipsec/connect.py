@@ -47,4 +47,4 @@ for conns in s.list_conns():
 
 # setup connection if found
 for child_id in children_found:
-    subprocess.run(['/usr/local/sbin/swanctl', '--initiate', '--child', child_id], capture_output=True)
+    subprocess.run(['/usr/sbin/swanctl', '--initiate', '--child', child_id], capture_output=True)

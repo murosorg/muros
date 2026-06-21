@@ -47,7 +47,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--leases', action='store_true')
     cmd_args = parser.parse_args()
-    args = ['/usr/local/sbin/swanctl', '--list-pools']
+    args = ['/usr/sbin/swanctl', '--list-pools']
     if cmd_args.leases:
         args.append('--leases')
         result['leases'] = []

@@ -688,107 +688,17 @@ function ipsec_convert_to_modp($index): string
 }
 
 /**
- * load manual defined spd entries using setkey
+ * Manual security policy database (SPD) entries.
+ *
+ * On FreeBSD these were driven by setkey, which does not exist on Linux. The
+ * XFRM stack installs the policies charon negotiates directly through netlink,
+ * and any additional selectors are expressed as traffic selectors in
+ * swanctl.conf, so there is nothing to load by hand here. The function is kept
+ * as a no-op to keep existing callers valid.
  */
 function ipsec_configure_spd()
 {
-    global $config;
-
-    $spd_entries = [];
-
-    /**
-     * try to figure out which SPD entries where created manually and collect them in a list sequenced by reqid
-     * when the entry is either bound to an interface (ifname=) or has a lifetime, these where not likely created by us
-     */
-    $src = $dst = $direction = $reqid = '';
-    $previous_spd_entries = [];
-    $is_automatic = false;
-    $line_count = 0;
-
-    foreach (shell_safe('/sbin/setkey -PD', [], true) as $line) {
-        if ($line[0] != "\t") {
-            $tmp = explode(' ', $line);
-            $src = $dst = $direction = $reqid = '';
-            if (count($tmp) >= 3) {
-                $src = explode('[', $tmp[0])[0];
-                $dst = explode('[', $tmp[1])[0];
-            }
-            $line_count = 0;
-            $is_automatic = false;
-        } elseif ($line_count == 1) {
-            // direction
-            $direction = trim(explode(' ', $line)[0]);
-        } elseif (strpos($line, '/unique:') !== false) {
-            $reqid = explode('/unique:', $line)[1];
-        } elseif (strpos($line, "\tlifetime:") === 0 || strpos($line, "ifname=") > 0) {
-            $is_automatic = true;
-        } elseif (strpos($line, "\trefcnt") === 0 && !$is_automatic && $reqid != "") {
-            if (empty($previous_spd_entries[$reqid])) {
-                $previous_spd_entries[$reqid] = [];
-            }
-            $previous_spd_entries[$reqid][] = sprintf("spddelete -n %s %s any -P %s;", $src, $dst, $direction);
-        }
-        $line_count++;
-    }
-
-    /* process manual added spd entries */
-    if (ipsec_legacy() && !empty($config['ipsec']['phase2'])) {
-        foreach ($config['ipsec']['phase1'] as $ph1ent) {
-            if (!empty($ph1ent['disabled'])) {
-                continue;
-            }
-            $reqid_mapping = ipsec_parse_phase2($ph1ent['ikeid'])['uniqid_reqid'];
-            foreach (array_unique(array_values($reqid_mapping)) as $reqid) {
-                if (!empty($previous_spd_entries[$reqid])) {
-                    foreach ($previous_spd_entries[$reqid] as $spd_entry) {
-                        $spd_entries[] = $spd_entry;
-                    }
-                    unset($previous_spd_entries[$reqid]);
-                }
-            }
-            foreach ($config['ipsec']['phase2'] as $ph2ent) {
-                if (!isset($ph2ent['disabled']) && $ph1ent['ikeid'] == $ph2ent['ikeid'] && !empty($ph2ent['spd']) && !empty($ph2ent['remoteid'])) {
-                    $tunnel_src = ipsec_get_phase1_src($ph1ent);
-                    $tunnel_dst = ipsec_resolve($ph1ent['remote-gateway'], $ph1ent['protocol']);
-
-                    if (empty($tunnel_dst) || empty($tunnel_src)) {
-                        log_msg(sprintf(
-                            "spdadd: skipped for tunnel %s-%s (reqid :%s, local: %s, remote: %s)",
-                            $tunnel_src,
-                            $tunnel_dst,
-                            !empty($reqid_mapping[$ph2ent['uniqid']]) ? $reqid_mapping[$ph2ent['uniqid']] : "",
-                            $ph2ent['spd'],
-                            ipsec_idinfo_to_cidr($ph2ent['remoteid'], false, $ph2ent['mode'])
-                        ), LOG_ERR);
-                        continue;
-                    }
-
-                    foreach (explode(',', $ph2ent['spd']) as $local_net) {
-                        $proto = $ph2ent['mode'] == "tunnel" ? "4" : "6";
-                        $remote_net = ipsec_idinfo_to_cidr($ph2ent['remoteid'], false, $ph2ent['mode']);
-                        if (!empty($reqid_mapping[$ph2ent['uniqid']])) {
-                            $req_id = $reqid_mapping[$ph2ent['uniqid']];
-                            $spd_command = "spdadd -%s %s %s any -P out ipsec %s/tunnel/%s-%s/unique:{$req_id};";
-                            $spd_entries[] = sprintf(
-                                $spd_command,
-                                $proto,
-                                trim($local_net),
-                                $remote_net,
-                                $ph2ent['protocol'],
-                                $tunnel_src,
-                                $tunnel_dst
-                            );
-                        }
-                    }
-                }
-            }
-        }
-
-        $tmpfname = tempnam("/tmp", "setkey");
-        file_put_contents($tmpfname, implode("\n", $spd_entries) . "\n");
-        mwexecfm('/sbin/setkey -f %s', $tmpfname);
-        unlink($tmpfname);
-    }
+    return;
 }
 
 /**
@@ -881,7 +791,7 @@ function ipsec_setup_pinghosts()
 }
 
 /**
- * Populate /usr/local/etc/strongswan.conf
+ * Populate /etc/strongswan.conf
  */
 function ipsec_write_strongswan_conf()
 {
@@ -934,7 +844,7 @@ function ipsec_write_strongswan_conf()
 
     /* flush to disk */
     @file_put_contents(
-        "/usr/local/etc/strongswan.conf",
+        "/etc/strongswan.conf",
         sprintf("%s\ninclude strongswan.opnsense.d/*.conf\n", generate_strongswan_conf($strongswanTree))
     );
 }
@@ -944,7 +854,7 @@ function ipsec_write_strongswan_conf()
  */
 function ipsec_write_cas()
 {
-    $capath = '/usr/local/etc/swanctl/x509ca';
+    $capath = '/etc/swanctl/x509ca';
     $cafiles = [];
 
     foreach (config_read_array('ca', false) as $ca) {
@@ -984,12 +894,12 @@ function ipsec_write_certs()
             continue;
         }
 
-        $ph1keyfile = "/usr/local/etc/swanctl/private/{$certref}.key";
+        $ph1keyfile = "/etc/swanctl/private/{$certref}.key";
         @touch($ph1keyfile);
         @chmod($ph1keyfile, 0600);
         file_put_contents($ph1keyfile, base64_decode($cert['prv']));
 
-        $ph1certfile = "/usr/local/etc/swanctl/x509/{$certref}.crt";
+        $ph1certfile = "/etc/swanctl/x509/{$certref}.crt";
         @touch($ph1certfile);
         @chmod($ph1certfile, 0600);
         file_put_contents($ph1certfile, base64_decode($cert['crt']));
@@ -1007,12 +917,12 @@ function ipsec_write_certs()
                 continue;
             }
 
-            $ph1keyfile = "/usr/local/etc/swanctl/private/cert-{$ph1ent['ikeid']}.key";
+            $ph1keyfile = "/etc/swanctl/private/cert-{$ph1ent['ikeid']}.key";
             @touch($ph1keyfile);
             @chmod($ph1keyfile, 0600);
             file_put_contents($ph1keyfile, base64_decode($cert['prv']));
 
-            $ph1certfile = "/usr/local/etc/swanctl/x509/cert-{$ph1ent['ikeid']}.crt";
+            $ph1certfile = "/etc/swanctl/x509/cert-{$ph1ent['ikeid']}.crt";
             @touch($ph1certfile);
             @chmod($ph1certfile, 0600);
             file_put_contents($ph1certfile, base64_decode($cert['crt']));
@@ -1026,8 +936,8 @@ function ipsec_write_certs()
 function ipsec_write_keypairs()
 {
     $paths = [
-      'publicKey' => '/usr/local/etc/swanctl/pubkey',
-      'privateKey' => '/usr/local/etc/swanctl/private'
+      'publicKey' => '/etc/swanctl/pubkey',
+      'privateKey' => '/etc/swanctl/private'
     ];
     $filenames = [];
     foreach ((new \OPNsense\IPsec\IPsec())->keyPairs->keyPair->iterateItems() as $uuid => $keyPair) {
@@ -1143,7 +1053,8 @@ function ipsec_configure_do($verbose = false, $interface_map = null)
     $a_client = isset($config['ipsec']['client']) ? $config['ipsec']['client'] : [];
 
     if (!isset($ipseccfg['enable'])) {
-        mwexecfm('/usr/local/sbin/ipsec stop');
+        mwexecf('/usr/bin/systemctl stop strongswan');
+        @unlink('/var/run/charon.pid');
         return;
     }
 
@@ -1156,11 +1067,11 @@ function ipsec_configure_do($verbose = false, $interface_map = null)
     service_log('Configuring IPsec VPN...', $verbose);
 
     /* cleanup legacy ipsec.conf bits but then recreate structure to mute charon complaints */
-    mwexecf('rm -rf /usr/local/etc/ipsec.d');
+    mwexecf('rm -rf /etc/ipsec.d');
     foreach (['aacerts', 'acerts', 'cacerts', 'certs', 'crls', 'ocspcerts', 'private', 'reqs'] as $dir) {
-        mkdir("/usr/local/etc/ipsec.d/{$dir}", 0664, true);
+        mkdir("/etc/ipsec.d/{$dir}", 0664, true);
     }
-    foreach (['/usr/local/etc/ipsec.conf', '/usr/local/etc/ipsec.secrets'] as $file) {
+    foreach (['/etc/ipsec.conf', '/etc/ipsec.secrets'] as $file) {
         /* unlink AND copy in case the sample files are not available */
         @unlink($file);
         @copy("{$file}.sample", $file);
@@ -1456,14 +1367,22 @@ function ipsec_configure_do($verbose = false, $interface_map = null)
     $swanctltxt .= "# Include config snippets\n";
     $swanctltxt .= "include conf.d/*.conf\n";
 
-    file_put_contents("/usr/local/etc/swanctl/swanctl.conf", $swanctltxt);
+    file_put_contents("/etc/swanctl/swanctl.conf", $swanctltxt);
 
-    /* start charon when it is not running yet, then (re)load the connection,
-       pool and secret definitions we just wrote to swanctl.conf */
-    if (!isvalidpid('/var/run/charon.pid')) {
-        mwexecf('/usr/local/sbin/ipsec start');
+    /* charon runs as charon-systemd under systemd, there is no legacy starter
+       and it does not write a pidfile. Start the unit (idempotent, so it is
+       safe to call on every apply), then (re)load the connection, pool and
+       secret definitions we just wrote to swanctl.conf. */
+    mwexecf('/usr/bin/systemctl start strongswan');
+    mwexecfb('/usr/sbin/swanctl --load-all');
+
+    /* the MurOS service framework tracks IPsec through a pidfile, but
+       charon-systemd manages its own lifecycle and writes none. Mirror the
+       systemd MainPID so the dashboard reflects the real charon state. */
+    $charon_pid = trim(shell_safe('/usr/bin/systemctl show -p MainPID --value strongswan'));
+    if (!empty($charon_pid) && $charon_pid !== '0') {
+        file_put_contents('/var/run/charon.pid', $charon_pid . "\n");
     }
-    mwexecfb('/usr/local/sbin/swanctl --load-all');
 
     ipsec_configure_spd();
 
@@ -1601,8 +1520,8 @@ function ipsec_configure_vti($verbose = false, $device = null)
                                 $addr['endpoint'],
                                 $intf
                             ), LOG_DEBUG);
-                            mwexecf('/sbin/ifconfig %s %s %s delete', [
-                                $intf, $proto == 'ipv6' ? 'inet6' : 'inet',  $addr['ipaddr'], $addr['endpoint']
+                            mwexecf('/usr/sbin/ip address del %s peer %s dev %s', [
+                                $addr['ipaddr'], $addr['endpoint'], $intf
                             ]);
                         }
                     }
@@ -1619,21 +1538,21 @@ function ipsec_configure_vti($verbose = false, $device = null)
 
         // create required interfaces
         if (empty($current_interfaces[$intf])) {
-            // prevent ipsec vti interface to hit 32768 limit (create numbered, rename and attach afterwards)
-            if (legacy_interface_create('ipsec', $intf) === null) {
+            /*
+             * Routed IPsec uses an XFRM interface on Linux, the equivalent of
+             * the FreeBSD if_ipsec device. The phase1 reqid is carried as the
+             * interface if_id; charon tags the negotiated SAs with the same
+             * if_id (if_id_in/if_id_out in swanctl.conf) so traffic forwarded
+             * into the interface is matched and encrypted. The outer tunnel
+             * endpoints live on the SAs, not on the interface, so unlike
+             * FreeBSD there is nothing equivalent to a per-interface tunnel
+             * source/destination to configure here.
+             */
+            if (mwexecf('/usr/sbin/ip link add %s type xfrm if_id %s', [$intf, $intf_details['reqid']]) != 0) {
                 break;
             }
         }
-        // [re]initialise if_ipsec
-        mwexecf('/sbin/ifconfig %s reqid %s', [$intf, $intf_details['reqid']]);
-        if (!empty($intf_details['local']) && !empty($intf_details['remote'])) {
-            mwexecf('/sbin/ifconfig %s %s tunnel %s %s up', [
-                $intf,
-                is_ipaddrv6($intf_details['local']) ? 'inet6' : 'inet',
-                $intf_details['local'],
-                $intf_details['remote']
-            ]);
-        }
+        mwexecf('/usr/sbin/ip link set dev %s up', [$intf]);
         // create new tunnel endpoints
         foreach ($intf_details['networks'] as $endpoint) {
             if (!empty($current_interfaces[$intf])) {
@@ -1654,15 +1573,17 @@ function ipsec_configure_vti($verbose = false, $device = null)
             }
             if (!$isfound) {
                 if ($endpoint['inet'] == 'inet') {
-                    mwexecf('/sbin/ifconfig %s %s %s %s', [
-                        $intf, $endpoint['inet'],  sprintf("%s/%s", $endpoint['tunnel_local'], $endpoint['mask']),
-                        $endpoint['tunnel_remote']
+                    mwexecf('/usr/sbin/ip address add %s peer %s dev %s', [
+                        sprintf("%s/%s", $endpoint['tunnel_local'], $endpoint['mask']),
+                        $endpoint['tunnel_remote'],
+                        $intf
                     ]);
                 } else {
-                    // XXX: don't specify a tunnel endpoint for ipv6, although this looks like an illogical
-                    //      construction, a netmask seems to be a requirement for some ipv6 consumers (frr)
-                    mwexecf('/sbin/ifconfig %s %s %s', [
-                        $intf, $endpoint['inet'],  sprintf("%s/%s", $endpoint['tunnel_local'], $endpoint['mask'])
+                    // don't specify a tunnel endpoint for ipv6; a netmask is still
+                    // required by some ipv6 consumers (frr)
+                    mwexecf('/usr/sbin/ip -6 address add %s dev %s', [
+                        sprintf("%s/%s", $endpoint['tunnel_local'], $endpoint['mask']),
+                        $intf
                     ]);
                 }
             }

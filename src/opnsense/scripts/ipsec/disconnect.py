@@ -45,4 +45,4 @@ for sas in s.list_sas():
 
 # terminate connection if found
 if conn_found:
-    subprocess.run(['/usr/local/sbin/swanctl', '--terminate', '--ike',  conn_id], capture_output=True)
+    subprocess.run(['/usr/sbin/swanctl', '--terminate', '--ike',  conn_id], capture_output=True)

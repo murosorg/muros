@@ -32,7 +32,13 @@ import ujson
 
 if __name__ == '__main__':
     result = {'records': []}
-    payload = subprocess.run(['/sbin/setkey', '-D'], capture_output=True, text=True).stdout.strip()
+    try:
+        payload = subprocess.run(['/sbin/setkey', '-D'], capture_output=True, text=True).stdout.strip()
+    except FileNotFoundError:
+        # setkey is a FreeBSD/KAME tool with no Linux equivalent; the live
+        # security associations are exposed through swanctl (vici) instead.
+        # Return an empty raw SAD rather than failing the request.
+        payload = ''
 
     # split setkey data in sections so we can support line wraps more easily
     sections = {}

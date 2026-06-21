@@ -36,7 +36,7 @@ import syslog
 from configparser import ConfigParser
 from lib import list_spds
 
-events_filename = '/usr/local/etc/swanctl/reqid_events.conf'
+events_filename = '/etc/swanctl/reqid_events.conf'
 
 spd_add_cmd = 'spdadd -%(ipproto)s %(source)s %(destination)s any ' \
     '-P out ipsec %(protocol)s/tunnel/%(local)s-%(remote)s/unique:%(reqid)s;'
@@ -127,5 +127,13 @@ if __name__ == '__main__':
                     syslog.syslog(
                         syslog.LOG_ERR,
                         '[UPDOWN] <%s> setkey failed: stdout: (%s) stderr: (%s)' % (cmd_args.connection_child, e.stdout, e.stderr)
+                    )
+                except FileNotFoundError:
+                    # setkey is a FreeBSD/KAME tool that does not exist on Linux.
+                    # The XFRM stack installs the policies charon negotiates
+                    # directly through netlink, so there is nothing to do here.
+                    syslog.syslog(
+                        syslog.LOG_NOTICE,
+                        '[UPDOWN] <%s> skipping manual policies, handled by charon/XFRM' % cmd_args.connection_child
                     )
                 os.unlink(f.name)

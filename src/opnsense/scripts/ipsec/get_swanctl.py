@@ -29,7 +29,7 @@
 import json
 import re
 
-config_path = "/usr/local/etc/swanctl/swanctl.conf"
+config_path = "/etc/swanctl/swanctl.conf"
 
 try:
     with open(config_path, "r") as file:

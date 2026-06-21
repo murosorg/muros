@@ -86,6 +86,20 @@ JRN
       systemctl disable --now "$u" 2>/dev/null || true
     done
 
+    # strongSwan (charon-systemd) is driven by MurOS as well: configd renders
+    # /etc/swanctl/swanctl.conf and the IPsec apply starts the daemon and loads
+    # the connections itself. The packaged unit runs "swanctl --load-all" as an
+    # ExecStartPost, which makes the whole daemon fail to start when a single
+    # generated connection is invalid. Clear that hook with a drop-in so charon
+    # always comes up and configuration errors only fail the explicit reload,
+    # and keep the unit from auto-starting with an empty configuration at boot.
+    install -d /etc/systemd/system/strongswan.service.d
+    cat > /etc/systemd/system/strongswan.service.d/muros.conf <<'STRONGSWAN'
+[Service]
+ExecStartPost=
+STRONGSWAN
+    systemctl disable strongswan 2>/dev/null || true
+
     # Purge the compiled Volt template cache so the UI/template changes shipped
     # in this package are recompiled from the new sources on the next request,
     # instead of being served from stale compiled copies left by a prior version.

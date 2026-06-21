@@ -29,6 +29,32 @@ muros (0.9.33) trixie; urgency=medium
 
  -- MurOS <dev@muros.org>  Sun, 21 Jun 2026 08:55:00 +0000
 
+muros (0.9.35) trixie; urgency=medium
+
+  * IPsec: port the strongSwan integration from FreeBSD to Debian. Configuration
+    now lives in the Debian default locations (/etc/strongswan.conf and
+    /etc/swanctl, the swanctl defaults), the daemon is driven through systemd
+    (charon-systemd via "systemctl start strongswan" plus an explicit
+    "swanctl --load-all") instead of the legacy ipsec starter, and the
+    swanctl/charon binaries use their /usr/sbin paths.
+  * IPsec: drop the setkey based manual SPD code path. setkey is a FreeBSD/KAME
+    tool with no Linux equivalent; the XFRM stack installs the policies charon
+    negotiates directly through netlink. The manual SPD apply is now a no-op and
+    the raw SAD/SPD diagnostic views degrade gracefully when setkey is absent.
+  * IPsec: port routed IPsec (VTI) interface handling to Linux XFRM interfaces
+    (ip link add type xfrm if_id <reqid>, ip address add ... peer ...) instead
+    of the FreeBSD if_ipsec ifconfig reqid/tunnel calls.
+  * IPsec: ship a strongswan.service drop-in that clears the packaged
+    ExecStartPost=swanctl --load-all so an invalid generated connection can no
+    longer take the whole daemon down; MurOS loads the configuration itself.
+  * Packaging: promote strongswan, charon-systemd and strongswan-swanctl to
+    Recommends so IPsec is available out of the box. Validated on Debian:
+    strongSwan 6.0.1 loads a generated site-to-site PSK connection
+    (swanctl --list-conns shows the IKEv2 tunnel), and XFRM interface creation
+    with if_id works.
+
+ -- MurOS <dev@muros.org>  Sun, 21 Jun 2026 09:20:00 +0000
+
 muros (0.9.34) trixie; urgency=medium
 
   * OpenVPN: use the Debian binary path /usr/sbin/openvpn instead of the

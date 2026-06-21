@@ -32,11 +32,16 @@ import ujson
 
 if __name__ == '__main__':
     result = {'records': []}
-    sp = subprocess.run(['/sbin/setkey', '-DP'], capture_output=True, text=True)
+    try:
+        spd_output = subprocess.run(['/sbin/setkey', '-DP'], capture_output=True, text=True).stdout
+    except FileNotFoundError:
+        # setkey is a FreeBSD/KAME tool with no Linux equivalent; charon installs
+        # the negotiated policies through XFRM directly. Return an empty SPD.
+        spd_output = ''
     line_no = 0
     spd_rec = None
     spec_line = ""
-    for line in sp.stdout.split("\n"):
+    for line in spd_output.split("\n"):
         line_no += 1
         parts = line.split()
         if not line.startswith("\t") and len(parts) > 2:
