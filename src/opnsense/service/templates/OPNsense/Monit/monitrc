@@ -29,6 +29,9 @@ set httpd unixsocket /var/run/monit.sock
 
 set daemon {{ OPNsense.monit.general.interval }} with start delay {{ OPNsense.monit.general.startdelay }}
 
+# keep the daemon pid file deterministic so the service layer can report status
+set pidfile /var/run/monit.pid
+
 {%  if helpers.exists('OPNsense.monit.general.logfile') and OPNsense.monit.general.logfile|default('') != '' %}
 set logfile {{ OPNsense.monit.general.logfile }}
 {%  else %}

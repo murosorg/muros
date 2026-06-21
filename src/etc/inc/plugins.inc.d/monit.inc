@@ -47,6 +47,7 @@ function monit_services()
                         'start' => array('monit start'),
                         'stop' => array('monit stop'),
                 ),
+                'pidfile' => '/var/run/monit.pid',
                 'name' => 'monit',
         );
     }
