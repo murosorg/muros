@@ -50,13 +50,17 @@ case "$1" in
     # without waiting for a reboot.
     systemd-tmpfiles --create /usr/lib/tmpfiles.d/muros.conf >/dev/null 2>&1 || true
     # Fallback in case the tmpfiles file is unavailable for any reason.
-    for d in /var/etc /var/lib/php/tmp /var/lib/php/sessions; do
+    for d in /var/etc /var/lib/php/tmp /var/lib/php/sessions /var/lib/php/opcache; do
       mkdir -p "$d"
     done
     for d in /var/lib/php/tmp /var/lib/php/sessions; do
       chown www-data:www-data "$d" 2>/dev/null || true
       chmod 700 "$d" 2>/dev/null || true
     done
+    # The CLI on-disk OPcache is written by root (configd) and read by www-data,
+    # so it is group-owned by www-data with group write.
+    chown root:www-data /var/lib/php/opcache 2>/dev/null || true
+    chmod 775 /var/lib/php/opcache 2>/dev/null || true
 
     # Persistent, size-bounded systemd journal. The firewall log viewer reads
     # the kernel netfilter log lines from the journal, so it must survive reboots
@@ -86,6 +90,9 @@ JRN
     # in this package are recompiled from the new sources on the next request,
     # instead of being served from stale compiled copies left by a prior version.
     rm -f /var/lib/php/cache/*.php 2>/dev/null || true
+    # Purge the CLI on-disk OPcache for the same reason: drop any opcode files
+    # compiled from the previous version so the new sources are picked up.
+    rm -rf /var/lib/php/opcache/* 2>/dev/null || true
 
     # Pick up the lighttpd drop-in and (re)start the front end.
     systemctl daemon-reload 2>/dev/null || true
