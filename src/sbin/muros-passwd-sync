@@ -1,0 +1,132 @@
+#!/usr/bin/php
+<?php
+
+/*
+ * MurOS credential sync: PAM password hook.
+ *
+ * MurOS keeps a single administrative credential. The web UI authenticates
+ * against the bcrypt hash stored in /conf/config.xml, while the console and
+ * SSH authenticate through PAM against /etc/shadow. The config.xml -> shadow
+ * direction is handled by local_user_set() on every GUI or console change.
+ * This hook covers the opposite direction: when the password is changed
+ * through PAM (the passwd command, an SSH password change, ...), mirror the
+ * new password into config.xml so the web UI keeps the same credential.
+ *
+ * It is wired in through pam-auth-update as an optional pam_exec.so module on
+ * the password stack with expose_authtok, so the new password is provided on
+ * standard input, NUL terminated. The module is optional and this script
+ * always exits 0, so a failure here never blocks the password change itself.
+ */
+
+/* Only react to password-change calls. */
+$type = getenv('PAM_TYPE');
+if ($type !== false && $type !== '' && $type !== 'password' && $type !== 'chauthtok') {
+    exit(0);
+}
+
+$username = getenv('PAM_USER');
+if ($username === false || $username === '') {
+    exit(0);
+}
+
+/* pam_exec with expose_authtok writes the new token to stdin, NUL terminated. */
+$token = stream_get_contents(STDIN);
+if ($token === false) {
+    exit(0);
+}
+$nul = strpos($token, "\0");
+if ($nul !== false) {
+    $token = substr($token, 0, $nul);
+}
+$token = rtrim($token, "\n");
+if ($token === '') {
+    /* preliminary PAM phase: the new token is not available yet */
+    exit(0);
+}
+
+$config_file = '/conf/config.xml';
+if (!is_file($config_file)) {
+    exit(0);
+}
+
+$doc = new DOMDocument();
+$doc->preserveWhiteSpace = true;
+$doc->formatOutput = false;
+if (!@$doc->load($config_file)) {
+    exit(0);
+}
+
+/* Locate the web UI account whose name matches the PAM user. */
+$xpath = new DOMXPath($doc);
+$user_node = null;
+foreach ($xpath->query('//system/user') as $node) {
+    foreach ($node->getElementsByTagName('name') as $name) {
+        if ($name->parentNode === $node && trim($name->textContent) === $username) {
+            $user_node = $node;
+            break 2;
+        }
+    }
+}
+if ($user_node === null) {
+    /* no matching web UI account, nothing to mirror */
+    exit(0);
+}
+
+$password_node = null;
+foreach ($user_node->getElementsByTagName('password') as $pw) {
+    if ($pw->parentNode === $user_node) {
+        $password_node = $pw;
+        break;
+    }
+}
+
+$current = $password_node !== null ? trim($password_node->textContent) : '';
+if ($current !== '' && password_verify($token, $current)) {
+    /*
+     * Already in sync. This is also the preliminary PAM phase, where the old
+     * token is exposed and still verifies against the stored hash, so there is
+     * nothing to do until the update phase exposes the new token.
+     */
+    exit(0);
+}
+
+/* Mirror the new password using the same hash format as the web UI. */
+$hash = password_hash($token, PASSWORD_BCRYPT, ['cost' => 11]);
+if (!is_string($hash) || strpos($hash, '$') !== 0) {
+    exit(0);
+}
+
+if ($password_node === null) {
+    $password_node = $doc->createElement('password');
+    $user_node->appendChild($password_node);
+}
+while ($password_node->firstChild) {
+    $password_node->removeChild($password_node->firstChild);
+}
+$password_node->appendChild($doc->createTextNode($hash));
+
+/* Keep the change timestamp the GUI maintains, when the element exists. */
+foreach ($user_node->getElementsByTagName('pwd_changed_at') as $ts) {
+    if ($ts->parentNode === $user_node) {
+        while ($ts->firstChild) {
+            $ts->removeChild($ts->firstChild);
+        }
+        $ts->appendChild($doc->createTextNode(sprintf('%.4f', microtime(true))));
+        break;
+    }
+}
+
+/* Write atomically, preserving ownership and mode of the original file. */
+$stat = @stat($config_file);
+$tmp = $config_file . '.muros-pam.' . getmypid();
+if (@file_put_contents($tmp, $doc->saveXML()) === false) {
+    @unlink($tmp);
+    exit(0);
+}
+if (is_array($stat)) {
+    @chmod($tmp, $stat['mode'] & 0777);
+    @chown($tmp, $stat['uid']);
+    @chgrp($tmp, $stat['gid']);
+}
+@rename($tmp, $config_file);
+exit(0);

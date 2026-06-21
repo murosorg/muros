@@ -90,6 +90,27 @@ net.ipv4.ip_forward = 1
 net.ipv6.conf.all.forwarding = 1
 SCTL
 
+# PAM credential sync: MurOS keeps a single administrative credential shared by
+# the web UI (bcrypt hash in /conf/config.xml) and the console/SSH login (PAM,
+# /etc/shadow). The config.xml -> shadow direction is handled by the account
+# sync in auth.inc. This pam-auth-update profile covers the opposite direction:
+# an optional pam_exec.so hook on the password stack runs muros-passwd-sync with
+# the new token on stdin, so a password set with `passwd` (or any PAM client) is
+# mirrored into config.xml and the web UI keeps the same password. The module is
+# optional, so it can never block a password change. postinst runs
+# pam-auth-update to wire it into /etc/pam.d/common-password.
+install -d "$DEST/usr/share/pam-configs"
+cat > "$DEST/usr/share/pam-configs/muros-cred-sync" <<'PAMCFG'
+Name: MurOS credential sync
+Default: yes
+Priority: 128
+Password-Type: Additional
+Password:
+	optional	pam_exec.so quiet expose_authtok /usr/local/sbin/muros-passwd-sync
+Password-Initial:
+	optional	pam_exec.so quiet expose_authtok /usr/local/sbin/muros-passwd-sync
+PAMCFG
+
 # lighttpd: MurOS web UI front end. Shipped under the MurOS prefix and wired
 # in with a systemd drop-in, so it never collides with the stock lighttpd
 # conffile and the UI does not depend on interface assignment to come up.

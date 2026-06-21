@@ -1,3 +1,20 @@
+muros (0.9.39) trixie; urgency=medium
+
+  * Loopback: stop adding a redundant 127.0.0.1/32 to the loopback interface.
+    The Linux kernel already configures lo with 127.0.0.1/8 and ::1/128, so the
+    FreeBSD-era "ifconfig lo0 inet 127.0.0.1" (which iproute2 stores as a /32
+    host address) only produced a duplicate alongside the kernel address. The
+    loopback is now left to the kernel; only loopback VIPs and the up state are
+    still applied.
+  * Credentials: keep a single administrative password across the web UI and the
+    console/SSH. A new optional PAM hook (muros-passwd-sync, wired into
+    common-password through pam-auth-update) mirrors a password set with passwd
+    into the web UI configuration as a bcrypt hash, complementing the existing
+    config.xml to /etc/shadow synchronisation. Changing the password on the
+    console and in the web UI now keeps both in sync.
+
+ -- murosorg <contact@muros.org>  Sun, 21 Jun 2026 19:30:00 +0000
+
 muros (0.9.38) trixie; urgency=medium
 
   * Setup wizard: fix the Next button being blocked on every step. The wizard

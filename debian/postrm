@@ -7,6 +7,12 @@ case "$1" in
         --divert /etc/php/8.4/fpm/pool.d/www.conf.distrib \
         /etc/php/8.4/fpm/pool.d/www.conf || true
     fi
+    # The credential-sync pam-config file has been removed by dpkg at this
+    # point; regenerate the PAM stacks so its optional hook is dropped from
+    # /etc/pam.d/common-password.
+    if command -v pam-auth-update >/dev/null 2>&1; then
+      DEBIAN_FRONTEND=noninteractive pam-auth-update --package >/dev/null 2>&1 || true
+    fi
     ;;
 esac
 case "$1" in

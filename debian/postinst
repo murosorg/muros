@@ -44,6 +44,15 @@ case "$1" in
       ln -sf /usr/bin/php /usr/local/bin/php
     fi
 
+    # Wire the MurOS credential-sync PAM profile into the common-password stack
+    # so a password changed with `passwd` (or any other PAM client) is mirrored
+    # into the web UI configuration (/conf/config.xml). The profile installs an
+    # optional pam_exec.so hook, so it can never block a password change even if
+    # the helper is unavailable.
+    if command -v pam-auth-update >/dev/null 2>&1; then
+      DEBIAN_FRONTEND=noninteractive pam-auth-update --package >/dev/null 2>&1 || true
+    fi
+
     # MurOS runtime directories (/var/etc, PHP temp/session/cache). These are
     # declared in /usr/lib/tmpfiles.d/muros.conf and recreated at every boot;
     # create them now so the first configuration run after install succeeds
