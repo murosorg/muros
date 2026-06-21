@@ -28,4 +28,13 @@
 
 PACKAGE=${1}
 
-${PKG} rquery -U "%c\n\n%e\n\nMaintainer: %m" ${PACKAGE}
+# Render the package description and maintainer the way the GUI expects:
+# short summary, blank line, long description, then the maintainer line.
+apt-cache show "${PACKAGE}" 2>/dev/null | awk '
+    /^Package:/ { pk++; if (pk > 1) exit }
+    /^Description(-[a-z][a-z])?:/ && !seen { sub(/^[^:]*: */, ""); print; print ""; seen=1; desc=1; next }
+    desc && /^[ \t]/ { s=$0; sub(/^[ \t]/, "", s); if (s == ".") s=""; print s; next }
+    desc && /^[^ \t]/ { desc=0 }
+    /^Maintainer:/ { m=$0; sub(/^Maintainer: */, "", m) }
+    END { if (m != "") { print ""; print "Maintainer: " m } }
+'
