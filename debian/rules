@@ -19,8 +19,14 @@ override_dh_fixperms:
 
 # Units are placed under /lib/systemd/system by stage-fs.sh.
 override_dh_installsystemd:
-	# The control plane and web UI come up automatically.
-	dh_installsystemd --name=muros-configd --no-start muros-configd.service
+	# The configd control plane backs the whole web UI: the dashboard widgets
+	# and every settings-apply action talk to it over its unix socket. It must
+	# be enabled AND running after install and after every upgrade, otherwise
+	# the UI hangs on the client connect timeout and every widget fails to load.
+	# It only listens on a local socket, so starting it never touches the
+	# management link. dh_installsystemd (no --no-start) enables it, starts it on
+	# install and restarts it on upgrade.
+	dh_installsystemd --name=muros-configd muros-configd.service
 	# Data-plane units (interface assignment, addressing, firewall) are shipped
 	# but left disabled: they are opt-in and must never touch the management
 	# link or lock the operator out before interfaces have been assigned.

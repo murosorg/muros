@@ -1,3 +1,18 @@
+muros (0.9.28) trixie; urgency=medium
+
+  * Fix the whole dashboard failing to load ("Failed to load widget" on every
+    widget) and the UI taking around ten seconds per request. The configd
+    control plane, which backs every dashboard widget and settings-apply action
+    over its local socket, was installed with systemd start suppressed
+    (dh_installsystemd --no-start), so apt never started it on install and never
+    restarted it on upgrade. Whenever it was not running, the PHP client waited
+    out its ten second connect timeout on every call and the widgets errored.
+    configd is now started on install and restarted on upgrade (it only listens
+    on a unix socket, so this never touches the management link), and postinst
+    enables and restarts it explicitly as a safeguard.
+
+ -- MurOS <dev@muros.org>  Sun, 21 Jun 2026 07:05:00 +0000
+
 muros (0.9.27) trixie; urgency=medium
 
   * Performance: backend actions (applying settings, dashboard widgets, any
