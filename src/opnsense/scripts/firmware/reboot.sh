@@ -28,34 +28,23 @@
 
 WANT_REBOOT=1
 
-DUMMY_UPDATE=$(${PKG} update 2>&1)
-
-LQUERY=$(${PKG} query %v opnsense-update 2> /dev/null)
-RQUERY=$(${PKG} rquery %v opnsense-update 2> /dev/null)
-
-# We do not check for downloads here to make sure the actual version
-# we want is actually there.  The whole point of this script is a
-# hint to the console to reboot.  Worst case we are wrong and the
-# reboot doesn't happen.  The GUI offers precise info about it.
-
-if [ -n "${LQUERY}" -a -n "${RQUERY}" -a "${LQUERY%%_*}" != "${RQUERY%%_*}" ]; then
-	WANT_REBOOT=0
-elif opnsense-update -bk -c; then
+# Debian flags a pending reboot (typically after a kernel or core library
+# update) by creating this marker; that replaces the FreeBSD base/kernel set
+# comparison done with opnsense-update -bk -c.
+if [ -e /var/run/reboot-required ]; then
 	WANT_REBOOT=0
 fi
 
 COREPKG=$(opnsense-version -n)
 
-LQUERY=$(${PKG} query %v ${COREPKG} 2> /dev/null)
-RQUERY=$(${PKG} rquery %v ${COREPKG} 2> /dev/null)
+LQUERY=$(dpkg-query -W -f='${Version}' "${COREPKG}" 2> /dev/null)
+RQUERY=$(apt-cache policy "${COREPKG}" 2> /dev/null | awk '/Candidate:/ { print $2 }')
 
-# Additionally return the next version number if an update to the
-# core package is available.  We want to use it to display additional
-# information in the shell menu including the matching changelog.
-
-if [ -n "${LQUERY}" -a -n "${RQUERY}" ]; then
-	if [ "$(${PKG} version -t ${LQUERY} ${RQUERY})" = "<" ]; then
-		echo ${RQUERY%%_*}
+# Additionally return the next version number if an update to the core package
+# is available. The shell menu uses it to display the matching changelog hint.
+if [ -n "${LQUERY}" ] && [ -n "${RQUERY}" ] && [ "${RQUERY}" != "(none)" ]; then
+	if dpkg --compare-versions "${LQUERY}" lt "${RQUERY}"; then
+		echo "${RQUERY}"
 	fi
 fi
 
