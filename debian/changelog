@@ -1,3 +1,22 @@
+muros (0.9.26) trixie; urgency=medium
+
+  * Sidebar: the account block (user@host + Logout) jumped to the top of the
+    sidebar on legacy pages such as System: Settings: Administration, instead
+    of staying pinned to the bottom. The legacy header (www/fbegin.inc) nested
+    the identity and logout inside the brand at the top and still rendered a
+    version label, unlike the MVC layout. Reworked it to match: the brand now
+    holds only the logo, and the identity/logout sit in an account block that
+    is the last child of the navigation aside, so the existing flex layout
+    pins it to the bottom on every page. The leftover version label is dropped.
+  * Diagnostics: DNS lookup ported to dnspython (dropped host/drill); console
+    ping uses /bin/ping for the shell menu host check.
+  * Backend: added muros-daemon, a Debian replacement for the FreeBSD daemon(8)
+    process supervisor, and routed firmware actions through it.
+  * Performance: enabled PHP OPcache for the GUI to remove per-request
+    recompilation, which made login and the dashboard feel slow.
+
+ -- MurOS <dev@muros.org>  Sun, 21 Jun 2026 09:30:00 +0200
+
 muros (0.9.25) trixie; urgency=medium
 
   * Dashboard/Gateways: the gateway monitoring daemon was launched from
