@@ -98,6 +98,13 @@ JRN
     systemctl daemon-reload 2>/dev/null || true
     systemctl reload-or-restart php8.4-fpm 2>/dev/null || true
     systemctl restart lighttpd 2>/dev/null || true
+
+    # The configd control plane backs every dashboard widget and settings-apply
+    # action over its local socket. Make sure it is enabled and running after
+    # install/upgrade: if it is down the UI hangs on the connect timeout and all
+    # widgets fail to load. It only listens on a unix socket, so this is safe.
+    systemctl enable muros-configd 2>/dev/null || true
+    systemctl restart muros-configd 2>/dev/null || true
     ;;
 esac
 #DEBHELPER#
