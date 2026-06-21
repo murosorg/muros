@@ -13,20 +13,21 @@ from alias.uri import UriParser
 class TestAliasMethods(unittest.TestCase):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.properties = {'name': 'test_alias', 'proto': 'IPv4,IPv6', 'timeout': 10, 'interface': 'lo0'}
+        self.properties = {'name': 'test_alias', 'proto': 'IPv4,IPv6', 'timeout': 10, 'interface': 'lo'}
 
     def test_parse_geoip(self):
         payload = list(GEOIP(**self.properties).iter_addresses('NL'))
         self.assertGreater(len(payload), 1000, 'GEO IP alias smaller than expected')
 
     def test_parse_arp(self):
-        # search a "random" mac address from our arp table
-        tmp = subprocess.run(['/usr/sbin/arp', '-n', '-a'], capture_output=True, text=True).stdout.strip()
+        # search a "random" mac address from the neighbour table (iproute2
+        # replaces the FreeBSD arp(8) utility on Debian)
+        tmp = subprocess.run(['/usr/sbin/ip', '-j', 'neigh'], capture_output=True, text=True).stdout.strip()
         mac = None
-        for line in tmp.split("\n"):
-            parts = line.split()
-            if len(parts) > 3 and parts[3].count(':') == 5:
-                mac = parts[3]
+        for entry in json.loads(tmp or '[]'):
+            lladdr = entry.get('lladdr', '')
+            if lladdr.count(':') == 5:
+                mac = lladdr
                 break
 
         payload = list(ArpCache(**self.properties).iter_addresses(mac))

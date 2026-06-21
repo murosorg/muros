@@ -17,15 +17,10 @@
 if [ -f /var/db/ipsecpinghosts ]; then
 	IPSECHOSTS="/var/db/ipsecpinghosts"
 	CURRENTIPSECHOSTS="/var/db/currentipsecpinghosts"
-	IFVPNSTATE=`ifconfig $IFVPN | grep "carp: BACKUP vhid" | wc -l`
-	if [ $IFVPNSTATE -gt 1 ]; then
-		echo -e "CARP interface in BACKUP (not pinging ipsec hosts)"
-		rm -f $CURRENTIPSECHOSTS
-		touch $CURRENTIPSECHOSTS
-	else
-		echo -e "CARP interface is MASTER or non CARP (pinging ipsec hosts)"
-		cat < $IPSECHOSTS > $CURRENTIPSECHOSTS
-	fi
+	# MurOS: CARP/VRRP high availability is not wired on Linux yet, so always
+	# behave as the active node and ping the configured IPsec hosts.
+	echo "Pinging ipsec hosts"
+	cat < $IPSECHOSTS > $CURRENTIPSECHOSTS
 fi
 
 # General file meant for user consumption
@@ -73,7 +68,7 @@ for TOPING in $PINGHOSTS ; do
 	if [ -f "/var/db/pingstatus/${DSTIP}" ]; then
 		PREVIOUSSTATUS=`cat /var/db/pingstatus/$DSTIP`
 	fi
-	$PINGCMD -c $COUNT -S $SRCIP $DSTIP
+	$PINGCMD -c $COUNT -I $SRCIP $DSTIP
 	if [ $? -eq 0 ]; then
 		# Host is up
 		if [ "$PREVIOUSSTATUS" != "UP" ]; then
@@ -99,7 +94,7 @@ for TOPING in $PINGHOSTS ; do
 	fi
 	echo "Checking ping time $DSTIP"
 	# Look at ping values themselves
-	PINGTIME=`$PINGCMD -c 1 -S $SRCIP $DSTIP | awk '{ print $7 }' | grep time | cut -d "=" -f2`
+	PINGTIME=`$PINGCMD -c 1 -I $SRCIP $DSTIP | awk '{ print $7 }' | grep time | cut -d "=" -f2`
 	echo "Ping returned $?"
 	echo $PINGTIME > /var/db/pingmsstatus/$DSTIP
 	if [ "$THRESHOLD" != "" ]; then
