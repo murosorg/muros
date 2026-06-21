@@ -84,7 +84,14 @@ function interfaces_loopback_configure($verbose = false)
 {
     service_log('Configuring loopback interface...', $verbose);
 
-    legacy_interface_setaddress('lo0', '127.0.0.1');
+    /*
+     * MurOS: the Linux kernel already configures the loopback device with
+     * 127.0.0.1/8 and ::1/128, so we must not add the address ourselves.
+     * Doing so (ifconfig lo0 inet 127.0.0.1 on FreeBSD) would translate to
+     * `ip address add 127.0.0.1 dev lo`, which iproute2 stores as a redundant
+     * 127.0.0.1/32 alongside the kernel's 127.0.0.1/8. We only need to keep
+     * the device up (idempotent) and apply any loopback VIPs the user defined.
+     */
     interfaces_vips_configure('lo0');
     legacy_interface_flags('lo0', 'up');
 
