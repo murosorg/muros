@@ -122,11 +122,20 @@ foreach ($cfg->interfaces->children() as $key => $node) {
     $gw4 = trim((string)$node->gateway);
     $ip6 = trim((string)$node->ipaddrv6);
     $sub6 = trim((string)$node->subnetv6);
+    $gw6 = trim((string)$node->gatewayv6);
     $mtu = trim((string)$node->mtu);
 
     /* Skip the kernel loopback device and any loopback addressing. */
     if ($dev === 'lo' || strncmp($ip4, '127.', 4) === 0 || $ip6 === '::1') {
         continue;
+    }
+
+    /* Resolve named gateways (e.g. LAN_GW) to their address. */
+    if ($gw4 !== '' && !filter_var($gw4, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+        $gw4 = isset($gwmap['inet'][$gw4]) ? $gwmap['inet'][$gw4] : '';
+    }
+    if ($gw6 !== '' && !filter_var($gw6, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
+        $gw6 = isset($gwmap['inet6'][$gw6]) ? $gwmap['inet6'][$gw6] : '';
     }
 
     $v4dhcp = ($ip4 === 'dhcp');
@@ -166,6 +175,9 @@ foreach ($cfg->interfaces->children() as $key => $node) {
     }
     if ($v4static && filter_var($gw4, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
         $lines[] = 'Gateway=' . $gw4;
+    }
+    if ($v6static && filter_var($gw6, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
+        $lines[] = 'Gateway=' . $gw6;
     }
     $lines[] = '';
 
