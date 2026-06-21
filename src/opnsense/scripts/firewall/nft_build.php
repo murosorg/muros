@@ -889,6 +889,16 @@ if ($cfg === false) {
 $ifaces = build_interfaces($cfg);
 $aliases = build_aliases($cfg);
 
+/* Default block logging. OPNsense logs packets that fall through to the
+ * default deny unless the operator clears the option (stored as
+ * syslog/nologdefaultblock). The logged drop is appended at the end of the
+ * input and forward chains so it runs after filter_rules returns, replacing
+ * the silent "policy drop". The "muros,block,default" prefix is what
+ * read_log.py turns into the firewall log viewer / dashboard widget records. */
+$default_block_drop = !isset($cfg->syslog->nologdefaultblock)
+    ? '        log prefix "muros,block,default " counter drop comment "default deny rule"'
+    : '        counter drop comment "default deny rule"';
+
 $rules = [];
 /* legacy <filter><rule> entries */
 if (isset($cfg->filter)) {
@@ -953,6 +963,7 @@ foreach ($martians as $m) {
     $out[] = $m;
 }
 $out[] = '        jump filter_rules';
+$out[] = $default_block_drop;
 $out[] = '    }';
 $out[] = '';
 $out[] = '    chain forward {';
@@ -966,6 +977,7 @@ foreach ($nat['passes'] as $p) {
     $out[] = $p;
 }
 $out[] = '        jump filter_rules';
+$out[] = $default_block_drop;
 $out[] = '    }';
 $out[] = '';
 $out[] = '    chain output {';

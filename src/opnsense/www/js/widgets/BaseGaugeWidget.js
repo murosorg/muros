@@ -80,10 +80,10 @@ class BaseGaugeWidget extends BaseWidget {
             options: {
                 responsive: true,
                 maintainAspectRatio: true,
-                aspectRatio: 2,
-                cutout: '60%',
-                rotation: 270,
-                circumference: 180,
+                aspectRatio: 1.3,
+                cutout: '62%',
+                rotation: 225,
+                circumference: 270,
                 plugins: {
                     colorschemes: false,
                     legend: {
@@ -108,7 +108,7 @@ class BaseGaugeWidget extends BaseWidget {
                         let ctx = chart.ctx;
                         ctx.restore();
 
-                        let divisor = 60;
+                        let divisor = 90;
                         let primaryText = _options.primaryText(data, chart);
                         let secondaryText = _options.secondaryText(data, chart);
 
@@ -118,18 +118,18 @@ class BaseGaugeWidget extends BaseWidget {
                         ctx.fillStyle = Chart.defaults.color;
 
                         let textX = Math.round((width - ctx.measureText(primaryText).width) / 2);
-                        let textY = (height * (secondaryText ? 0.70 : 0.75));
+                        let textY = (height * (secondaryText ? 0.52 : 0.58));
 
                         ctx.fillText(primaryText, textX, textY);
 
                         if (secondaryText) {
-                            fontSize = (height / 90).toFixed(2);
+                            fontSize = (height / 135).toFixed(2);
                             ctx.font = fontSize + "em " + bodyFamily;
                             ctx.textBaseline = "middle";
                             ctx.fillStyle = Chart.defaults.color;
 
                             let textBX = Math.round((width - ctx.measureText(secondaryText).width) / 2);
-                            let textBY = height * 0.90;
+                            let textBY = height * 0.68;
                             ctx.fillText(secondaryText, textBX, textBY);
                         }
 

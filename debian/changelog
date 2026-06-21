@@ -1,3 +1,21 @@
+muros (0.9.34) trixie; urgency=medium
+
+  * Firewall dashboard widget / log viewer: populate them with default block
+    traffic. The input and forward chains relied on the nftables "policy drop"
+    to discard unmatched packets, which never logs, so the firewall log was
+    permanently empty. nft_build.php now appends an explicit logged drop ("log
+    prefix muros,block,default") at the end of both chains, honouring the
+    syslog/nologdefaultblock option exactly like the legacy filter did. Blocked
+    traffic now shows up in the firewall log viewer and the dashboard widget.
+
+  * Dashboard memory and disk gauges: enlarge them. The half doughnut capped its
+    radius at half the cell width, leaving the lower half of the widget empty and
+    the readout cramped. BaseGaugeWidget now draws a 270 degree gauge that uses
+    the cell height too, with the value and detail text centred in the ring, so
+    the gauges read clearly without changing the widget footprint.
+
+ -- MurOS <dev@muros.org>  Sun, 21 Jun 2026 09:05:00 +0000
+
 muros (0.9.33) trixie; urgency=medium
 
   * Dashboard live widgets: fix the CPU, network traffic and firewall log graphs
