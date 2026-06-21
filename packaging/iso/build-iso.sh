@@ -454,6 +454,14 @@ cp -a "${OFFLINE_DIR}/pool/." "${EXTRACT}/muros/pool/"
 # The offline post-install script invoked by preseed/late_command.
 cp "${HERE}/late_command.sh" "${EXTRACT}/muros/late_command.sh"
 chmod +x "${EXTRACT}/muros/late_command.sh"
+# Ship the chosen root password next to it so late_command can seed the same
+# credential into config.xml (web UI) as the one the preseed sets in
+# /etc/shadow (console/SSH). Written as a sidecar file rather than substituted
+# into the script so passwords with shell/sed metacharacters are handled safely.
+# The file lives on the read-only install media only; it is never copied to the
+# installed system.
+printf '%s' "${ROOT_PASSWORD}" > "${EXTRACT}/muros/root_password"
+chmod 0600 "${EXTRACT}/muros/root_password"
 # Stage the signed-repo keyring so the INSTALLED system can register
 # download.muros.org and receive MurOS updates online (the install itself
 # stays fully offline, late_command just copies this file into the
