@@ -28,13 +28,12 @@ REQUEST="CLEANUP"
 
 . /usr/local/opnsense/scripts/firmware/config.sh
 
-output_txt ">>> Removing unused packages from system"
-output_cmd ${PKG} autoremove -y
+export DEBIAN_FRONTEND=noninteractive
 
-output_txt ">>> Removing stale update files from system"
-output_cmd opnsense-update -F
+output_txt ">>> Removing unused packages from system"
+output_cmd apt-get autoremove -y
 
 output_txt ">>> Removing package files from cache"
-output_cmd ${PKG} clean -ya
+output_cmd apt-get clean
 
 output_done

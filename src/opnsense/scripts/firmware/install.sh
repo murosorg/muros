@@ -31,20 +31,10 @@ REQUEST="INSTALL"
 
 PACKAGE=${1}
 
-if [ "${PACKAGE#os-}" != "${PACKAGE}" ]; then
-	COREPKG=$(opnsense-version -n)
-	COREVER=$(opnsense-version -v)
-	REPOVER=$(${PKG} rquery %v ${COREPKG})
+export DEBIAN_FRONTEND=noninteractive
 
-	# plugins must pass a version check on up-to-date core package
-	if [ "$(${PKG} version -t ${COREVER} ${REPOVER})" = "<" ]; then
-		output_txt "Installation out of date. The update to ${COREPKG}-${REPOVER} is required."
-		output_done
-	fi
-fi
-
-output_cmd ${PKG} install -y "${PACKAGE}"
+output_cmd apt-get install -y "${PACKAGE}"
 output_cmd ${BASEDIR}/register.php install "${PACKAGE}"
-output_cmd ${PKG} autoremove -y
+output_cmd apt-get autoremove -y
 
 output_done

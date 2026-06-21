@@ -173,7 +173,7 @@ function webgui_configure_do($verbose = false, $interface_map = null)
     killbypid('/var/run/lighty-webConfigurator.pid', 'INT');
 
     /* start lighttpd (the flock may be overkill but this has always been fragile so keep it) */
-    if (mwexecf('/usr/local/bin/flock -ne /var/run/lighty-webConfigurator.pid /usr/local/sbin/lighttpd -f %s/lighttpd.conf', [$confdir])) {
+    if (mwexecf('/usr/bin/flock -ne /var/run/lighty-webConfigurator.pid /usr/local/sbin/lighttpd -f %s/lighttpd.conf', [$confdir])) {
         service_log("failed.\n", $verbose);
     } else {
         service_log("done.\n", $verbose);

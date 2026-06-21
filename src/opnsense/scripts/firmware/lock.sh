@@ -31,14 +31,15 @@ REQUEST="LOCK"
 
 PACKAGE=${1}
 
+# pkg lock has no set concept on Debian; apt-mark hold pins a package version
 if [ "${PACKAGE}" = "base" ]; then
-	output_txt "Locking base set"
-	output_cmd opnsense-update -bL
+	output_txt "Holding base system package"
+	output_cmd apt-mark hold "$(opnsense-version -n)"
 elif [ "${PACKAGE}" = "kernel" ]; then
-	output_txt "Locking kernel set"
-	output_cmd opnsense-update -kL
+	output_txt "Holding kernel package"
+	output_cmd apt-mark hold linux-image-amd64
 else
-	output_cmd ${PKG} lock -y "${PACKAGE}"
+	output_cmd apt-mark hold "${PACKAGE}"
 fi
 
 output_done
