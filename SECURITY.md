@@ -1,24 +1,22 @@
 # Security Policy
 
-More details about our security policy can be found in our documentation
-here https://docs.opnsense.org/security.html
+MurOS is a network firewall, so security reports are taken seriously.
 
-## Supported Versions
+## Supported versions
 
-OPNsense is a security platform which is released on regular intervals. In
-order to find the latest still supported version, please visit https://docs.opnsense.org/releases.html
+MurOS is in beta and is delivered as a rolling Debian package from the signed
+apt repository at https://download.muros.org . Security fixes are published as
+new package versions; always run the latest release:
 
-For both the community and business edition only the last published major
-branches are supported in terms of security updates. Major versions will be
-released every 6 months using the following scheme:
+    apt update && apt install --only-upgrade muros
 
-* XX.1	- January release Community
-* XX.4	- April release Business
-* XX.7	- July release Community
-* XX.10	- October release Business
+Only the most recent published version is supported for security updates.
 
-Where XX equals the year (e.g. 23 for 2023)
+## Reporting a vulnerability
 
-## Reporting a Vulnerability
+Please report suspected vulnerabilities privately rather than opening a public
+issue. Use the security advisory feature on the project repository, or contact
+the maintainers, and include enough detail to reproduce the problem.
 
-Please check https://docs.opnsense.org/security.html#reporting-an-incident
+Vulnerabilities inherited from upstream OPNsense or from bundled third-party
+software should also be reported to the relevant upstream project.

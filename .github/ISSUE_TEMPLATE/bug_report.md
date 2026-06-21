@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Create a report to help us improve OPNsense
+about: Create a report to help us improve MurOS
 title: ''
 labels: ''
 assignees: ''
@@ -9,14 +9,14 @@ assignees: ''
 
 Before you add a new report, we ask you kindly to acknowledge the following:
 
-- [ ] I have read the contributing guidelines at https://github.com/opnsense/core/blob/master/CONTRIBUTING.md
-- [ ] I am convinced that my issue is new after having checked both open and closed issues at https://github.com/opnsense/core/issues?q=is%3Aissue
+- [ ] I have read the contributing guidelines in CONTRIBUTING.md
+- [ ] I am convinced that my issue is new after checking both open and closed issues
+- [ ] The problem is specific to MurOS on Debian and not an upstream OPNsense issue
 
 **Describe the bug**
 
-A clear and concise description of what the bug is, including the last known working version (if any).
-
-*Tip*: to validate your setup was working with the previous version, use opnsense-revert (https://docs.opnsense.org/manual/opnsense_tools.html#opnsense-revert)
+A clear and concise description of what the bug is, including the last known
+working MurOS version (if any).
 
 **To Reproduce**
 
@@ -40,7 +40,8 @@ If applicable, add screenshots to help explain your problem.
 
 **Relevant log files**
 
-If applicable, information from log files supporting your claim.
+If applicable, output from journald, the firewall log, or the nft ruleset
+(`nft list ruleset`) supporting your claim.
 
 **Additional context**
 
@@ -48,8 +49,8 @@ Add any other context about the problem here.
 
 **Environment**
 
-Software version used and hardware type if relevant, e.g.:
+MurOS version and hardware type if relevant, e.g.:
 
-OPNsense 23.7.8 (amd64).
-Intel® Xeon™ E3-1225V5 3.3Ghz Quad Core
-Network Intel® I210-AT
+MurOS 0.9.28 (amd64) on Debian 13.
+Intel Xeon E3-1225V5 Quad Core
+Network Intel I210-AT
