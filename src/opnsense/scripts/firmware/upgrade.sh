@@ -29,17 +29,20 @@ REQUEST="UPGRADE"
 
 . /usr/local/opnsense/scripts/firmware/config.sh
 
-if output_cmd opnsense-update -u; then
+# A FreeBSD-style major release jump (opnsense-update -u) has no Debian
+# equivalent: MurOS tracks a Debian release, so a major upgrade is a full
+# dist-upgrade followed by autoremoval of obsolete packages. Maintainer hooks
+# run through rc.syshook so plugins can migrate their state.
+export DEBIAN_FRONTEND=noninteractive
+APT_OPTS="-o Dpkg::Use-Pty=0 -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold"
+
+if output_cmd apt-get -o Dpkg::Use-Pty=0 update && output_cmd apt-get -y ${APT_OPTS} dist-upgrade; then
+	output_cmd apt-get -y ${APT_OPTS} --purge autoremove
 	if output_cmd /usr/local/etc/rc.syshook upgrade; then
-		# pending kernel applies before reboot
-		if output_cmd opnsense-update -K -c; then
-			output_cmd opnsense-update -K
-		fi
 		output_reboot keep-log
 	fi
-
+else
 	output_txt "The upgrade was aborted due to an error."
-	output_cmd opnsense-update -es
 fi
 
 output_done keep-log
