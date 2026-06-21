@@ -1,118 +1,97 @@
-OPNsense GUI and system management
-==================================
+MurOS
+=====
 
-The OPNsense project invites developers to start contributing to
-the code base.  For your own purposes or – even better – to join us in
-creating the best open source firewall available.
+A web-managed open source firewall, rebuilt on Debian Linux.
 
-The build process has been designed to make it easy for anyone to
-build and write code.  The main outline of the new codebase is
-available at:
+MurOS is a fork of OPNsense that does more than swap an operating system.
+The whole platform has been re-engineered to run natively on Debian 13: the
+firewall data plane, the service supervisor, the package layer and the network
+stack are all reworked around Linux primitives while keeping the OPNsense web
+interface, configuration model and feature set that people already know.
 
-https://docs.opnsense.org/development/architecture.html
+What changes under the hood
+---------------------------
 
-Our aim is to gradually evolve to a new codebase instead of using a
-big bang approach into something new.
+The FreeBSD foundations of OPNsense are replaced with their Linux counterparts:
 
-<a href="https://scan.coverity.com/projects/opnsense-core">
-  <img alt="Coverity Scan Build Status"
-       src="https://scan.coverity.com/projects/26974/badge.svg"/>
-</a>
+* Packet filtering moves from pf to nftables. The ruleset (filter, NAT,
+  anti-lockout, logging) is generated from the same configuration and loaded
+  through nft.
+* Firewall state and connection tracking move from the pf state table to
+  netfilter conntrack.
+* Service supervision moves from rc and the FreeBSD init system to systemd
+  units, with configd still acting as the control plane behind the web UI.
+* The data plane moves from ifconfig and route to iproute2 (addresses, VLANs,
+  bridges, lagg, tunnels, WireGuard, routing), with systemd-networkd handling
+  declarative interface configuration and boot persistence.
+* Software delivery moves from pkg and opnsense-update to apt and dpkg, served
+  from a signed Debian repository.
+* Logging moves from pflog to nftables log targets read back through journald.
 
-Build tools
-===========
+The goal is not a temporary compatibility shim. Each subsystem is ported in
+place so MurOS behaves like a first-class Linux firewall rather than a FreeBSD
+appliance running elsewhere.
 
-To create working software like OPNsense you need the sources and the
-tools to build it.  The build tools for OPNsense are freely available.
+Status
+------
 
-Notes on how to build OPNsense can be found in the tools repository:
+MurOS is in beta. Stateful filtering, NAT, routing, multi-WAN gateway
+monitoring, DHCP client WAN, the live firewall log, health graphs, packet
+capture, diagnostics, the serial console and network hardening already run
+natively on Linux. VPN service lifecycle, high availability, the DHCP and
+recursive DNS server backends are still being ported. See the changelog and
+feature pages on https://muros.org for the current state.
 
-https://github.com/opnsense/tools
+Install
+-------
+
+Two supported paths, both documented at https://muros.org :
+
+Installer ISO (appliance):
+
+    https://download.muros.org/iso/muros-installer-amd64.iso
+
+On top of an existing Debian 13 system:
+
+    curl -fsSL https://download.muros.org/install.sh | sudo bash
+
+Then open https://<address>/ and log in with root / muros. Update later with:
+
+    apt update && apt install --only-upgrade muros
+
+Build from source
+-----------------
+
+MurOS keeps the OPNsense source layout. The Linux packaging lives under
+debian/, and a Debian package is built with the standard tooling:
+
+    dpkg-buildpackage -b -us -uc
+
+The Makefile targets inherited from OPNsense (lint, style, sweep) remain useful
+for working on the PHP MVC and Python code:
+
+    make lint
+    make style
+
+The web interface combines legacy PHP pages with a Phalcon MVC application; the
+backend control plane is the configd daemon driving the ported Python and shell
+actions. The architecture is described at https://muros.org/docs .
 
 Contribute
-==========
+----------
 
-You can contribute to the project in many ways, e.g. testing
-functionality, sending in bug reports or creating pull requests
-directly via GitHub.  Any help is always very welcome!
-
-You can learn more about contributing on [CONTRIBUTING.md](./CONTRIBUTING.md).
+Issues and pull requests are welcome. See [CONTRIBUTING.md](./CONTRIBUTING.md)
+for how to report a problem or propose a change.
 
 License
-=======
+-------
 
-OPNsense is and will always be available under the 2-Clause BSD license:
+MurOS is distributed under the 2-Clause BSD license, the same terms as the
+OPNsense code it is based on:
 
 https://opensource.org/licenses/BSD-2-Clause
 
-Every contribution made to the project must be licensed under the
-same conditions in order to keep OPNsense truly free and accessible
+OPNsense is a registered trademark of Deciso B.V. MurOS is an independent fork
+and is not affiliated with or endorsed by Deciso B.V. Every contribution to
+MurOS must be licensed under the same terms to keep the project free and open
 for everybody.
-
-Makefile targets
-================
-
-The repository offers a couple of targets that either tie into
-tools.git build processes or are aimed at fast development.
-
-make package
-------------
-
-A package of the current state of the repository can be created using
-this target.  It may require several packages to be installed.  The
-target will try to assist in case of failure, e.g. when a missing file
-needs to be fetched from an external location.
-
-Several OPTIONS exist to customise the package, e.g.:
-
-* CORE_DEPENDS: a list of required dependencies for the package
-* CORE_DEPENDS_ARCH: a list of special <ARCH>-required packages
-* CORE_ORIGIN: sets a FreeBSD compatible package/ports origin
-* CORE_COMMENT: a short description of the package
-* CORE_MAINTAINER: email of the package maintainer
-* CORE_WWW: web url of the package
-* CORE_NAME: sets a package name
-
-Options are passed in the following form:
-
-    # make package CORE_NAME=my_new_name
-
-In general, options are either set to sane defaults or automatically
-detected at runtime.
-
-make update
------------
-
-Update will pull the latest commits from the current branch from the
-upstream repository.
-
-make upgrade
-------------
-
-Upgrade will run the package build and replace the currently installed
-package in the system.
-
-make collect
-------------
-
-Fetch changes from the running system for all known files.
-
-make lint
----------
-
-Run several syntax checks on the repository.  This is recommended
-before issuing a pull request on GitHub.
-
-make style
-----------
-
-Run the PSR12 and PEP8 style checks on MVC PHP code and Python,
-respectively.
-
-For easier development you may want to use an OPNsense VM and install
-the `os-debug` plugin that will offer the necessary tools.
-
-make sweep
-----------
-
-Run several automatic sanitizers on the code base.

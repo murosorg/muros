@@ -63,7 +63,6 @@ function dnsmasq_services()
     $pconfig['description'] = gettext('Dnsmasq DNS/DHCP');
     $pconfig['php']['restart'] = ['dnsmasq_configure_do'];
     $pconfig['php']['start'] = ['dnsmasq_configure_do'];
-    $pconfig['configd']['stop'] = ['dnsmasq stop'];
     $pconfig['pidfile'] = '/var/run/dnsmasq.pid';
     $services[] = $pconfig;
 
@@ -167,8 +166,9 @@ function dnsmasq_configure_do($verbose = false)
 {
     global $config;
 
+    /* stop the lease watcher and the running daemon (both write their own pid) */
     killbypid('/var/run/dnsmasq_dhcpd.pid');
-    mwexecfm('/usr/local/etc/rc.d/dnsmasq stop');
+    killbypid('/var/run/dnsmasq.pid');
 
     if (!dnsmasq_enabled()) {
         return;
@@ -180,7 +180,8 @@ function dnsmasq_configure_do($verbose = false)
 
     configd_run('template reload OPNsense/Dnsmasq');
 
-    mwexecf('/usr/local/etc/rc.d/dnsmasq start');
+    /* dnsmasq daemonizes itself and writes its pid file (set in dnsmasq.conf) */
+    mwexecf('/usr/local/sbin/dnsmasq -C %s', ['/usr/local/etc/dnsmasq.conf']);
 
     if (!empty($config['dnsmasq']['regdhcp'])) {
         /* XXX: deprecate when moving ISC to plugins ? */
