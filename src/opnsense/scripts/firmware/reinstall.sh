@@ -31,30 +31,24 @@ REQUEST="REINSTALL"
 
 PACKAGE=${1}
 
+export DEBIAN_FRONTEND=noninteractive
+
+# opnsense-revert restored a package to the exact repo build; on Debian the
+# equivalent is a forced reinstall of the same version from apt.
 if [ "${PACKAGE}" = "base" ]; then
-	if opnsense-update -Tb; then
-		# force reinstall intended
-		if output_cmd opnsense-update -bf; then
-			output_reboot
-		fi
-	else
-		# for locked message only
-		output_cmd opnsense-update -b
+	output_txt "Reinstalling base system package"
+	if output_cmd apt-get install --reinstall -y "$(opnsense-version -n)"; then
+		output_reboot
 	fi
 elif [ "${PACKAGE}" = "kernel" ]; then
-	if opnsense-update -Tk; then
-		# force reinstall intended
-		if output_cmd opnsense-update -kf; then
-			output_reboot
-		fi
-	else
-		# for locked message only
-		output_cmd opnsense-update -k
+	output_txt "Reinstalling kernel package"
+	if output_cmd apt-get install --reinstall -y linux-image-amd64; then
+		output_reboot
 	fi
 else
-	output_cmd opnsense-revert -l "${PACKAGE}"
+	output_cmd apt-get install --reinstall -y "${PACKAGE}"
 	output_cmd ${BASEDIR}/register.php install "${PACKAGE}"
-	output_cmd ${PKG} autoremove -y
+	output_cmd apt-get autoremove -y
 fi
 
 output_done

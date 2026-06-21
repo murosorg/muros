@@ -168,30 +168,14 @@ if [ -n "${REQUEST}" ]; then
 fi
 
 # initialize environment to operate in
+#
+# On FreeBSD this forced strict TLS 1.3 and refreshed CRL files for libfetch
+# against the business mirror. apt manages its own transport security and
+# trust store on Debian, so there is nothing to prepare here; the hook stays
+# as a no-op so the command dispatch loop below keeps working.
 env_init()
 {
-	if [ -n "$(opnsense-update -x)" -o -e /var/run/development ]; then
-		if [ -n "${REQUEST}" ]; then
-			output_txt "Strict TLS 1.3 and CRL checking is enabled."
-		fi
-
-		# business mirror compliance requires
-		# disabling the use of TLS below 1.3
-		export SSL_NO_TLS1="yes"
-		export SSL_NO_TLS1_1="yes"
-		export SSL_NO_TLS1_2="yes"
-
-		# refresh CRL files for libfetch consumption...
-		HOSTS=$(/usr/local/opnsense/scripts/firmware/hostnames.sh)
-		if /usr/local/opnsense/scripts/system/update-crl-fetch.py ${HOSTS} vuxml.freebsd.org; then
-			/usr/local/opnsense/scripts/system/certctl.py rehash
-		fi
-
-		# ...and then tell libfetch to verify from trust store
-		export SSL_CA_CERT_PATH="/etc/ssl/certs"
-		export SSL_CRL_OPTIONAL="yes"
-		export SSL_CRL_VERIFY="yes"
-	fi
+	:
 }
 
 for COMMAND in ${COMMANDS}; do
