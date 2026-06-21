@@ -43,7 +43,7 @@ set_check()
 	SET=${1}
 
 	if [ "${SET}" = "kernel" ]; then
-		PKGNAME=$(dpkg-query -W -f='${Package}\n' 'linux-image-[0-9]*' 2>/dev/null | tail -n 1)
+		PKGNAME=$(dpkg-query -W -f='${db:Status-Abbrev} ${Package}\n' 'linux-image-*' 2>/dev/null | awk '$1 == "ii" && $2 ~ /^linux-image-[0-9]/ { print $2 }' | tail -n 1)
 		[ -z "${PKGNAME}" ] && PKGNAME=linux-image-amd64
 	else
 		PKGNAME=${CORE}
@@ -102,7 +102,7 @@ core_check()
 			output_txt -n "."
 		fi
 
-		if ! dpkg-query -W -f='${Status}' "${DEP}" 2>/dev/null | grep -q 'install ok installed'; then
+		if [ -z "$(dpkg-query -W -f='${Version}' "${DEP}" 2>/dev/null)" ]; then
 			[ -n "${PROGRESS}" ] && output_txt
 			output_txt "Package not installed: ${DEP}"
 			PROGRESS=
@@ -136,7 +136,7 @@ fi
 
 if [ -z "${CMD}" -o "${CMD}" = "plugins" ]; then
 	output_txt ">>> Check installed plugins"
-	PLUGINS=$(dpkg-query -W -f='${Package} ${Version}\n' 'os-*' 2>/dev/null)
+	PLUGINS=$(dpkg-query -W -f='${db:Status-Abbrev} ${Package} ${Version}\n' 'os-*' 2>/dev/null | awk '$1 == "ii" { print $2, $3 }')
 	if [ -n "${PLUGINS}" ]; then
 		output_txt "${PLUGINS}"
 	else
