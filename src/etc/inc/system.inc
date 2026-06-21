@@ -912,12 +912,18 @@ function system_syslog_start($verbose = false)
     mwexecf('/usr/local/opnsense/scripts/syslog/generate_certs.php');
 
     $last_version = @file_get_contents('/var/run/syslog-ng.version');
-    $this_version = shell_safe('syslog-ng -V | sha256');
+    $this_version = shell_safe('syslog-ng -V | sha256sum');
 
     if (isvalidpid('/var/run/syslog-ng.pid') && $last_version == $this_version) {
         mwexecf('/usr/local/sbin/syslog-ng-ctl reload');
     } else {
-        mwexecf('/usr/local/etc/rc.d/syslog-ng restart');
+        /* full restart: stop the running daemon, then relaunch it. syslog-ng
+           daemonizes itself; pin the pid file so the service layer can track it. */
+        killbypid('/var/run/syslog-ng.pid');
+        mwexecf('/usr/local/sbin/syslog-ng -f %s --pidfile %s', [
+            '/usr/local/etc/syslog-ng.conf',
+            '/var/run/syslog-ng.pid',
+        ]);
     }
 
     file_put_contents('/var/run/syslog-ng.version', $this_version);
