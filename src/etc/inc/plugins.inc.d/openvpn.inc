@@ -202,7 +202,7 @@ function openvpn_get_protocols()
 
 function openvpn_create_key()
 {
-    $fp = popen("/usr/local/sbin/openvpn --genkey secret /dev/stdout 2>/dev/null", "r");
+    $fp = popen("/usr/sbin/openvpn --genkey secret /dev/stdout 2>/dev/null", "r");
     if (!$fp) {
         return false;
     }
@@ -293,7 +293,7 @@ function openvpn_get_cipherlist()
 {
     $ciphers = ['' => gettext('None')];
 
-    foreach (shell_safe('/usr/local/sbin/openvpn --show-ciphers', [], true) as $line) {
+    foreach (shell_safe('/usr/sbin/openvpn --show-ciphers', [], true) as $line) {
         if (strstr($line, '  (') !== false) {
             $cipher = explode(' ', $line)[0];
             $ciphers[$cipher] = $line;
@@ -309,7 +309,7 @@ function openvpn_get_digestlist()
 {
     $digests = [];
 
-    foreach (shell_safe('/usr/local/sbin/openvpn --show-digests', [], true) as $line) {
+    foreach (shell_safe('/usr/sbin/openvpn --show-digests', [], true) as $line) {
         if (strstr($line, 'digest size') !== false) {
             $digest = explode(' ', $line)[0];
             $bits = explode(' ', explode('bit', $line)[0])[1];
@@ -949,7 +949,7 @@ function openvpn_restart($mode, $settings, $carp_event = false)
 
     openvpn_clear_route($mode, $settings);
 
-    if (!mwexecf('/usr/local/sbin/openvpn --config %s', "/var/etc/openvpn/{$mode_id}.conf")) {
+    if (!mwexecf('/usr/sbin/openvpn --config %s', "/var/etc/openvpn/{$mode_id}.conf")) {
         $pid = waitforpid("/var/run/openvpn_{$mode_id}.pid", 10);
         if ($pid) {
             log_msg(sprintf('OpenVPN %s %s instance started on PID %s.', $mode, $vpnid, $pid));

@@ -29,6 +29,23 @@ muros (0.9.33) trixie; urgency=medium
 
  -- MurOS <dev@muros.org>  Sun, 21 Jun 2026 08:55:00 +0000
 
+muros (0.9.34) trixie; urgency=medium
+
+  * OpenVPN: use the Debian binary path /usr/sbin/openvpn instead of the
+    FreeBSD /usr/local/sbin/openvpn for key generation, cipher/digest listing
+    and the instance start path. The daemon start and tun/tap handling were
+    already iproute2 native. Validated on Debian: openvpn 2.6.14 starts from a
+    generated config and opens the tun device.
+  * Packaging: promote openvpn and wireguard-tools from Suggests to Recommends
+    so the now ported WireGuard and OpenVPN stacks are installed by default.
+    WireGuard was validated end to end on Debian (ip link add type wireguard,
+    wg syncconf, address and route setup, interface up).
+  * Note: OpenVPN 2.6 on OpenSSL 3 no longer ships the legacy BF-CBC cipher, so
+    generated instance configurations must always set a modern cipher (the
+    OPNsense model already does).
+
+ -- MurOS <dev@muros.org>  Sun, 21 Jun 2026 09:05:00 +0000
+
 muros (0.9.33) trixie; urgency=medium
 
   * Captive portal: make the nftables enforcement survive a firewall reload.
