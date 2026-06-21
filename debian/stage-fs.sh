@@ -105,6 +105,12 @@ mimetype.assign = ( ".html"=>"text/html",".htm"=>"text/html",".css"=>"text/css",
 alias.url += ( "/ui/" => "/usr/local/opnsense/www/", "/api/" => "/usr/local/opnsense/www/" )
 url.rewrite-if-not-file = ( "^/ui/([^\?]+)(\?(.*))?" => "/ui/index.php?$3", "^/api/([^\?]+)(\?(.*))?" => "/api/api.php?$3" )
 fastcgi.server = ( ".php" => ( "localhost" => ( "socket" => "/run/php/php8.4-fpm.sock", "broken-scriptfilename" => "enable" ) ) )
+# Pass FastCGI output straight through for the API. The dashboard live widgets
+# (CPU, traffic, firewall log) are server-sent event streams that never reach
+# EOF, so the response body must not be buffered or they would never start.
+$HTTP["url"] =~ "^/api/" {
+  server.stream-response-body = 2
+}
 $SERVER["socket"] == ":443" {
   ssl.engine = "enable"
   ssl.pemfile = "/usr/local/etc/muros/server.crt"

@@ -20,6 +20,17 @@ import json
 import os
 import subprocess
 
+
+def with_unit(value):
+    """coreutils df -h prints a bare "0" for an empty column, while the
+    FreeBSD libxo output this structure mimics always carries a unit (e.g.
+    "0B"). Append a byte unit to unit-less numbers so downstream consumers
+    that parse a "<number><unit>" pair keep working."""
+    if value and value[-1].isdigit():
+        return value + 'B'
+    return value
+
+
 if __name__ == '__main__':
     filesystems = []
     env = dict(os.environ, LC_ALL='C', LANG='C')
@@ -31,9 +42,9 @@ if __name__ == '__main__':
         filesystems.append({
             'name': parts[0],
             'type': parts[1],
-            'blocks': parts[2],
-            'used': parts[3],
-            'available': parts[4],
+            'blocks': with_unit(parts[2]),
+            'used': with_unit(parts[3]),
+            'available': with_unit(parts[4]),
             'used-percent': parts[5].rstrip('%'),
             'mounted-on': parts[6],
         })
