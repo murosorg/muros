@@ -30,20 +30,49 @@ namespace OPNsense\RRD\Stats;
 
 class Mbuf extends Base
 {
+    /**
+     * MurOS: FreeBSD exposes network packet buffers as mbuf clusters via
+     * `netstat -m`. The Linux equivalent of an mbuf is the socket buffer
+     * (sk_buff), allocated from the skbuff slab caches. We read the active and
+     * total object counts of those caches from /proc/slabinfo and keep the
+     * existing datasets so the graph stays meaningful:
+     *   current = sk_buffs currently in use
+     *   total   = sk_buffs allocated (in use + free in the slab)
+     *   cache   = allocated but free (total - current)
+     *   max     = same as total; the kernel has no fixed mbuf ceiling here
+     */
     public function run()
     {
-        foreach ($this->shellCmd('/usr/bin/netstat -m') as $line) {
-            if (strpos($line, 'mbuf clusters in use') !== false) {
-                $tmp = explode('/', explode(' ', $line)[0]);
-                return [
-                    'current' => $tmp[0],
-                    'cache' => $tmp[1],
-                    'total' => $tmp[2],
-                    'max' => $tmp[3]
-                ];
-            }
+        $active = 0;
+        $num = 0;
+        $found = false;
+
+        $slabinfo = @file('/proc/slabinfo', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        if ($slabinfo === false) {
+            return [];
         }
 
-        return [];
+        /* Match every sk_buff slab cache; names vary across kernels
+         * (skbuff_head_cache, skbuff_fclone_cache, skbuff_small_head, ...). */
+        foreach ($slabinfo as $line) {
+            $parts = preg_split('/\s+/', trim($line));
+            if (count($parts) < 3 || strpos($parts[0], 'skbuff') !== 0) {
+                continue;
+            }
+            $active += (int)$parts[1];
+            $num += (int)$parts[2];
+            $found = true;
+        }
+
+        if (!$found) {
+            return [];
+        }
+
+        return [
+            'current' => $active,
+            'cache' => max(0, $num - $active),
+            'total' => $num,
+            'max' => $num,
+        ];
     }
 }
