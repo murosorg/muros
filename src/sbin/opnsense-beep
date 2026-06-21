@@ -64,7 +64,7 @@ if [ ! -f "${BEEPFILE}" ]; then
 fi
 
 (
-	if /usr/local/bin/flock 9; then
+	if /usr/bin/flock 9; then
 		cat "${BEEPFILE}" | while read NOTE DURATION; do
 			/usr/local/bin/beep -p "${NOTE}" "${DURATION}"
 		done

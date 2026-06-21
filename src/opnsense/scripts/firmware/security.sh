@@ -28,6 +28,20 @@ REQUEST="AUDIT SECURITY"
 
 . /usr/local/opnsense/scripts/firmware/config.sh
 
-output_cmd ${PKG} audit -F
+export DEBIAN_FRONTEND=noninteractive
+
+output_cmd apt-get -o Dpkg::Use-Pty=0 update
+
+# Debian has no pkg-audit; surface packages with a pending security update
+SEC=$(apt-get -s -o Dpkg::Use-Pty=0 upgrade 2>/dev/null | awk '/^Inst / && /[Ss]ecurity/{print $2}')
+if [ -n "${SEC}" ]; then
+	COUNT=$(printf '%s\n' "${SEC}" | wc -l | tr -d ' ')
+	output_txt "${COUNT} problem(s) in installed package(s) found."
+	for P in ${SEC}; do
+		output_txt "  ${P} is affected by a pending security update"
+	done
+else
+	output_txt "0 problem(s) in installed package(s) found."
+fi
 
 output_done

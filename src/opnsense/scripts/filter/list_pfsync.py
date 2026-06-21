@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!/usr/bin/python3
 
 """
     Copyright (c) 2015-2022 Ad Schellevis <ad@opnsense.org>
@@ -26,29 +26,56 @@
     POSSIBILITY OF SUCH DAMAGE.
 
     --------------------------------------------------------------------------------------
-    list pfsync info
-    - nodes (unique creator id's from states)
+    List state-synchronisation peers.
+
+    On FreeBSD this read the pf state table through pfctl, where every synced
+    state carried the creator id of the node that owned it (pfsync). On Debian
+    the equivalent is conntrackd: peers exchange connection tracking state and
+    `conntrackd -s` reports the number of entries received from each peer.
+    When conntrackd is not installed or not configured (the default, no high
+    availability), the node list is simply empty. The local host id is derived
+    from the stable machine id so the GUI can still flag the local node.
 """
+import os
+import shutil
 import subprocess
-import sys
 import ujson
 
-if __name__ == '__main__':
-    result = {'nodes': {}, 'hostid': None}
-    for line in subprocess.run(['/sbin/pfctl', '-s', 'info', '-v'], capture_output=True, text=True).stdout.split('\n'):
-        if line.find('Hostid:') == 0:
-            result['hostid'] = line.split()[-1][2:]
-    sp = subprocess.run(['/sbin/pfctl', '-s', 'state', '-vv'], capture_output=True)
-    data = sp.stdout.decode().strip()
-    if data.count('\n') > 2:
-        for line in data.split('\n'):
-            if line.find('creatorid:') > -1:
-                creatorid = line.split('creatorid:')[1].strip().split()[0]
-                if creatorid not in result['nodes']:
-                    result['nodes'][creatorid] = {
-                        'creatorid': creatorid,
-                        'this': 1 if result['hostid'] == creatorid else 0
-                    }
 
-    result['nodes'] = list(result['nodes'].values())
+def local_hostid():
+    """ stable per-host identifier, mirroring the old pf 'Hostid' field """
+    for path in ('/etc/hostid', '/etc/machine-id'):
+        try:
+            with open(path) as fh:
+                value = fh.read().strip()
+                if value:
+                    return value[:8]
+        except OSError:
+            continue
+    return None
+
+
+def conntrackd_nodes():
+    """ parse `conntrackd -s` for synchronisation peers, if available """
+    nodes = []
+    binary = shutil.which('conntrackd')
+    if binary is None or not os.path.exists('/etc/conntrackd/conntrackd.conf'):
+        return nodes
+    try:
+        sp = subprocess.run([binary, '-s'], capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        return nodes
+    # conntrackd reports a 'cache external' / per-peer section; expose any peer
+    # line carrying an address as a node so the GUI can list the cluster.
+    for line in sp.stdout.split('\n'):
+        token = line.strip()
+        if token.lower().startswith('peer') and '=' in token:
+            addr = token.split('=', 1)[1].strip()
+            if addr:
+                nodes.append({'creatorid': addr, 'this': 0})
+    return nodes
+
+
+if __name__ == '__main__':
+    result = {'hostid': local_hostid(), 'nodes': conntrackd_nodes()}
     print(ujson.dumps(result))

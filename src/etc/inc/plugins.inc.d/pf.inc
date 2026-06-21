@@ -79,7 +79,7 @@ function pf_cron()
     }
 
     $jobs[]['autocron'] = [
-        '/usr/local/bin/flock -n -E 0 -o /tmp/filter_update_tables.lock ' .
+        '/usr/bin/flock -n -E 0 -o /tmp/filter_update_tables.lock ' .
         '/usr/local/opnsense/scripts/filter/update_tables.py --quick',
         '*'
     ];

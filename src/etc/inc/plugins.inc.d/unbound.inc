@@ -161,7 +161,7 @@ function unbound_service_stop()
 {
     $mdl = new \OPNsense\Unbound\Unbound();
 
-    mwexecf('/usr/local/bin/flock -E 0 -o /tmp/unbound_start.lock true');
+    mwexecf('/usr/bin/flock -E 0 -o /tmp/unbound_start.lock true');
 
     if (empty((string)$mdl->general->cacheflush)) {
         if (isvalidpid('/var/run/unbound.pid')) {
@@ -495,7 +495,7 @@ function unbound_configure_do($verbose = false, $interface_map = null)
         @unlink('/var/unbound/data/stats');
     }
 
-    mwexecfb('/usr/local/bin/flock -n -E 0 -o /tmp/unbound_start.lock /usr/local/opnsense/scripts/unbound/start.sh %s', [$domain]);
+    mwexecfb('/usr/bin/flock -n -E 0 -o /tmp/unbound_start.lock /usr/local/opnsense/scripts/unbound/start.sh %s', [$domain]);
 
     waitforpid('/var/run/unbound.pid', 10);
 

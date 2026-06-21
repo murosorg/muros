@@ -32,13 +32,13 @@ REQUEST="UNLOCK"
 PACKAGE=${1}
 
 if [ "${PACKAGE}" = "base" ]; then
-	output_txt "Unlocking base set"
-	output_cmd opnsense-update -bU
+	output_txt "Releasing base system package"
+	output_cmd apt-mark unhold "$(opnsense-version -n)"
 elif [ "${PACKAGE}" = "kernel" ]; then
-	output_txt "Unlocking kernel set"
-	output_cmd opnsense-update -kU
+	output_txt "Releasing kernel package"
+	output_cmd apt-mark unhold linux-image-amd64
 else
-	output_cmd ${PKG} unlock -y "${PACKAGE}"
+	output_cmd apt-mark unhold "${PACKAGE}"
 fi
 
 output_done

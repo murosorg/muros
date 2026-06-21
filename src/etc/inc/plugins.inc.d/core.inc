@@ -263,7 +263,7 @@ function core_cron()
      */
     if (!(new \OPNsense\Diagnostics\SystemHealth())->enabled->isEmpty()) {
         $jobs[]['autocron'] = [
-            '/usr/local/bin/flock -n -E 0 -o /tmp/updaterrd.lock /usr/local/opnsense/scripts/health/updaterrd.php',
+            '/usr/bin/flock -n -E 0 -o /tmp/updaterrd.lock /usr/local/opnsense/scripts/health/updaterrd.php',
             '*'
         ];
     }

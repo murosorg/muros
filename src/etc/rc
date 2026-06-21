@@ -237,7 +237,7 @@ chmod 660 ${BOOTLOCK}
 
 # Let the PHP-based configuration subsystem set up the system now
 echo -n "Launching the init system..."
-/usr/local/bin/flock -n -o ${BOOTLOCK} /usr/local/etc/rc.bootup || exit 1
+/usr/bin/flock -n -o ${BOOTLOCK} /usr/local/etc/rc.bootup || exit 1
 
 # Execute the normal syshook / plugin commands
 /usr/local/etc/rc.syshook start
