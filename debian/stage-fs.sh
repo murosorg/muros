@@ -137,6 +137,26 @@ session.save_path = /var/lib/php/sessions
 error_log = /var/lib/php/tmp/PHP_errors.log
 date.timezone = "Etc/UTC"
 expose_php = Off
+
+; OPcache. The web UI is a large PHP codebase (the MVC stack plus the legacy
+; .inc libraries and compiled Volt templates). Without a primed opcode cache
+; every request recompiles hundreds of files, which is the main reason the UI
+; feels slow and the dashboard looks like it hangs while its widgets load in
+; parallel. Timestamp validation stays on at a low frequency so package
+; upgrades are still picked up (and postinst reloads php-fpm on upgrade).
+opcache.enable = 1
+opcache.enable_cli = 0
+opcache.memory_consumption = 256
+opcache.interned_strings_buffer = 32
+opcache.max_accelerated_files = 24000
+opcache.validate_timestamps = 1
+opcache.revalidate_freq = 60
+opcache.save_comments = 1
+
+; realpath cache: include_path spans six directories, so resolving each
+; require/include otherwise costs many stat() calls on every request.
+realpath_cache_size = 4M
+realpath_cache_ttl = 300
 PHPINI
 done
 
