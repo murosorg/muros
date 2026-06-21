@@ -319,8 +319,17 @@ function local_user_set(&$user, $force_password = false, $userattrs = null)
 
     @mkdir('/home', 0755);
 
-    /* integrated authentication handles passwords unless 'installer' user needs it locally */
-    $user_pass = $force_password ? $user['password'] : '*';
+    /*
+     * MurOS: config.xml holds the single source of truth for the account
+     * password (a bcrypt hash). On FreeBSD the GUI users could be authenticated
+     * against config.xml through a dedicated PAM module; on Debian the console
+     * and SSH logins are validated by PAM against /etc/shadow, so we mirror the
+     * hash into shadow for every account that can log in locally. Only root and
+     * shell-enabled accounts reach this point (GUI-only users without a shell
+     * return early above), so they all receive the real hash and the web UI,
+     * console and SSH share the very same single credential.
+     */
+    $user_pass = $user['password'];
     $user_name = $user['name'];
     $user_uid = $user['uid'];
     $comment = str_replace([':', '!', '@'], ' ', $user['descr']);
@@ -413,11 +422,27 @@ function local_user_set(&$user, $force_password = false, $userattrs = null)
         );
     }
 
-    /* set the password field (hash or the '*' sentinel for integrated auth) */
-    if ($user_op != null) {
-        if ($user_pass === '*' || $user_pass === '') {
-            mwexecf('/usr/sbin/usermod -p %s %s', ['*', $user_name]);
-        } else {
+    /*
+     * Set the password independently of the attribute change detection above: a
+     * pure password change (from the web UI or the console) leaves uid/gid/shell/
+     * home untouched, so gating this on $user_op would let the shadow password
+     * drift away from config.xml. We only write when the stored hash actually
+     * differs, to avoid needless churn on every account sync.
+     */
+    if ($user_pass === '*' || $user_pass === '') {
+        mwexecf('/usr/sbin/usermod -p %s %s', ['*', $user_name]);
+    } else {
+        $current_hash = null;
+        $fd = popen(exec_safe('/usr/bin/getent shadow %s', $user_name), 'r');
+        if ($fd !== false) {
+            $shadow_line = fgets($fd);
+            pclose($fd);
+            if (is_string($shadow_line) && substr_count($shadow_line, ':')) {
+                /* drop a leading '!' left by an account lock before comparing */
+                $current_hash = ltrim(explode(':', trim($shadow_line))[1], '!');
+            }
+        }
+        if ($current_hash !== $user_pass) {
             $fd = popen(exec_safe('/usr/sbin/chpasswd -e'), 'w');
             fwrite($fd, "{$user_name}:{$user_pass}");
             pclose($fd);

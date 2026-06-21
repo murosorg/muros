@@ -1,5 +1,6 @@
 """
-    Copyright (c) 2025 Deciso B.V.
+    Copyright (c) 2025-2026 Deciso B.V.
+    Copyright (c) 2015-2019 Ad Schellevis <ad@opnsense.org>
     All rights reserved.
 
     Redistribution and use in source and binary forms, with or without
@@ -23,9 +24,17 @@
     ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
     POSSIBILITY OF SUCH DAMAGE.
 
+    --------------------------------------------------------------------------------------
+    Authenticated client membership for the captive portal.
+
+    The legacy implementation kept clients in pf tables (__captiveportal_zone_*)
+    and dropped their states with "pfctl -k". On Debian the same role is served
+    by the nftables membership sets cp_<zone>_v4 / cp_<zone>_v6 and conntrack is
+    used to drop established flows. The public method names are kept so the rest
+    of the captive portal (allow/disconnect/background process) is unchanged.
 """
-import subprocess
-import ipaddress
+from . import cpfw
+
 
 class PF(object):
     def __init__(self):
@@ -33,30 +42,26 @@ class PF(object):
 
     @staticmethod
     def _is_ipv6(address):
-        try:
-            ipaddress.IPv6Address(address)
-            return True
-        except (ValueError, AttributeError):
-            return False
+        return cpfw.family_of(address) == 6
 
     @staticmethod
     def list_table(zoneid):
-        pfctl_cmd = ['/sbin/pfctl', '-t', f'__captiveportal_zone_{zoneid}', '-T', 'show']
-        for line in subprocess.run(pfctl_cmd, capture_output=True, text=True).stdout.split('\n'):
-            # split('\n') on an empty string will return an empty string, we need to make sure to suppress these
-            tmp = line.strip()
-            if len(tmp) > 0:
-                yield tmp
+        """ yield the authenticated client addresses of a zone """
+        names = cpfw.set_names(zoneid)
+        for fam in (4, 6):
+            for address in cpfw.list_set(names[('member', fam)]).keys():
+                yield address
 
     @staticmethod
     def add_to_table(zoneid, address):
-        subprocess.run(['/sbin/pfctl', '-t', f'__captiveportal_zone_{zoneid}', '-T', 'add', address], capture_output=True)
+        """ mark an address as authenticated in a zone """
+        cpfw.ensure_zone(zoneid)
+        names = cpfw.set_names(zoneid)
+        cpfw.add_element(names[('member', cpfw.family_of(address))], address)
 
     @staticmethod
     def remove_from_table(zoneid, address):
-        subprocess.run(['/sbin/pfctl', '-t', f'__captiveportal_zone_{zoneid}', '-T', 'del', address], capture_output=True)
-        # kill associated states to and from this host
-        subprocess.run(['/sbin/pfctl', '-k', f'{address}'], capture_output=True)
-        # Use appropriate wildcard based on IP version
-        wildcard = '::/0' if PF._is_ipv6(address) else '0.0.0.0/0'
-        subprocess.run(['/sbin/pfctl', '-k', wildcard, '-k', f'{address}'], capture_output=True)
+        """ remove an address from a zone and drop its existing flows """
+        names = cpfw.set_names(zoneid)
+        cpfw.del_element(names[('member', cpfw.family_of(address))], address)
+        cpfw.kill_states(address)

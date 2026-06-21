@@ -1,3 +1,26 @@
+muros (0.9.31) trixie; urgency=medium
+
+  * Captive portal: port the data plane off FreeBSD pf and ipfw to nftables.
+    A new lib/cpfw.py owns a dedicated "inet captiveportal" table that is
+    created idempotently: per zone membership sets (cp_<zone>_v4/v6) replace the
+    pf tables, accounting sets (acc_<zone>_{in,out}_{v4,v6}) carry the counter
+    flag in place of the ipfw 30000-50000 count rules, and a forward-hooked
+    chain references the accounting sets so matched clients are counted.
+  * lib/pf.py: PF.add_to_table/remove_from_table/list_table now manage the
+    nftables membership sets, and state teardown uses conntrack -D (replacing
+    pfctl -k) on client removal.
+  * lib/ipfw.py: IPFW.add_accounting/del_accounting/list_accounting_info now
+    read per element nftables counters. As nftables keeps no per element last
+    access time, last_accessed is derived from byte deltas between polls and
+    cached in /var/run/captiveportal/accounting.state, preserving idle timeout
+    behaviour. Method signatures are unchanged so allow/disconnect/listClients
+    and the background process keep working as is.
+  * Note: authenticated clients are now tracked and accounted natively; wiring
+    the redirect and pass rules that reference cp_<zone> sets into the main
+    nft_build ruleset remains a follow-up.
+
+ -- MurOS <dev@muros.org>  Sun, 21 Jun 2026 08:10:00 +0000
+
 muros (0.9.30) trixie; urgency=medium
 
   * Firewall aliases: declare the python3-jq dependency. The URL Table (JSON)
