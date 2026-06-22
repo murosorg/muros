@@ -1,3 +1,11 @@
+muros (0.9.41) trixie; urgency=medium
+
+  * Branding: restore the original MurOS mark, three descending yellow bars, in
+    the web UI theme (login and navbar lockup), the captive portal and the
+    favicons, replacing the shield mark.
+
+ -- MurOS <dev@muros.org>  Mon, 22 Jun 2026 11:15:01 +0200
+
 muros (0.9.40) trixie; urgency=medium
 
   * Branding: new MurOS shield logo across the web UI theme (login screen and
