@@ -1,3 +1,14 @@
+muros (0.9.42) trixie; urgency=high
+
+  * Dashboard: fix a web UI hang where the product info feed widget could
+    stall the whole interface. The feed was fetched with no curl timeout, so
+    a slow or unreachable host (e.g. an IPv6 address with no route) blocked
+    the request up to the php-fpm terminate timeout (~125s) while holding the
+    PHP session lock, serializing every other GUI request. Bounded the fetch
+    with a 3s connect / 6s total timeout and pointed it at the MurOS feed.
+
+ -- MurOS <dev@muros.org>  Mon, 22 Jun 2026 11:54:01 +0200
+
 muros (0.9.41) trixie; urgency=medium
 
   * Branding: restore the original MurOS mark, three descending yellow bars, in

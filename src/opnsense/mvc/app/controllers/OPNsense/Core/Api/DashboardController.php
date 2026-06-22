@@ -196,8 +196,14 @@ class DashboardController extends ApiControllerBase
     {
         $result = ['items' => []];
         $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, 'https://forum.opnsense.org/index.php?board=11.0&action=.xml;limit=5;type=rss2');
+        curl_setopt($ch, CURLOPT_URL, 'https://muros.org/news.xml');
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        // Bounded timeouts are mandatory: this runs on a web request and a slow
+        // or unreachable feed must never stall the dashboard (and, through the
+        // PHP session lock, the whole web UI).
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 6);
+        curl_setopt($ch, CURLOPT_USERAGENT, 'MurOS');
         $output = curl_exec($ch);
         curl_close($ch);
         $payload = @simplexml_load_string($output);
