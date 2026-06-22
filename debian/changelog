@@ -1,3 +1,11 @@
+muros (0.9.40) trixie; urgency=medium
+
+  * Branding: new MurOS shield logo across the web UI theme (login screen and
+    header lockup), the captive portal and the favicon. The mark ships with a
+    transparent background so it sits cleanly on both light and dark surfaces.
+
+ -- MurOS <dev@muros.org>  Mon, 22 Jun 2026 10:50:37 +0200
+
 muros (0.9.39) trixie; urgency=medium
 
   * Loopback: stop adding a redundant 127.0.0.1/32 to the loopback interface.
