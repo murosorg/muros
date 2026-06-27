@@ -177,5 +177,7 @@ if __name__ == '__main__':
             "is_reserved": is_reserved
         })
 
-    if records:
-        print(ujson.dumps({"records": records}))
+    # Always emit a valid JSON envelope, including the empty case, so the
+    # leases grid renders an empty table instead of failing to decode an
+    # empty response.
+    print(ujson.dumps({"records": records}))
