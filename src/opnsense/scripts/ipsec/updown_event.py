@@ -31,15 +31,10 @@
 import os
 import subprocess
 import argparse
-import tempfile
 import syslog
 from configparser import ConfigParser
-from lib import list_spds
 
 events_filename = '/etc/swanctl/reqid_events.conf'
-
-spd_add_cmd = 'spdadd -%(ipproto)s %(source)s %(destination)s any ' \
-    '-P out ipsec %(protocol)s/tunnel/%(local)s-%(remote)s/unique:%(reqid)s;'
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -57,7 +52,6 @@ if __name__ == '__main__':
             cnf = ConfigParser()
             cnf.read(events_filename)
             spds = []
-            vtis = []
             for section in cnf.sections():
                 if (cnf.has_option(section, 'reqid') and cnf.get(section, 'reqid') == cmd_args.reqid) or (
                     cnf.has_option(section, 'connection_child') and
@@ -73,67 +67,55 @@ if __name__ == '__main__':
                         for opt in cnf.options(section):
                             if cnf.get(section, opt).strip() != '':
                                 spds[-1][opt] = cnf.get(section, opt).strip()
-                    elif section.startswith('vti_'):
-                        vtis.append({
-                            'reqid': cmd_args.reqid,
-                            'local' : cmd_args.local,
-                            'remote' : cmd_args.remote
-                        })
 
-            for vti in vtis:
-                if None in vti.values():
-                    # incomplete, skip
-                    continue
-                intf = 'ipsec%s' % vti['reqid']
-                proto = 'inet6' if vti['local'].find(':') > -1  else 'inet'
-                subprocess.run(['/sbin/ifconfig', intf, 'reqid', vti['reqid']])
-                subprocess.run(['/sbin/ifconfig', intf, proto, 'tunnel', vti['local'], vti['remote']])
+            # Route-based (VTI) tunnels are not configured here on Linux. The
+            # ipsec<reqid> XFRM interface is created up front by
+            # ipsec_configure_vti() with if_id = reqid, and charon binds the
+            # negotiated SAs to it through if_id_in/if_id_out. There is no
+            # per-interface tunnel source/destination to set on the device,
+            # unlike the FreeBSD if_ipsec model, so the vti_ sections of
+            # reqid_events.conf carry no work for the updown event. (FreeBSD ran
+            # "ifconfig ipsecN reqid/tunnel" here, which has no Linux equivalent
+            # and would abort the event on a missing ifconfig binary.)
 
-            # (re)apply manual policies if specified
-            cur_spds = list_spds(automatic=False)
-            set_key = []
-            for spd in cur_spds:
-                policy_found = False
-                reqid_match = spd['reqid'] == cmd_args.reqid
-                for mspd in spds:
-                    if mspd['source'] == spd['src'] and mspd['destination'] == spd['dst']:
-                        policy_found = True
-                if policy_found or reqid_match:
-                    spd_del_cmd = 'spddelete -n %(src)s %(dst)s any -P %(direction)s;'
-                    set_key.append(spd_del_cmd % spd)
-                    reason = 'policy found' if policy_found else 'reqid match'
-                    syslog.syslog(
-                        syslog.LOG_NOTICE,
-                        '[UPDOWN] <%s> delete policy: %s (reason: %s)' % (cmd_args.connection_child, (spd_del_cmd % spd)[10:], reason)
-                    )
-
+            # (re)apply the manual security policies configured on a phase 2
+            # (the "spd" field). FreeBSD installed these KAME policies with
+            # setkey; on Linux the equivalent lives in the XFRM stack and is
+            # driven through "ip xfrm policy". charon installs the policies it
+            # negotiates by itself, so we only (re)install the extra manual
+            # outbound policies the user defined, tagged with the same reqid
+            # charon uses for the tunnel so the matching traffic is steered into
+            # the negotiated SA. Each policy is deleted before being added again
+            # so repeated up events stay idempotent and never stack duplicates;
+            # only the exact manual selector is touched, never charon's own
+            # policies.
             for spd in spds:
                 if None in spd.values():
                     # incomplete, skip
                     continue
-                spd['ipproto'] = '4' if spd.get('source', '').find(':') == -1 else '6'
+                selector_src = spd['source']
+                selector_dst = spd['destination']
+                proto = spd.get('protocol', 'esp')
+                subprocess.run(
+                    ['/usr/sbin/ip', 'xfrm', 'policy', 'delete',
+                     'src', selector_src, 'dst', selector_dst, 'dir', 'out'],
+                    capture_output=True, text=True
+                )
+                add_cmd = [
+                    '/usr/sbin/ip', 'xfrm', 'policy', 'add',
+                    'src', selector_src, 'dst', selector_dst, 'dir', 'out',
+                    'tmpl', 'src', spd['local'], 'dst', spd['remote'],
+                    'proto', proto, 'mode', 'tunnel', 'reqid', spd['reqid']
+                ]
                 syslog.syslog(
                     syslog.LOG_NOTICE,
-                    '[UPDOWN] <%s> add manual policy: %s' % (cmd_args.connection_child, (spd_add_cmd % spd)[7:])
+                    '[UPDOWN] <%s> add manual policy: %s' % (cmd_args.connection_child, ' '.join(add_cmd[3:]))
                 )
-                set_key.append(spd_add_cmd % spd)
-            if len(set_key) > 0:
-                f = tempfile.NamedTemporaryFile(mode='wt', delete=False)
-                f.write('\n'.join(set_key))
-                f.close()
-                try:
-                    subprocess.run(['/sbin/setkey', '-f', f.name], capture_output=True, text=True, check=True)
-                except subprocess.CalledProcessError as e:
+                result = subprocess.run(add_cmd, capture_output=True, text=True)
+                if result.returncode != 0:
                     syslog.syslog(
                         syslog.LOG_ERR,
-                        '[UPDOWN] <%s> setkey failed: stdout: (%s) stderr: (%s)' % (cmd_args.connection_child, e.stdout, e.stderr)
+                        '[UPDOWN] <%s> failed to add manual policy: %s' % (
+                            cmd_args.connection_child, result.stderr.strip()
+                        )
                     )
-                except FileNotFoundError:
-                    # setkey is a FreeBSD/KAME tool that does not exist on Linux.
-                    # The XFRM stack installs the policies charon negotiates
-                    # directly through netlink, so there is nothing to do here.
-                    syslog.syslog(
-                        syslog.LOG_NOTICE,
-                        '[UPDOWN] <%s> skipping manual policies, handled by charon/XFRM' % cmd_args.connection_child
-                    )
-                os.unlink(f.name)

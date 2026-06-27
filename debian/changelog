@@ -1,3 +1,23 @@
+muros (0.9.54) trixie; urgency=medium
+
+  * IPsec: fix the swanctl updown handler for routed IPsec and manual policies.
+    - Route-based (VTI) tunnels no longer run the FreeBSD "ifconfig ipsecN
+      reqid/tunnel" sequence on the up event. That binary and syntax do not
+      exist on Linux and aborted the event; the ipsec<reqid> XFRM interface is
+      already created up front by ipsec_configure_vti() with if_id = reqid and
+      charon binds the SAs through if_id_in/if_id_out, so there is nothing to do
+      at updown time.
+    - The reqid_events.conf configd target was still written to the FreeBSD
+      path /usr/local/etc/swanctl while the rest of the IPsec stack (swanctl.conf,
+      certificates) and the updown handler use /etc/swanctl. The file is now
+      written to /etc/swanctl so manual policies are actually found.
+    - Manual security policies (the phase 2 "spd" field) are installed through
+      "ip xfrm policy" instead of the FreeBSD/KAME setkey tool, tagged with the
+      tunnel reqid and reapplied idempotently on each up event. Verified on
+      Debian 13 for IPv4 and IPv6 selectors.
+
+ -- MurOS <dev@muros.org>  Sat, 27 Jun 2026 17:55:00 +0200
+
 muros (0.9.53) trixie; urgency=medium
 
   * Kea DHCP: disable the packaged AppArmor profiles for the Kea daemons
