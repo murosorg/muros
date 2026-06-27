@@ -1,3 +1,18 @@
+muros (0.9.53) trixie; urgency=medium
+
+  * Kea DHCP: disable the packaged AppArmor profiles for the Kea daemons
+    (kea-dhcp4, kea-dhcp6, kea-ctrl-agent, kea-lfc) on install and upgrade. The
+    stock profiles denied the MurOS-rendered configuration under /etc/kea and
+    the open-source hook libraries (libdhcp_lease_cmds.so and, for DHCP
+    failover, libdhcp_ha.so), which surfaced as "Unable to open file" on the
+    config and dac_override/dac_read_search capability denials, so Kea failed
+    to start and high availability never came up. MurOS owns the full Kea
+    state, so the profiles are disabled the same way the unbound profile
+    already is. Validated by loading a MurOS-style hot-standby HA configuration
+    (both hook libraries) through "kea-dhcp4 -t" on Debian 13.
+
+ -- MurOS <dev@muros.org>  Sat, 27 Jun 2026 17:45:00 +0200
+
 muros (0.9.52) trixie; urgency=medium
 
   * Console: require authentication on the local console. Earlier installers

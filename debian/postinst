@@ -95,6 +95,23 @@ JRN
       systemctl disable --now "$u" 2>/dev/null || true
     done
 
+    # The packaged AppArmor profiles confine the Kea daemons to a fixed set of
+    # paths and capabilities that do not match how MurOS drives Kea: configd
+    # renders the configuration under /etc/kea, loads the open-source hook
+    # libraries (libdhcp_lease_cmds.so and, for DHCP failover, libdhcp_ha.so),
+    # and the HA hook opens its own control channel. Under the stock profiles
+    # the daemons are denied (observed as "Unable to open file" on the rendered
+    # config and dac_override/dac_read_search capability denials), so Kea fails
+    # to start and high availability never comes up. MurOS owns the whole Kea
+    # state, so disable the profiles, mirroring what we already do for unbound.
+    for p in usr.sbin.kea-dhcp4 usr.sbin.kea-dhcp6 usr.sbin.kea-ctrl-agent usr.sbin.kea-lfc; do
+      if [ -e "/etc/apparmor.d/$p" ]; then
+        mkdir -p /etc/apparmor.d/disable
+        ln -sf "/etc/apparmor.d/$p" "/etc/apparmor.d/disable/$p"
+        apparmor_parser -R "/etc/apparmor.d/$p" 2>/dev/null || true
+      fi
+    done
+
     # Unbound is driven by MurOS, not by the packaged systemd unit: configd
     # renders /var/unbound/unbound.conf and the unbound start.sh script launches
     # the daemon from there. Stop the stock unit so it does not hold port 53 with
