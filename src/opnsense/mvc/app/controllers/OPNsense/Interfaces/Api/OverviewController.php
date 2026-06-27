@@ -148,6 +148,33 @@ class OverviewController extends ApiControllerBase
             }
         }
 
+        /*
+         * MurOS: CARP virtual IPs are realised as keepalived VRRP instances, so
+         * their master/backup role does not show up in the interface details
+         * the way FreeBSD carp(4) did. Build a lookup of the configured CARP
+         * VIPs and the live VRRP role (written to /var/run/vrrp/<instance>.state
+         * by the keepalived notify hook) so the virtual IP rows can report it.
+         */
+        $carp_vips = [];
+        if (!empty($cfg->virtualip)) {
+            foreach ($cfg->virtualip->vip as $vip) {
+                if ((string)$vip->mode === 'carp' && (string)$vip->subnet !== '') {
+                    $carp_vips[(string)$vip->subnet] = [
+                        'vhid' => (string)$vip->vhid,
+                        'advbase' => (string)$vip->advbase,
+                        'advskew' => (string)$vip->advskew,
+                        'peer' => (string)$vip->peer,
+                        'peer6' => (string)$vip->peer6,
+                    ];
+                }
+            }
+        }
+        $vrrp_states = [];
+        foreach (glob('/var/run/vrrp/*.state') ?: [] as $state_file) {
+            $vrrp_states[basename($state_file, '.state')] =
+                strtoupper(trim((string)@file_get_contents($state_file)));
+        }
+
         /* format information */
         foreach ($ifinfo as $if => $details) {
             $tmp = $details;
@@ -219,6 +246,22 @@ class OverviewController extends ApiControllerBase
                                             $entry['peer6'] = $carp['peer6'];
                                         }
                                     }
+                                }
+                            }
+
+                            /* MurOS: derive CARP details and role from keepalived (VRRP) */
+                            if (empty($entry['vhid']) && isset($carp_vips[$ip['ipaddr']])) {
+                                $cv = $carp_vips[$ip['ipaddr']];
+                                $entry['vhid'] = $cv['vhid'];
+                                $entry['advbase'] = $cv['advbase'];
+                                $entry['advskew'] = $cv['advskew'];
+                                $entry['peer'] = $cv['peer'];
+                                $entry['peer6'] = $cv['peer6'];
+                                $family = $ipproto === 'ipv6' ? 6 : 4;
+                                $iname = 'vip_' . preg_replace('/[^A-Za-z0-9]/', '_', $if) .
+                                    '_' . (int)$cv['vhid'] . '_v' . $family;
+                                if (isset($vrrp_states[$iname])) {
+                                    $entry['status'] = $vrrp_states[$iname];
                                 }
                             }
 
