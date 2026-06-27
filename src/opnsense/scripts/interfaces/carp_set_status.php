@@ -31,49 +31,44 @@ require_once('config.inc');
 require_once('interfaces.inc');
 require_once('system.inc');
 require_once('util.inc');
+require_once('vrrp.inc');
+
+/*
+ * MurOS: CARP maintenance/enable/disable is mapped onto the keepalived (VRRP)
+ * data plane. Maintenance mode is a persistent config flag honoured by
+ * vrrp_configure(): when set, keepalived is stopped so this unit stops
+ * advertising and the peer becomes master. Disable/enable stop or rebuild the
+ * keepalived and conntrackd services at runtime.
+ */
 
 $action = strtolower($argv[1] ?? '');
 
 if ($action == 'maintenance') {
-    if (isset($config["virtualip_carp_maintenancemode"])) {
-        unset($config["virtualip_carp_maintenancemode"]);
-        $carp_demotion_default = '0';
-        foreach (system_sysctl_get() as $tunable => $value) {
-            /* expect value between 1-255 to manually offset the end result */
-            if ($tunable == 'net.inet.carp.demotion' && ctype_digit($value)) {
-                $carp_demotion_default = $value;
-            }
-        }
-        $carp_diff = $carp_demotion_default - get_single_sysctl('net.inet.carp.demotion');
-        set_single_sysctl('net.inet.carp.demotion', $carp_diff);
-        write_config("Leave CARP maintenance mode");
+    if (!empty($config['virtualip_carp_maintenancemode'])) {
+        unset($config['virtualip_carp_maintenancemode']);
+        write_config('Leave CARP maintenance mode');
+        vrrp_configure();
+        conntrackd_configure();
         echo json_encode(['status' => 'ok', 'action' => 'leave_maintenance']);
     } else {
-        $config["virtualip_carp_maintenancemode"] = true;
-        set_single_sysctl('net.inet.carp.demotion', '240');
-        write_config("Enter CARP maintenance mode");
+        $config['virtualip_carp_maintenancemode'] = true;
+        write_config('Enter CARP maintenance mode');
+        /* vrrp_configure() reads the flag and stops keepalived */
+        vrrp_configure();
         echo json_encode(['status' => 'ok', 'action' => 'enter_maintenance']);
     }
 } elseif ($action == 'disable') {
-    set_single_sysctl('net.inet.carp.allow', '0');
+    mwexecf('/usr/bin/systemctl stop keepalived', [], true);
+    mwexecf('/usr/bin/systemctl stop conntrackd', [], true);
     foreach (config_read_array('virtualip', 'vip', false) as $vip) {
-        if (!empty($vip['vhid'])) {
+        if (!empty($vip['vhid']) && $vip['mode'] == 'carp') {
             interface_vip_bring_down($vip);
         }
     }
     echo json_encode(['status' => 'ok', 'action' => 'disable']);
 } elseif ($action == 'enable') {
-    interfaces_pfsync_configure();
-    set_single_sysctl('net.inet.carp.allow', '1');
-    foreach (config_read_array('virtualip', 'vip', false) as $vip) {
-        if (!empty($vip['vhid'])) {
-            if ($vip['mode'] == 'carp') {
-                interface_carp_configure($vip);
-            } else {
-                interface_ipalias_configure($vip);
-            }
-        }
-    }
+    vrrp_configure();
+    conntrackd_configure();
     echo json_encode(['status' => 'ok', 'action' => 'enable']);
 } else {
     echo json_encode(['status' => 'failed']);

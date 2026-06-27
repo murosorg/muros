@@ -1439,55 +1439,13 @@ EOD;
 
 function interfaces_pfsync_configure()
 {
-    global $config;
-
-    if (!empty($config['hasync']['pfsyncinterface'])) {
-        /*
-         * We are just checking the actual attached interface here as get_real_interface()
-         * was not dependable when the selected interface does not exist for any reason.
-         *
-         * What the current method tells us is that we are going to ignore whether this
-         * interface is currently enabled or not.  To avoid breakage we will keep it so
-         * although in reality disabling your pfsync interface should cause it to stop
-         * syncing.
-         */
-        if (!empty($config['interfaces'][$config['hasync']['pfsyncinterface']]['if'])) {
-            $syncdev = $config['interfaces'][$config['hasync']['pfsyncinterface']]['if'];
-        }
-    }
-
-    if (!empty($syncdev)) {
-        $ifcfrmt = ['/sbin/ifconfig pfsync0 syncdev %s'];
-        $ifcargs = [$syncdev];
-
-        if (!empty($config['hasync']['pfsyncpeerip']) && is_ipaddrv4($config['hasync']['pfsyncpeerip'])) {
-            $ifcfrmt[] = 'syncpeer %s';
-            $ifcargs[] = $config['hasync']['pfsyncpeerip'];
-        } else {
-            $ifcfrmt[] = '-syncpeer';
-        }
-        if (!empty($config['hasync']['pfsyncversion'])) {
-            $ifcfrmt[] = 'version %s';
-            $ifcargs[] = $config['hasync']['pfsyncversion'];
-        }
-
-        $ifcfrmt[] = !empty($config['hasync']['pfsyncdefer']) ? 'defer' : '-defer';
-        $ifcfrmt[] = 'up';
-
-        mwexecf($ifcfrmt, $ifcargs);
-
-        /*
-         * Fix presumed replication issue when outgoing MTU
-         * is smaller than what is set in pfsync0, also see
-         * https://github.com/opnsense/core/commit/15acbad935
-         */
-        $intf_stats = legacy_interface_details($syncdev);
-        if (!empty($intf_stats['mtu'])) {
-            mwexecf('/sbin/ifconfig pfsync0 mtu %s', [$intf_stats['mtu']]);
-        }
-    } else {
-        mwexecf('/sbin/ifconfig pfsync0 -syncdev -syncpeer down');
-    }
+    /*
+     * MurOS: pfsync has no Linux equivalent. Connection state replication is
+     * handled by conntrackd, driven from the same //hasync settings. The
+     * generator lives in vrrp.inc next to the keepalived (VRRP) data plane.
+     */
+    require_once 'vrrp.inc';
+    conntrackd_configure();
 }
 
 function interface_proxyarp_configure($interface = '')
@@ -1561,14 +1519,20 @@ function interfaces_vips_configure($interface, $family = null)
                 interface_ipalias_configure($vip);
                 break;
             case 'carp':
-                interface_carp_configure($vip);
+                /*
+                 * MurOS: keepalived (VRRP) owns CARP VIPs globally. Flag it and
+                 * regenerate the whole ruleset once after the loop instead of
+                 * reloading keepalived for every individual VIP.
+                 */
                 $pfsync = true;
                 break;
         }
     }
 
     if ($pfsync) {
-        interfaces_pfsync_configure();
+        require_once 'vrrp.inc';
+        vrrp_configure();
+        conntrackd_configure();
     }
 
     if ($proxyarp) {
@@ -1625,69 +1589,15 @@ function interface_carp_configure($vip)
         return;
     }
 
-    /* when CARP is temporary disabled do not try to configure on any interface up events */
-    if (get_single_sysctl('net.inet.carp.allow') == '0') {
-        return;
-    }
-
-    $device = get_real_interface($vip['interface']);
-
-    $ifcfrmt = ['/sbin/ifconfig %s vhid %s advskew %s'];
-    $ifcargs = [$device, $vip['vhid'], $vip['advskew']];
-
-    if (!empty($vip['advbase'])) {
-        $ifcargs[] = $vip['advbase'];
-        $ifcfrmt[] = 'advbase %s';
-    }
-
-    if ($vip['password'] != '') {
-        /* XXX password processing looks like an ancient workaround and likely not needed */
-        $ifcargs[] = addslashes(str_replace(' ', '', $vip['password']));
-        $ifcfrmt[] = 'pass %s';
-    }
-
-    mwexecf($ifcfrmt, $ifcargs);
-
-    $ifcfrmt = ['/sbin/ifconfig %s'];
-    $ifcargs = [$device];
-
-    if (is_ipaddrv4($vip['subnet'])) {
-        $ifcfrmt[] = '%s/%s alias vhid %s';
-    } elseif (is_ipaddrv6($vip['subnet'])) {
-        $ifcfrmt[] = 'inet6 %s prefixlen %s alias vhid %s';
-    } else {
-        return; /* invalid */
-    }
-
-    $ifcargs[] = $vip['subnet'];
-    $ifcargs[] = $vip['subnet_bits'];
-    $ifcargs[] = $vip['vhid'];
-
-    mwexecf($ifcfrmt, $ifcargs);
-
-    /**
-     *  XXX this is pretty flaky.
-     *      If we configure peer[6] during setup, values won't stick, they appear to be flushed when
-     *      the initial address is set.
+    /*
+     * MurOS: CARP is BSD-only. A CARP virtual IP is realised as a keepalived
+     * VRRP instance instead. keepalived owns every VIP address globally and
+     * runs the master election, so there is no per-address ifconfig step here:
+     * we just (re)generate the whole keepalived ruleset from config.xml. The
+     * call is idempotent, so reconfiguring a single VIP is safe.
      */
-    $ifcfrmt = ['/sbin/ifconfig %s vhid %s'];
-    $ifcargs = [$device, $vip['vhid']];
-
-    if (empty($vip['peer']) || $vip['peer'] == '224.0.0.18') {
-        $ifcfrmt[] = 'mcast';
-    } else {
-        $ifcargs[] = $vip['peer'];
-        $ifcfrmt[] = 'peer %s';
-    }
-
-    if (empty($vip['peer6']) || $vip['peer6'] == 'ff02::12') {
-        $ifcfrmt[] = 'mcast6';
-    } else {
-        $ifcargs[] = $vip['peer6'];
-        $ifcfrmt[] = 'peer6 %s';
-    }
-
-    mwexecf($ifcfrmt, $ifcargs);
+    require_once 'vrrp.inc';
+    vrrp_configure();
 }
 
 function _interfaces_wlan_clone($device, $wlcfg)

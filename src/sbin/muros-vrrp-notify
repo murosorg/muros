@@ -1,0 +1,54 @@
+#!/bin/sh
+
+# MurOS VRRP notify hook.
+#
+# keepalived calls this script on every VRRP state transition with:
+#   $1 = type  (INSTANCE or GROUP)
+#   $2 = name  (the vrrp_instance name)
+#   $3 = state (MASTER, BACKUP or FAULT)
+#   $4 = priority
+#
+# It records the role for the web UI and drives the conntrackd failover so the
+# connection tracking table follows the master, then replays the legacy CARP
+# syshooks (dhcrelay, openvpn, ppp) that other subsystems still rely on.
+
+set -eu
+
+TYPE="${1:-}"
+NAME="${2:-}"
+STATE="$(printf '%s' "${3:-}" | tr '[:lower:]' '[:upper:]')"
+
+STATE_DIR=/var/run/vrrp
+mkdir -p "$STATE_DIR"
+
+if [ -n "$NAME" ]; then
+    printf '%s\n' "$STATE" > "$STATE_DIR/$NAME.state"
+fi
+
+# conntrackd failover (only when it is configured and running).
+if command -v conntrackd >/dev/null 2>&1 && [ -e /etc/conntrackd/conntrackd.conf ]; then
+    case "$STATE" in
+        MASTER)
+            conntrackd -c >/dev/null 2>&1 || true
+            conntrackd -f >/dev/null 2>&1 || true
+            conntrackd -R >/dev/null 2>&1 || true
+            conntrackd -B >/dev/null 2>&1 || true
+            ;;
+        BACKUP)
+            conntrackd -t >/dev/null 2>&1 || true
+            conntrackd -n >/dev/null 2>&1 || true
+            ;;
+    esac
+fi
+
+# Replay the legacy CARP syshooks. They expect a subsystem (the VIP id) and a
+# type (MASTER/BACKUP). We pass the instance name and the new state; the hooks
+# tolerate an opaque subsystem string.
+if [ -x /usr/local/etc/rc.syshook ]; then
+    case "$STATE" in
+        MASTER) /usr/local/etc/rc.syshook carp "$NAME" MASTER >/dev/null 2>&1 || true ;;
+        BACKUP|FAULT) /usr/local/etc/rc.syshook carp "$NAME" BACKUP >/dev/null 2>&1 || true ;;
+    esac
+fi
+
+exit 0

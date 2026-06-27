@@ -124,18 +124,13 @@ if (count($virtualip_vips)) {
                     }
                     break;
                 case 'carp':
-                    if (
-                        !isset($addresses[$subnet]) ||
-                        $addresses[$subnet]['subnetbits'] != $subnet_bits ||
-                        $addresses[$subnet]['if'] != $if ||
-                        $addresses[$subnet]['vhid'] != $vhid ||
-                        $addresses[$subnet]['advbase'] != $advbase ||
-                        $addresses[$subnet]['advskew'] != $advskew ||
-                        $addresses[$subnet]['peer'] != $peer ||
-                        $addresses[$subnet]['peer6'] != $peer6
-                    ) {
-                        interface_carp_configure($vipent);
-                    }
+                    /*
+                     * MurOS: keepalived owns CARP VIP addresses globally, so we
+                     * do not diff them against ifconfig here. The single
+                     * vrrp_configure() call at the end of this script
+                     * regenerates the whole ruleset and adds, changes or
+                     * removes instances as needed.
+                     */
                     break;
                 case 'proxyarp':
                     if (isset($addresses[$subnet])) {
@@ -154,3 +149,13 @@ if (count($virtualip_vips)) {
 if ($proxyarp) {
     interface_proxyarp_configure();
 }
+
+/*
+ * MurOS: keep the keepalived (VRRP) and conntrackd high availability data plane
+ * in sync with the current set of CARP VIPs and HA settings. Both calls are
+ * idempotent and stop their service when nothing is configured, which also
+ * covers the case where the last CARP VIP was just removed.
+ */
+require_once('vrrp.inc');
+vrrp_configure();
+conntrackd_configure();

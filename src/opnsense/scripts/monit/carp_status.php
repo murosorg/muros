@@ -27,20 +27,21 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-require_once 'interfaces.inc';
 require_once 'util.inc';
+require_once 'vrrp.inc';
 
+/*
+ * MurOS: derive the CARP role from the keepalived (VRRP) state files written by
+ * the notify hook instead of parsing ifconfig carp output (BSD only).
+ */
 $statuses = [];
-
-foreach (legacy_interfaces_details() as $intf) {
-    if (!empty($intf['carp'])) {
-        foreach ($intf['carp'] as $carpitem) {
-            $statuses[$carpitem['status']] = true;
-        }
+foreach (vrrp_states() as $state) {
+    if ($state !== '') {
+        $statuses[$state] = true;
     }
 }
 
-if (!empty($statuses['BACKUP'])) {
+if (!empty($statuses['BACKUP']) || !empty($statuses['FAULT'])) {
     echo "BACKUP\n";
     exit(1);
 } elseif (!empty($statuses['MASTER']) && count($statuses) == 1) {

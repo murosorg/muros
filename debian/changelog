@@ -1,3 +1,20 @@
+muros (0.9.45) trixie; urgency=medium
+
+  * High availability: port the CARP/pfsync data plane to native Debian tooling.
+    CARP virtual IPs (virtualip/vip mode=carp) are now realised as keepalived
+    VRRP instances and the pfsync state channel as conntrackd. A new generator
+    (vrrp.inc) renders /etc/keepalived/keepalived.conf and
+    /etc/conntrackd/conntrackd.conf from config.xml and starts the services only
+    when CARP VIPs and an HA sync interface are configured. The advskew is
+    mapped to the VRRP priority, addresses sharing an interface and vhid are
+    grouped into one instance, and a notify hook records the master/backup role
+    and drives the conntrackd failover. The CARP status, maintenance and
+    enable/disable controls and the monit CARP check now read this state instead
+    of the FreeBSD net.inet.carp.* sysctls. keepalived and conntrackd move to
+    Recommends and are disabled at boot (MurOS starts them on demand).
+
+ -- MurOS <dev@muros.org>  Sat, 27 Jun 2026 15:30:00 +0200
+
 muros (0.9.44) trixie; urgency=medium
 
   * Web UI: remove the page footer ("MurOS (c) <year> MurOS") from both the

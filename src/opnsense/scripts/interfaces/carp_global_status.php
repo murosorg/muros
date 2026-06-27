@@ -29,28 +29,38 @@
 
 require_once('config.inc');
 require_once('util.inc');
+require_once('vrrp.inc');
+
+/*
+ * MurOS: report the CARP/VRRP status from the keepalived data plane instead of
+ * the FreeBSD net.inet.carp.* sysctls. The GUI keeps using the same fields:
+ *   - maintenancemode: persistent config flag (set via carp_set_status.php);
+ *   - allow: 1 when VRRP is active (keepalived running) or in maintenance;
+ *   - demotion: non-zero only in maintenance mode (240, matching the GUI).
+ */
 
 $carpcount = 0;
-
 foreach (config_read_array('virtualip', 'vip', false) as $carp) {
-    if ($carp['mode'] == "carp") {
+    if ($carp['mode'] == 'carp') {
         $carpcount++;
         break;
     }
 }
 
+$maintenance = !empty($config['virtualip_carp_maintenancemode']);
+$running = keepalived_running();
+
 $response = [
-    'demotion' =>  get_single_sysctl('net.inet.carp.demotion'),
-    'allow' => get_single_sysctl('net.inet.carp.allow'),
-    'maintenancemode' => !empty($config["virtualip_carp_maintenancemode"]),
+    'demotion' => $maintenance ? '240' : '0',
+    'allow' => ($carpcount == 0 || $maintenance || $running) ? '1' : '0',
+    'maintenancemode' => $maintenance,
     'status_msg' => '',
 ];
 
-if (empty($response['maintenancemode']) && !empty($response['demotion'])) {
-    $response['status_msg'] = gettext("CARP has detected a problem and this unit has been demoted to BACKUP status.");
-    $response['status_msg'] .= "<br />" . gettext("Check link status on all interfaces with configured CARP VIPs.");
-} elseif ($carpcount == 0) {
+if ($carpcount == 0) {
     $response['status_msg'] = gettext("Could not locate any defined CARP interfaces.");
+} elseif (empty($maintenance) && !$running) {
+    $response['status_msg'] = gettext("VRRP is currently disabled on this unit.");
 }
 
 echo json_encode($response);

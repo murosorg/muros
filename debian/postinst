@@ -124,6 +124,15 @@ ExecStartPost=
 STRONGSWAN
     systemctl disable strongswan 2>/dev/null || true
 
+    # High availability: keepalived (VRRP) and conntrackd (state sync) are
+    # driven by MurOS. interfaces.inc / vrrp.inc render
+    # /etc/keepalived/keepalived.conf and /etc/conntrackd/conntrackd.conf from
+    # config.xml and start the services only when CARP virtual IPs and an HA
+    # sync interface are configured. Keep both stock units from auto-starting at
+    # boot with their empty default configuration, which would otherwise fail.
+    systemctl disable --now keepalived 2>/dev/null || true
+    systemctl disable --now conntrackd 2>/dev/null || true
+
     # Purge the compiled Volt template cache so the UI/template changes shipped
     # in this package are recompiled from the new sources on the next request,
     # instead of being served from stale compiled copies left by a prior version.
