@@ -27,9 +27,11 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-require_once 'util.inc';
-require_once 'config.inc';
-
-if (empty($config['hasync']) || empty($config['hasync']['disablepreempt'])) {
-    set_single_sysctl('net.inet.carp.preempt', '1');
-}
+/*
+ * On Linux the VRRP data plane is keepalived. Preemption is no longer a global
+ * net.inet.carp.preempt sysctl: it is expressed per instance in the generated
+ * keepalived.conf, where vrrp_configure() emits the "nopreempt" keyword for
+ * every instance when hasync/disablepreempt is set. There is therefore nothing
+ * to toggle here; keepalived is (re)started by the virtual IP configuration.
+ */
+exit(0);
