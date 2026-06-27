@@ -248,15 +248,14 @@ function core_cron()
     $jobs[]['autocron'] = ['/usr/local/sbin/ping_hosts.sh', '*/4'];
     $jobs[]['autocron'] = ['/usr/local/sbin/configctl -d firmware changelog cron', '0', '22'];
 
-    foreach ((new \OPNsense\Firewall\Alias(true))->aliases->alias->iterateItems() as $alias) {
-        if ($alias->type->isEqual('external') && !$alias->expire->isEmpty()) {
-            $cmd = [exec_safe('/sbin/pfctl -qt %s -T expire %s', [$alias->name, $alias->expire])];
-            if ($alias->expire->asFloat() >= 3600) {
-                $cmd[] = '0,15,30,45';  /* every 15 minute cleanup */
-            }
-            $jobs[]['autocron'] = $cmd;
-        }
-    }
+    /*
+     * External aliases with an expire timeout no longer need a periodic
+     * cleanup job. On FreeBSD pf the entries were aged out by
+     * `pfctl -T expire`, which does not exist on Debian; the nftables ruleset
+     * generator (nft_build.php) instead declares the alias set with a default
+     * per-element timeout (flags interval,timeout), so the kernel expires the
+     * entries on its own. Nothing to schedule here.
+     */
 
     /**
      * rrd graph collector, only schedule execution when enabled

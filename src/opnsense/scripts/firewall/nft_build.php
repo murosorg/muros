@@ -111,16 +111,27 @@ function classify_alias_token(string $token, array &$al): void
 function build_aliases(SimpleXMLElement $cfg): array
 {
     $aliases = [];
-    $collect = function (string $name, string $type, array $tokens) use (&$aliases) {
+    $collect = function (string $name, string $type, array $tokens, int $expire = 0) use (&$aliases) {
         if (!preg_match('/^[A-Za-z0-9_]+$/', $name)) {
             return;
         }
         if (!isset($aliases[$name])) {
-            $aliases[$name] = ['v4' => [], 'v6' => [], 'port' => [], 'type' => $type];
+            $aliases[$name] = ['v4' => [], 'v6' => [], 'port' => [], 'type' => $type, 'expire' => $expire];
         }
         foreach ($tokens as $token) {
             classify_alias_token($token, $aliases[$name]);
         }
+    };
+
+    /* "external" aliases are filled at runtime through the API (add_table.py)
+     * and may carry an expire timeout in seconds. On FreeBSD pf those entries
+     * were aged out by a periodic `pfctl -T expire` cron job; on nftables we
+     * instead give the set a default per-element timeout (flags interval,
+     * timeout) so every entry auto-expires natively without a cron. Parse the
+     * value here, rounding up to whole seconds (nft has no sub-second grain). */
+    $expire_seconds = function ($value): int {
+        $seconds = (float)trim((string)$value);
+        return $seconds > 0 ? (int)ceil($seconds) : 0;
     };
 
     if (isset($cfg->OPNsense->Firewall->Alias->aliases->alias)) {
@@ -128,12 +139,22 @@ function build_aliases(SimpleXMLElement $cfg): array
             if (isset($a->enabled) && trim((string)$a->enabled) === '0') {
                 continue;
             }
-            $collect(trim((string)$a->name), trim((string)$a->type), preg_split('/[\s,]+/', trim((string)$a->content)) ?: []);
+            $collect(
+                trim((string)$a->name),
+                trim((string)$a->type),
+                preg_split('/[\s,]+/', trim((string)$a->content)) ?: [],
+                $expire_seconds($a->expire ?? 0)
+            );
         }
     }
     if (isset($cfg->aliases->alias)) {
         foreach ($cfg->aliases->alias as $a) {
-            $collect(trim((string)$a->name), trim((string)$a->type), preg_split('/[\s,]+/', trim((string)$a->address)) ?: []);
+            $collect(
+                trim((string)$a->name),
+                trim((string)$a->type),
+                preg_split('/[\s,]+/', trim((string)$a->address)) ?: [],
+                $expire_seconds($a->expire ?? 0)
+            );
         }
     }
 
@@ -188,11 +209,22 @@ function alias_set_lines(array $aliases): array
 {
     $lines = [];
     foreach ($aliases as $name => $al) {
-        if (!empty($al['hasaddr'])) {
+        /*
+         * "external" aliases with an expire value get a default per-element
+         * timeout so entries pushed in through the API age out on their own,
+         * replacing the FreeBSD `pfctl -T expire` cron. The timeout flag is
+         * combined with interval so CIDR ranges keep working.
+         */
+        $expire = ($al['type'] ?? '') === 'external' ? (int)($al['expire'] ?? 0) : 0;
+        $setFlags = $expire > 0 ? 'flags interval,timeout;' : 'flags interval;';
+        if ($al['hasaddr'] ?? false) {
             foreach (['v4' => 'ipv4_addr', 'v6' => 'ipv6_addr'] as $fam => $atype) {
                 $lines[] = '    set ' . $name . '_' . $fam . ' {';
                 $lines[] = '        type ' . $atype . ';';
-                $lines[] = '        flags interval;';
+                $lines[] = '        ' . $setFlags;
+                if ($expire > 0) {
+                    $lines[] = '        timeout ' . $expire . 's;';
+                }
                 /*
                  * auto-merge lets overlapping/adjacent entries coalesce instead
                  * of being rejected. Dynamic aliases (GeoIP, URL tables) are
