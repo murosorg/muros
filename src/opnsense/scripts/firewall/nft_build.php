@@ -889,6 +889,22 @@ if ($cfg === false) {
 $ifaces = build_interfaces($cfg);
 $aliases = build_aliases($cfg);
 
+/* CARP/VRRP high availability: keepalived owns the virtual addresses and its
+ * VRRP adverts (IP protocol 112) reach this host either as multicast
+ * (224.0.0.18 / ff02::12) or, in unicast HA mode, addressed to the firewall
+ * itself. The default-deny input chain would otherwise drop them and every
+ * node would elect itself master (split brain). Emit an automatic accept in
+ * the input chain whenever at least one CARP virtual IP is configured. */
+$carp_enabled = false;
+if (isset($cfg->virtualip->vip)) {
+    foreach ($cfg->virtualip->vip as $vip) {
+        if ((string)$vip->mode === 'carp') {
+            $carp_enabled = true;
+            break;
+        }
+    }
+}
+
 /* Default block logging. OPNsense logs packets that fall through to the
  * default deny unless the operator clears the option (stored as
  * syslog/nologdefaultblock). The logged drop is appended at the end of the
@@ -954,6 +970,9 @@ $out[] = '        ct state established,related accept';
 $out[] = '        ct state invalid counter drop';
 $out[] = '        meta l4proto ipv6-icmp accept comment "IPv6 neighbor discovery"';
 $out[] = '        ip protocol icmp accept';
+if ($carp_enabled) {
+    $out[] = '        meta l4proto 112 counter accept comment "CARP/VRRP adverts"';
+}
 // Anti-lockout is emitted before the martian/block-private rules on purpose:
 // when the management interface sits on a private network (a common
 // WAN-on-LAN setup), block-private would otherwise drop new management

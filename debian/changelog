@@ -1,3 +1,22 @@
+muros (0.9.55) trixie; urgency=medium
+
+  * HA (CARP/VRRP): permit incoming VRRP adverts on the firewall input chain.
+    - nft_build.php now emits an automatic "meta l4proto 112 accept" rule in
+      the input chain whenever at least one CARP virtual IP is configured. The
+      default-deny input chain previously dropped the keepalived VRRP adverts
+      (IP protocol 112, multicast 224.0.0.18 / ff02::12 or unicast HA), so every
+      node stopped hearing its peer and elected itself master (split brain).
+      This mirrors the automatic "CARP defaults" pass rule that OPNsense ships;
+      the legacy filter.lib.inc generator that built it is not consumed by the
+      nft data plane, so the rule had to be ported into nft_build.php directly.
+    - reconfigure_vips.php triggers a "filter reload" when CARP VIPs are present
+      so adding the first CARP VIP toggles the rule on without a manual reload.
+    - Validated end to end on a two node bench: correct master/backup election
+      from advskew, VIP ownership on the master, failover to the backup with no
+      ping loss when the master is stopped, and preemptive failback on recovery.
+
+ -- MurOS <dev@muros.org>  Sat, 27 Jun 2026 18:55:00 +0200
+
 muros (0.9.54) trixie; urgency=medium
 
   * IPsec: fix the swanctl updown handler for routed IPsec and manual policies.

@@ -159,3 +159,16 @@ if ($proxyarp) {
 require_once('vrrp.inc');
 vrrp_configure();
 conntrackd_configure();
+
+/*
+ * MurOS: the firewall input chain carries an automatic accept for VRRP adverts
+ * (IP protocol 112) that is only emitted while at least one CARP VIP exists.
+ * Reload the ruleset so adding or removing the last CARP VIP toggles that rule;
+ * without it keepalived peers cannot hear each other and split brain occurs.
+ */
+foreach (config_read_array('virtualip', 'vip', false) as $vipent) {
+    if (($vipent['mode'] ?? '') === 'carp') {
+        configd_run('filter reload');
+        break;
+    }
+}
