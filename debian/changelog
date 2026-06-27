@@ -1,4 +1,4 @@
-muros (0.9.45) trixie; urgency=medium
+muros (0.9.47) trixie; urgency=medium
 
   * High availability: port the CARP/pfsync data plane to native Debian tooling.
     CARP virtual IPs (virtualip/vip mode=carp) are now realised as keepalived
