@@ -10,18 +10,22 @@
  * serialises filter rules to pf text and loads them with `pfctl -f`,
  * MurOS serialises to nft and loads them with `nft -f`.
  *
- * Iteration 1 covers the common stateful filter cases:
+ * Covered so far:
  *   - pass / block / reject, IPv4 (inet) and IPv6 (inet6)
  *   - per-interface ingress match (interface key -> device)
  *   - tcp / udp / icmp, source and destination address/network and ports
+ *   - host / network / port aliases compiled to named sets (with timeout
+ *     based expiry for external aliases)
  *   - block-private / block-bogons martian drops on flagged interfaces
  *   - a mandatory anti-lockout allowance (ssh + web to the firewall)
- *   - NAT: automatic/hybrid outbound masquerade, advanced outbound rules
- *     and destination NAT port forwards (with their associated forward pass)
+ *   - NAT: automatic/hybrid outbound masquerade, advanced outbound rules,
+ *     destination NAT port forwards (matched on the published destination
+ *     and optional source, with their associated forward pass) and 1:1 NAT
+ *     for single IPv4 hosts
  *
- * Not yet handled (kept on the roadmap): 1:1 NAT and NPt, policy based
- * routing (route-to/reply-to), traffic shaping/dummynet, aliases as named
- * sets, and the finer pf state options.
+ * Not yet handled (kept on the roadmap): IPv6 NPt and subnet 1:1 netmap,
+ * policy based routing (route-to/reply-to), traffic shaping/dummynet, and
+ * the finer pf state options.
  *
  * Usage: nft_build.php [config.xml]   (defaults to /conf/config.xml)
  * The ruleset is written to stdout.
@@ -265,17 +269,26 @@ function build_interfaces(SimpleXMLElement $cfg): array
             continue;
         }
         $entry = ['device' => $dev, 'cidr4' => null, 'cidr6' => null,
+                  'ip4' => null, 'ip6' => null,
                   'blockpriv' => !empty((string)$node->blockpriv),
                   'blockbogons' => !empty((string)$node->blockbogons)];
         $ip4 = trim((string)$node->ipaddr);
         $sub4 = trim((string)$node->subnet);
-        if (filter_var($ip4, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) && $sub4 !== '') {
-            $entry['cidr4'] = network_of($ip4, (int)$sub4);
+        if (filter_var($ip4, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+            /* host address of the interface, used to match "<key>ip" tokens
+             * (the "WAN address" target of a port forward, for instance). */
+            $entry['ip4'] = $ip4;
+            if ($sub4 !== '') {
+                $entry['cidr4'] = network_of($ip4, (int)$sub4);
+            }
         }
         $ip6 = trim((string)$node->ipaddrv6);
         $sub6 = trim((string)$node->subnetv6);
-        if (filter_var($ip6, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) && $sub6 !== '') {
-            $entry['cidr6'] = $ip6 . '/' . $sub6;
+        if (filter_var($ip6, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
+            $entry['ip6'] = $ip6;
+            if ($sub6 !== '') {
+                $entry['cidr6'] = $ip6 . '/' . $sub6;
+            }
         }
         $out[(string)$key] = $entry;
     }
@@ -310,6 +323,13 @@ function resolve_endpoint(?SimpleXMLElement $ep, string $family, array $ifaces, 
     /* network is an interface key; use its statically known subnet. */
     if (isset($ifaces[$net])) {
         return $family === 'ip6' ? $ifaces[$net]['cidr6'] : $ifaces[$net]['cidr4'];
+    }
+    /* "<key>ip" refers to the single host address of an interface (the
+     * "WAN address" a port forward is usually published on). Resolve it to
+     * the statically configured address; dynamic interfaces stay null. */
+    if (substr($net, -2) === 'ip' && isset($ifaces[substr($net, 0, -2)])) {
+        $itf = $ifaces[substr($net, 0, -2)];
+        return $family === 'ip6' ? $itf['ip6'] : $itf['ip4'];
     }
     /* literal CIDR stored directly in network. */
     if (strpos($net, '/') !== false) {
@@ -437,9 +457,21 @@ function build_nat(SimpleXMLElement $cfg, array $ifaces, array $wanDevs, array $
             }
             $extPort = resolve_port((string)($r->{'destination'}->port ?? ''), $aliases);
             $localPort = trim((string)$r->{'local-port'});
+            /* Match the published destination (typically the WAN address) and,
+             * when set, the allowed source. Without the destination match the
+             * forward would hijack traffic aimed at any address reachable on
+             * the ingress interface, not just the one it is published on. */
+            $dst = resolve_endpoint($r->destination ?? null, 'ip', $ifaces, $aliases);
+            $src = resolve_endpoint($r->source ?? null, 'ip', $ifaces, $aliases);
             $parts = [];
             if ($dev !== null) {
                 $parts[] = 'iifname ' . ifname_token($dev);
+            }
+            if ($src !== null) {
+                $parts[] = "ip saddr $src";
+            }
+            if ($dst !== null) {
+                $parts[] = "ip daddr $dst";
             }
             $parts[] = "$proto";
             if ($extPort !== null) {
