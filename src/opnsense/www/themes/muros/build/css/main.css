@@ -6726,7 +6726,7 @@ body {
 .page-content-main {
   background: #1a1d27;
   min-height: calc(100% - 64px);
-  padding: 15px 0 73px;
+  padding: 15px 0;
 }
 
 .page-side {

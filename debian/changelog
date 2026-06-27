@@ -1,3 +1,14 @@
+muros (0.9.44) trixie; urgency=medium
+
+  * Web UI: remove the page footer ("MurOS (c) <year> MurOS") from both the
+    modern MVC layout and the legacy pages. It took up screen space without
+    adding value. The bottom padding reserved for the fixed footer is dropped
+    so the content area now extends to the bottom of the window. JavaScript
+    that measured the footer height (sidebar sizing, tree view resize) falls
+    back gracefully when the element is absent.
+
+ -- MurOS <dev@muros.org>  Sat, 27 Jun 2026 14:55:00 +0200
+
 muros (0.9.43) trixie; urgency=medium
 
   * Installer: default the system hostname to "muros" (lowercase) instead of

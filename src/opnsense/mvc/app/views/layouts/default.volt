@@ -183,13 +183,6 @@
             </div>
           </div>
         </section>
-        <!-- page footer -->
-        <footer class="page-foot">
-          <div class="container-fluid">
-            <a target="_blank" href="{{ product_website }}">{{ product_name }}</a> (c) {{ product_copyright_years }}
-            <a target="_blank" href="{{ product_copyright_url }}">{{ product_copyright_owner }}</a>
-          </div>
-        </footer>
       </div>
     </main>
 

@@ -50,7 +50,9 @@
        * resize tree height
        */
       $(window).on('resize', function() {
-          let new_height = $(".page-foot").offset().top -
+          let page_foot = $(".page-foot");
+          let bottom_anchor = page_foot.length ? page_foot.offset().top : $(window).height();
+          let new_height = bottom_anchor -
                            ($(".page-content-head").offset().top + $(".page-content-head").height()) - 160;
           $(".treewidget").height(new_height);
           $(".treewidget").css('max-height', new_height + 'px');

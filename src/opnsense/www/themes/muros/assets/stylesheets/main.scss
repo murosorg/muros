@@ -127,7 +127,7 @@ body{
 .page-content-main {
   background: map-get($colors, content-background);
   min-height: calc(100% - 64px);
-  padding: 15px 0 (15px + 58px);
+  padding: 15px 0;
 }
 
 .page-side{

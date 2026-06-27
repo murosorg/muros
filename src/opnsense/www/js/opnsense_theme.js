@@ -40,7 +40,7 @@ $(document).ready(function () {
     navigation = $('#navigation'),
     mainmenu = $('#mainmenu'),
     countA = layer_a.length,
-    footH = $('.page-foot').height(),
+    footH = $('.page-foot').height() || 0,
     headerH = $('.navbar').height(),
     li_itemH = $('a.list-group-item').height(),
     navHeight = (countA * 70) + (headerH + footH - li_itemH),
