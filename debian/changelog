@@ -1,3 +1,18 @@
+muros (0.9.50) trixie; urgency=medium
+
+  * Branding: the browser tab favicon now matches the marketing site. Both the
+    modern (Phalcon/Volt) and legacy PHP page headers, plus the login screen,
+    serve the site's SVG mark with a PNG fallback, so every page shows the same
+    icon instead of the previous bitmap. The theme now ships favicon.svg
+    alongside favicon.png.
+  * Branding: fix two leftover OPNsense references. The MVC default page title
+    fell back to "OPNsense" when a controller set no title; it is now "MurOS".
+    The TOTP enrolment URI advertised issuer "OPNsense" and an icon hosted on
+    docs.opnsense.org; it now uses issuer "MurOS" and the MurOS icon, so
+    authenticator apps show the right name and logo.
+
+ -- MurOS <dev@muros.org>  Sat, 27 Jun 2026 16:20:00 +0200
+
 muros (0.9.49) trixie; urgency=medium
 
   * Firmware: make the status and health pages load fast again. The health

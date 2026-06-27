@@ -343,7 +343,8 @@ function display_error_form($text)
     <title><?= gettext('Error') ?> | <?= $product->name() ?></title>
 
     <link href="<?= cache_safe(get_themed_filename('/css/main.css')) ?>" rel="stylesheet">
-    <link href="<?= cache_safe(get_themed_filename('/images/favicon.png')) ?>" rel="shortcut icon">
+    <link href="<?= cache_safe(get_themed_filename('/images/favicon.svg')) ?>" rel="icon" type="image/svg+xml">
+    <link href="<?= cache_safe(get_themed_filename('/images/favicon.png')) ?>" rel="icon" type="image/png" sizes="any">
 
     <script src="/ui/js/jquery-3.5.1.min.js"></script>
 
@@ -384,7 +385,8 @@ function display_login_form($Login_Error)
     <title><?= gettext('Login') ?> | <?= $product->name() ?></title>
 
     <link href="<?= cache_safe(get_themed_filename('/css/main.css')) ?>" rel="stylesheet">
-    <link href="<?= cache_safe(get_themed_filename('/images/favicon.png')) ?>" rel="shortcut icon">
+    <link href="<?= cache_safe(get_themed_filename('/images/favicon.svg')) ?>" rel="icon" type="image/svg+xml">
+    <link href="<?= cache_safe(get_themed_filename('/images/favicon.png')) ?>" rel="icon" type="image/png" sizes="any">
 
     <script src="/ui/js/jquery-3.5.1.min.js"></script>
 

@@ -77,8 +77,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             $otp_url = "otpauth://totp/";
             $otp_url .= $username."@".htmlspecialchars($config['system']['hostname'])."?secret=";
             $otp_url .= $new_seed;
-            $otp_url .= "&issuer=OPNsense";
-            $otp_url .= "&image=https://docs.opnsense.org/_static/favicon.png";
+            $otp_url .= "&issuer=MurOS";
+            $otp_url .= "&image=https://download.muros.org/assets/icon-192.png";
             echo json_encode([
               "otp_seed" => $new_seed ,
               "otp_seed_url" => $otp_url,

@@ -63,7 +63,8 @@ $pagetitle .= html_safe(sprintf(' | %s.%s', $config['system']['hostname'], $conf
     </style>
 
     <!-- Favicon -->
-    <link rel="shortcut icon" href="<?= cache_safe(get_themed_filename('/images/favicon.png')) ?>">
+    <link rel="icon" type="image/svg+xml" href="<?= cache_safe(get_themed_filename('/images/favicon.svg')) ?>">
+    <link rel="icon" type="image/png" sizes="any" href="<?= cache_safe(get_themed_filename('/images/favicon.png')) ?>">
 
     <!-- legacy browser functions -->
     <script src="<?= cache_safe("/ui/js/polyfills.js") ?>"></script>
