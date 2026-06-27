@@ -33,6 +33,10 @@ override_dh_installsystemd:
 	dh_installsystemd --name=muros-firewall --no-enable --no-start muros-firewall.service
 	dh_installsystemd --name=muros-interface-assign --no-enable --no-start muros-interface-assign.service
 	dh_installsystemd --name=muros-interfaces --no-enable --no-start muros-interfaces.service
+	# CARP/VRRP bring-up. Shipped disabled here and enabled through the systemd
+	# preset (90-muros.preset) alongside the other data-plane units, so it never
+	# auto-starts at install before interfaces have been assigned.
+	dh_installsystemd --name=muros-carp --no-enable --no-start muros-carp.service
 
 # Large interpreted payload: these steps are irrelevant and slow.
 override_dh_strip:
