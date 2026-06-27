@@ -175,32 +175,74 @@ function dhcrelay_configure_id($verbose = false, $id_map = null)
             continue;
         }
 
+        /*
+         * Debian ships ISC dhcrelay as a single /usr/sbin/dhcrelay binary
+         * selected with -4 / -6 (FreeBSD had separate dhcrelay and dhcrelay6
+         * under /usr/local/sbin). muros-daemon keeps the foreground process
+         * under a tracked pidfile, exactly like the FreeBSD daemon(8) wrapper.
+         */
         $cmd_frmt = ['/usr/local/sbin/muros-daemon -f -p %s'];
         $cmd_args = ["/var/run/dhcrelay-{$relay->getAttribute('uuid')}.pid"];
 
-        $cmd_frmt[] = sprintf('/usr/local/sbin/dhcrelay%s -d', $family == 'inet6' ? '6' : '');
+        $cmd_frmt[] = sprintf('/usr/sbin/dhcrelay -d %s', $family == 'inet6' ? '-6' : '-4');
 
-        if (!$relay->agent_info->isEmpty()) {
-            $cmd_frmt[] = sprintf('-o%s', $family == 'inet' ? 'r' : '');
+        if ($family == 'inet' && !$relay->agent_info->isEmpty()) {
+            /*
+             * Relay agent information option (82). FreeBSD enabled it with -o
+             * (append) or -or (replace) and always used replace for IPv4; the
+             * Debian binary turns the option on with -a and selects the policy
+             * with -m. IPv6 has no option 82, so this is IPv4 only.
+             */
+            $cmd_frmt[] = '-a -m replace';
         }
-
-        $cmd_frmt[] = '-i %s';
-        $cmd_args[] = $device;
 
         $has_servers = false;
 
-        foreach ($destination->server->getValues() as $server) {
-            if ($family == 'inet6') {
+        if ($family == 'inet6') {
+            /*
+             * IPv6: one lower (client) link and one upper (server) link per
+             * configured server, each scoped to the interface that routes to
+             * it ([address%]interface), per the dhcrelay -6 syntax.
+             */
+            $cmd_frmt[] = '-l %s';
+            $cmd_args[] = $device;
+
+            foreach ($destination->server->getValues() as $server) {
                 $routeif = shell_safe('/usr/sbin/ip -6 route get %s | awk \'{ for (i = 1; i <= NF; i++) if ($i == "dev") print $(i + 1) }\' | head -n 1', $server);
                 if (empty($routeif)) {
                     log_msg("dhcrelay_configure_id() found no suitable route to $server for $interface($device)", LOG_WARNING);
                     continue;
                 }
-                $server .= '%' . $routeif;
+                $cmd_frmt[] = '-u %s';
+                $cmd_args[] = "{$server}%{$routeif}";
+                $has_servers = true;
             }
-            $cmd_frmt[] = '%s';
-            $cmd_args[] = $server;
-            $has_servers = true;
+        } else {
+            /*
+             * IPv4: listen on the client interface and on every interface that
+             * routes to a configured server, so replies coming back from the
+             * server side are picked up as well. Servers are positional.
+             */
+            $cmd_frmt[] = '-i %s';
+            $cmd_args[] = $device;
+            $upstreams = [$device => true];
+            $servers = [];
+
+            foreach ($destination->server->getValues() as $server) {
+                $routeif = shell_safe('/usr/sbin/ip -4 route get %s | awk \'{ for (i = 1; i <= NF; i++) if ($i == "dev") print $(i + 1) }\' | head -n 1', $server);
+                if (!empty($routeif) && empty($upstreams[$routeif])) {
+                    $cmd_frmt[] = '-i %s';
+                    $cmd_args[] = $routeif;
+                    $upstreams[$routeif] = true;
+                }
+                $servers[] = $server;
+                $has_servers = true;
+            }
+
+            foreach ($servers as $server) {
+                $cmd_frmt[] = '%s';
+                $cmd_args[] = $server;
+            }
         }
 
         if (!$has_servers) {
