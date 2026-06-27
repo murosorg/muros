@@ -28,7 +28,15 @@ import subprocess
 
 def list_spds(req_id=None, automatic=True):
     result = []
-    setkey_text = subprocess.run(['/sbin/setkey', '-PD'], capture_output=True, text=True).stdout.strip()
+    try:
+        setkey_text = subprocess.run(['/sbin/setkey', '-PD'], capture_output=True, text=True).stdout.strip()
+    except FileNotFoundError:
+        # setkey is a FreeBSD/KAME tool with no Linux equivalent. The manual
+        # SPD reconciliation it fed is a no-op here: charon installs the
+        # policies it negotiates straight into the XFRM stack via netlink.
+        # Return no records so callers (updown_event) skip the legacy path
+        # instead of crashing on the missing binary.
+        return result
     this_record = None
     line_num = 0
     for line in setkey_text.split('\n'):

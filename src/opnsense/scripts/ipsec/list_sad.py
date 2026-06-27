@@ -25,91 +25,103 @@
     ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
     POSSIBILITY OF SUCH DAMAGE.
 
+    --
+
+    List the kernel Security Association Database (SAD). On Linux the IPsec
+    SAs are installed by charon into the XFRM stack, so we read them with
+    'ip -s xfrm state' instead of the FreeBSD/KAME 'setkey -D'. The output
+    keeps the same field names the SAD grid expects.
 """
 import hashlib
 import subprocess
 import ujson
 
+FIELDS = ['src', 'dst', 'satype', 'state', 'replay', 'spi', 'reqid', 'mode',
+          'alg_enc', 'alg_auth', 'addtime_created', 'bytes_current', 'ikeid']
+
+
+def _strip(token):
+    # '0x00000301(769)' -> '00000301' ; '16385(0x00004001)' -> '16385'
+    token = token.split('(')[0]
+    if token.startswith('0x'):
+        token = token[2:]
+    return token
+
+
+def parse_states(payload):
+    records = []
+    entry = None
+    section = None
+    for raw in payload.split("\n"):
+        if raw == '':
+            continue
+        indented = raw[0] in (' ', '\t')
+        parts = raw.split()
+        if not indented and len(parts) >= 4 and parts[0] == 'src' and parts[2] == 'dst':
+            if entry is not None:
+                records.append(entry)
+            entry = {key: None for key in FIELDS}
+            entry['src'] = parts[1]
+            entry['dst'] = parts[3]
+            section = None
+            continue
+        if entry is None:
+            continue
+        if parts and parts[0] == 'proto':
+            for i, part in enumerate(parts):
+                if part == 'proto' and i + 1 < len(parts):
+                    entry['satype'] = parts[i + 1]
+                elif part == 'spi' and i + 1 < len(parts):
+                    entry['spi'] = _strip(parts[i + 1])
+                elif part == 'reqid' and i + 1 < len(parts):
+                    entry['reqid'] = _strip(parts[i + 1])
+                elif part == 'mode' and i + 1 < len(parts):
+                    entry['mode'] = parts[i + 1]
+        elif parts and parts[0] == 'replay-window' and entry['replay'] is None:
+            # The real replay-window line comes before the 'stats:' section,
+            # which also starts with 'replay-window' (a replay error counter);
+            # keep the first occurrence so the window size is not overwritten.
+            entry['replay'] = parts[1] if len(parts) > 1 else None
+        elif parts and parts[0] == 'enc':
+            entry['alg_enc'] = parts[1] if len(parts) > 1 else None
+        elif parts and parts[0] in ('auth-trunc', 'auth', 'aead'):
+            entry['alg_auth'] = parts[1] if len(parts) > 1 else None
+        elif raw.strip().startswith('lifetime current'):
+            section = 'current'
+        elif section == 'current' and '(bytes)' in raw:
+            entry['bytes_current'] = raw.strip().split('(bytes)')[0].strip()
+        elif section == 'current' and parts and parts[0] == 'add':
+            tokens = []
+            for part in parts[1:]:
+                if part == 'use':
+                    break
+                tokens.append(part)
+            if tokens:
+                entry['addtime_created'] = ' '.join(tokens)
+    if entry is not None:
+        records.append(entry)
+    return records
+
+
 if __name__ == '__main__':
     result = {'records': []}
     try:
-        payload = subprocess.run(['/sbin/setkey', '-D'], capture_output=True, text=True).stdout.strip()
+        payload = subprocess.run(
+            ['/usr/sbin/ip', '-s', 'xfrm', 'state'], capture_output=True, text=True
+        ).stdout
     except FileNotFoundError:
-        # setkey is a FreeBSD/KAME tool with no Linux equivalent; the live
-        # security associations are exposed through swanctl (vici) instead.
-        # Return an empty raw SAD rather than failing the request.
         payload = ''
 
-    # split setkey data in sections so we can support line wraps more easily
-    sections = {}
-    this_section = None
-    for line in payload.split("\n"):
-        if not line.startswith("\t") and not line.startswith(" "):
-            this_section = "%08d" % (int(this_section) + 1 if this_section else 1)
-            sections[this_section] = [line]
-        elif this_section and line.startswith("\t"):
-            sections[this_section].append(line)
-        elif this_section and len(sections[this_section]) > 0:
-            seq = len(sections[this_section]) - 1
-            sections[this_section][seq] = "%s%s" % (sections[this_section][seq], line)
-
-    for section in sections:
-        sad_entry = {"src": "", "dst": "", "satype": "", "spi": ""}
-        for seqid, line in enumerate(sections[section]):
-            parts = line.split()
-            if seqid == 0:
-                # add tunnel src / dst
-                keyparts = line.split()
-                sad_entry["src"] = keyparts[0]
-                sad_entry["dst"] = keyparts[1]
-                if len(keyparts) > 2 and keyparts[2].find("["):
-                    sad_entry["nat"] = keyparts[2][1:-1]
-            elif seqid == 1:
-                # satype and mode
-                for pid, part in enumerate(parts):
-                    if pid == 0:
-                        sad_entry["satype"] = part
-                    elif part.startswith("spi"):
-                        sad_entry[part.split('=')[0]] = part.split('(')[-1].split(')')[0][2:]
-                    elif part.find('=') > -1:
-                        sad_entry[part.split('=')[0]] = part.split('=')[1].split("(")[0]
-            elif line.startswith("\tE:"):
-                sad_entry["alg_enc"] = parts[1]
-                sad_entry["m_enc"] = parts[2:]
-            elif line.startswith("\tA:"):
-                sad_entry["alg_auth"] = parts[1]
-                sad_entry["m_auth"] = parts[2:]
-            elif line.count("\t") > 1 and line.count(":") > 0:
-                for item in line.split("\t"):
-                    if item.find(":") > 0:
-                        if line.startswith("\tcreated") or line.startswith("\tdiff"):
-                            keyname = "addtime_%s" % item.split(":")[0]
-                        elif line.startswith("\tlast"):
-                            keyname = "usetime_%s" % item.split(":")[0]
-                        elif line.startswith("\tcurrent"):
-                            keyname = "bytes_%s" % item.split(":")[0]
-                        elif line.startswith("\tallocated") and item.find('allocated') == -1:
-                            keyname = "allocated_%s" % item.split(":")[0]
-                        else:
-                            keyname = item.split(":")[0]
-                        sad_entry[keyname] = item[item.find(":")+1:].split("(")[0].strip()
-            elif line.find("=") > 0:
-                for part in parts:
-                    if part.find("=") > 0:
-                        sad_entry[part.split("=")[0]] = part.split("=")[1].strip()
-
-        # unique id
-        sad_entry['id'] = hashlib.md5(
-            ("%(src)s-%(dst)s-%(satype)s-%(spi)s" % sad_entry).encode()
+    for entry in parse_states(payload):
+        entry['id'] = hashlib.md5(
+            ("%(src)s-%(dst)s-%(satype)s-%(spi)s" % entry).encode()
         ).hexdigest()
-
-        # format output
-        for key in sad_entry:
-            if sad_entry[key] == "":
-                sad_entry[key] = None
-            elif type(sad_entry[key]) is str and sad_entry[key].isdigit() and key not in ['spi']:
-                sad_entry[key] = int(sad_entry[key])
-
-        result['records'].append(sad_entry)
+        for key in list(entry.keys()):
+            value = entry[key]
+            if value == '':
+                entry[key] = None
+            elif isinstance(value, str) and value.isdigit() and key not in ['spi']:
+                entry[key] = int(value)
+        result['records'].append(entry)
 
     print(ujson.dumps(result))

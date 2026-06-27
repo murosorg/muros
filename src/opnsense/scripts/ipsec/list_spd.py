@@ -25,60 +25,90 @@
     ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
     POSSIBILITY OF SUCH DAMAGE.
 
+    --
+
+    List the kernel Security Policy Database (SPD). On Linux charon installs
+    the negotiated policies into the XFRM stack, so we read them with
+    'ip xfrm policy' instead of the FreeBSD/KAME 'setkey -DP'. The output
+    keeps the same field names the SPD grid expects, and the record id
+    (md5 of 'src dst dir') matches the one spddelete.py recomputes.
 """
 import hashlib
 import subprocess
 import ujson
 
+
+def _ident(rec):
+    return hashlib.md5(("%s %s %s" % (rec['src'], rec['dst'], rec['dir'])).encode()).hexdigest()
+
+
+def parse_policies(payload):
+    records = []
+    rec = None
+    for raw in payload.split("\n"):
+        if raw.strip() == '':
+            continue
+        indented = raw[0] in (' ', '\t')
+        parts = raw.split()
+        if not indented and len(parts) >= 4 and parts[0] == 'src' and parts[2] == 'dst':
+            if rec is not None:
+                records.append(rec)
+            rec = {'src': parts[1], 'dst': parts[3], 'dir': None, 'type': None,
+                   'upperspec': 'any', 'src-dst': None, 'level': None, 'proto': None,
+                   'mode': None, 'reqid': None, 'ikeid': None}
+            # optional selector protocol, e.g. 'proto tcp'
+            for i, part in enumerate(parts):
+                if part == 'proto' and i + 1 < len(parts):
+                    rec['upperspec'] = parts[i + 1]
+            continue
+        if rec is None:
+            continue
+        if parts[0] == 'dir':
+            rec['dir'] = parts[1] if len(parts) > 1 else None
+            for i, part in enumerate(parts):
+                if part == 'ptype' and i + 1 < len(parts):
+                    rec['type'] = parts[i + 1]
+        elif parts[0] == 'tmpl':
+            for i, part in enumerate(parts):
+                if part == 'src' and i + 1 < len(parts):
+                    t_src = parts[i + 1]
+                elif part == 'dst' and i + 1 < len(parts):
+                    t_dst = parts[i + 1]
+            try:
+                rec['src-dst'] = [t_src, t_dst]
+            except NameError:
+                rec['src-dst'] = None
+        elif parts[0] == 'proto':
+            for i, part in enumerate(parts):
+                if part == 'proto' and i + 1 < len(parts):
+                    rec['proto'] = parts[i + 1]
+                elif part == 'reqid' and i + 1 < len(parts):
+                    rec['reqid'] = parts[i + 1].split('(')[0]
+                elif part == 'mode' and i + 1 < len(parts):
+                    rec['mode'] = parts[i + 1]
+                elif part == 'level' and i + 1 < len(parts):
+                    rec['level'] = parts[i + 1]
+    if rec is not None:
+        records.append(rec)
+    return records
+
+
 if __name__ == '__main__':
     result = {'records': []}
     try:
-        spd_output = subprocess.run(['/sbin/setkey', '-DP'], capture_output=True, text=True).stdout
+        payload = subprocess.run(
+            ['/usr/sbin/ip', 'xfrm', 'policy'], capture_output=True, text=True
+        ).stdout
     except FileNotFoundError:
-        # setkey is a FreeBSD/KAME tool with no Linux equivalent; charon installs
-        # the negotiated policies through XFRM directly. Return an empty SPD.
-        spd_output = ''
-    line_no = 0
-    spd_rec = None
-    spec_line = ""
-    for line in spd_output.split("\n"):
-        line_no += 1
-        parts = line.split()
-        if not line.startswith("\t") and len(parts) > 2:
-            line_no = 0
-            spec_line = line.strip()
-            spd_rec = {
-                'src': parts[0].split('[')[0],
-                'dst': parts[1].split('[')[0]
-            }
-            if parts[0].find('[') > 0:
-                spd_rec['src_port'] = parts[0].split('[')[1].split(']')[0]
-            if parts[1].find('[') > 0:
-                spd_rec['dst_port'] = parts[1].split('[')[1].split(']')[0]
-            spd_rec['upperspec'] = parts[2]
-        elif spd_rec and line_no == 1 and len(parts) >= 2:
-            spd_rec['dir'] = parts[0]
-            spd_rec['type'] = parts[1]
-            # the spd record (used for spddelete) identities itself by the spec {first row} + direction
-            ident = "%s %s" % (spec_line, parts[0])
-            spd_rec['id'] = hashlib.md5(ident.encode()).hexdigest()
-        elif spd_rec and line_no == 2 and line.count('/') >= 3:
-            parts = line.strip().split('/')
-            spd_rec['proto'] = parts[0]
-            spd_rec['mode'] = parts[1]
-            spd_rec['src-dst'] = parts[2].split('-')
-            spd_rec['level'] = parts[3].split('#')[0].split(':')[0]
-            if parts[3].find(':') > -1:
-                spd_rec['reqid'] = parts[3].split(':')[-1]
-        elif spd_rec and line.find('=') > 0:
-            for attr in parts:
-                if attr.find('=') > -1:
-                    tmp = attr.split('=')
-                    spd_rec[tmp[0]] = tmp[1]
-            if line.startswith('\trefcnt'):
-                result['records'].append(spd_rec)
+        payload = ''
 
-    # make sure all records are formatted equally in terms of available fields
+    for rec in parse_policies(payload):
+        # socket policies (dir in/out/fwd absent) are kernel-internal; skip
+        if not rec.get('dir'):
+            continue
+        rec['id'] = _ident(rec)
+        result['records'].append(rec)
+
     all_keys = set()
     for record in result['records']:
         all_keys = all_keys.union(record.keys())

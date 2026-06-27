@@ -25,9 +25,13 @@
     ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
     POSSIBILITY OF SUCH DAMAGE.
 
+    --
+
+    Flush selected entries from the kernel SAD. On Linux the SAs live in the
+    XFRM stack, so we delete them with 'ip xfrm state delete' (the FreeBSD
+    'setkey -c' interface does not exist here).
 """
 import argparse
-import hashlib
 import subprocess
 import ujson
 
@@ -36,8 +40,10 @@ if __name__ == '__main__':
     parser.add_argument('id', help='record id (md5 hash)')
     cmd_args = parser.parse_args()
 
-    result  = {'status': 'not_found'}
-    sp = subprocess.run(['/usr/local/opnsense/scripts/ipsec/list_sad.py'], capture_output=True, text=True)
+    result = {'status': 'not_found'}
+    sp = subprocess.run(
+        ['/usr/local/opnsense/scripts/ipsec/list_sad.py'], capture_output=True, text=True
+    )
     payload = ujson.loads(sp.stdout)
     sads = cmd_args.id.split(',')
     deleted_entries = []
@@ -45,8 +51,11 @@ if __name__ == '__main__':
         if record['id'] in sads:
             result['status'] = 'found'
             deleted_entries.append(record)
-            policy = "delete %(src)s %(dst)s %(satype)s 0x%(spi)s;" % record
-            sp = subprocess.run(['/sbin/setkey', '-c'], capture_output=True, text=True, input=policy)
+            subprocess.run([
+                '/usr/sbin/ip', 'xfrm', 'state', 'delete',
+                'src', record['src'], 'dst', record['dst'],
+                'proto', record['satype'], 'spi', '0x%s' % record['spi']
+            ], capture_output=True, text=True)
 
     result['items'] = deleted_entries
     print(ujson.dumps(result))

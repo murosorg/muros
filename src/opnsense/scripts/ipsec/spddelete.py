@@ -25,9 +25,13 @@
     ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
     POSSIBILITY OF SUCH DAMAGE.
 
+    --
+
+    Flush selected entries from the kernel SPD. On Linux the policies live in
+    the XFRM stack, so we delete them with 'ip xfrm policy delete' keyed on
+    the same selector (src, dst, direction) the listing exposes.
 """
 import argparse
-import hashlib
 import subprocess
 import ujson
 
@@ -36,30 +40,25 @@ if __name__ == '__main__':
     parser.add_argument('id', help='record id (md5 hash)')
     cmd_args = parser.parse_args()
 
-    result  = {'status': 'not_found'}
-    sp = subprocess.run(['/sbin/setkey', '-DP'], capture_output=True, text=True)
-    spec_line = None
+    result = {'status': 'not_found'}
+    sp = subprocess.run(
+        ['/usr/local/opnsense/scripts/ipsec/list_spd.py'], capture_output=True, text=True
+    )
+    payload = ujson.loads(sp.stdout)
     spds = cmd_args.id.split(',')
     deleted_entries = []
-    for line in sp.stdout.split("\n"):
-        if not line.startswith("\t") and len(line.split()) > 2:
-            spec_line = line.strip()
-        elif spec_line:
-            ident = "%s %s" % (spec_line, line.strip().split()[0])
-            if hashlib.md5(ident.encode()).hexdigest() in spds:
-                result['status'] = 'found'
-                parts = ident.split()
-                item = {
-                    'src_range': parts[0],
-                    'dst_range': parts[1],
-                    'upperspec': parts[2],
-                    'direction': parts[3],
-                }
-                deleted_entries.append(item)
-                policy = "spddelete -n %(src_range)s %(dst_range)s %(upperspec)s -P %(direction)s;" % item
-                p = subprocess.run(['/sbin/setkey', '-c'], capture_output=True, text=True, input=policy)
-
-            spec_line = None
+    for record in payload['records']:
+        if record['id'] in spds:
+            result['status'] = 'found'
+            deleted_entries.append({
+                'src_range': record['src'],
+                'dst_range': record['dst'],
+                'direction': record['dir'],
+            })
+            subprocess.run([
+                '/usr/sbin/ip', 'xfrm', 'policy', 'delete',
+                'src', record['src'], 'dst', record['dst'], 'dir', record['dir']
+            ], capture_output=True, text=True)
 
     result['items'] = deleted_entries
     print(ujson.dumps(result))
