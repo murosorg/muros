@@ -1,3 +1,17 @@
+muros (0.9.48) trixie; urgency=medium
+
+  * IPsec: make route-based (VTI) tunnels actually carry traffic on Linux. The
+    swanctl child of a tunnel bound to a VTI device now emits if_id_in and
+    if_id_out equal to the VTI reqid, which is the id of the ipsec<reqid> xfrm
+    interface created for it. On FreeBSD the reqid alone bound the if_ipsec
+    device, but the Linux XFRM stack only forwards a child's traffic through the
+    xfrm interface when the negotiated SAs are tagged with its if_id. Both the
+    connections model (Swanctl) and the legacy phase1/phase2 generator set this,
+    and only for children whose reqid matches a configured VTI so plain tunnels
+    that pin a reqid keep their normal behaviour.
+
+ -- MurOS <dev@muros.org>  Sat, 27 Jun 2026 15:45:00 +0200
+
 muros (0.9.47) trixie; urgency=medium
 
   * High availability: port the CARP/pfsync data plane to native Debian tooling.

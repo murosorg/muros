@@ -186,6 +186,14 @@ class Swanctl extends BaseModel
             'children' => 'children.child',
         ];
         $pool_names = [];
+        /* reqids that back a route-based VTI xfrm interface (ipsec<reqid>); used
+           below to tag matching children with the interface id on Linux. */
+        $vti_reqids = [];
+        foreach ($this->getVtiDevices() as $vti_device) {
+            if ((string)$vti_device['reqid'] !== '') {
+                $vti_reqids[(string)$vti_device['reqid']] = true;
+            }
+        }
         foreach ($references as $key => $ref) {
             foreach ($this->getNodeByReference($ref)->iterateItems() as $node_uuid => $node) {
                 if (empty((string)$node->enabled)) {
@@ -271,6 +279,18 @@ class Swanctl extends BaseModel
                         }
                         $thisnode['updown'] = '/usr/local/opnsense/scripts/ipsec/updown_event.py --connection_child ';
                         $thisnode['updown'] .= $node_uuid;
+
+                        /* A child whose reqid matches a route-based VTI device backs
+                           the ipsec<reqid> xfrm interface (created with if_id = reqid).
+                           On Linux charon binds SAs to that interface through
+                           if_id_in/if_id_out, so emit them to match; on FreeBSD the
+                           reqid alone was enough. Without this, routed IPsec negotiates
+                           but forwarded traffic is never encrypted. A reqid set on a
+                           non-VTI child keeps its plain CHILD_SA meaning. */
+                        if (!empty($thisnode['reqid']) && isset($vti_reqids[(string)$thisnode['reqid']])) {
+                            $thisnode['if_id_in'] = (string)$thisnode['reqid'];
+                            $thisnode['if_id_out'] = (string)$thisnode['reqid'];
+                        }
 
                         $data['connections'][$parent]['children'][$node_uuid] = $thisnode;
                     } else {
