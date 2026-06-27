@@ -17,10 +17,28 @@
 if [ -f /var/db/ipsecpinghosts ]; then
 	IPSECHOSTS="/var/db/ipsecpinghosts"
 	CURRENTIPSECHOSTS="/var/db/currentipsecpinghosts"
-	# MurOS: CARP/VRRP high availability is not wired on Linux yet, so always
-	# behave as the active node and ping the configured IPsec hosts.
-	echo "Pinging ipsec hosts"
-	cat < $IPSECHOSTS > $CURRENTIPSECHOSTS
+	# Only the CARP master should keep the IPsec tunnels alive: pinging the
+	# remote hosts from a backup node would run the failure/restore scripts on
+	# both members. MurOS derives the role from the keepalived (VRRP) state
+	# files written by the notify hook (/var/run/vrrp/*.state), the same source
+	# carp_status.php uses. When no CARP VIP is configured there are no state
+	# files and we behave as the active node, matching the standalone case.
+	CARP_BACKUP=0
+	for _statefile in /var/run/vrrp/*.state; do
+		[ -f "$_statefile" ] || continue
+		_state=`tr '[:lower:]' '[:upper:]' < "$_statefile" | tr -d '[:space:]'`
+		if [ "$_state" = "BACKUP" ] || [ "$_state" = "FAULT" ]; then
+			CARP_BACKUP=1
+			break
+		fi
+	done
+	if [ "$CARP_BACKUP" -eq 1 ]; then
+		echo "Skipping ipsec hosts: this node is a CARP backup"
+		: > $CURRENTIPSECHOSTS
+	else
+		echo "Pinging ipsec hosts"
+		cat < $IPSECHOSTS > $CURRENTIPSECHOSTS
+	fi
 fi
 
 # General file meant for user consumption
