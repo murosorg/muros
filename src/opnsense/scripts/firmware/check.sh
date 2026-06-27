@@ -124,7 +124,12 @@ fi
 
 if [ "${connection}" = "ok" ] && [ "${repository}" = "ok" ]; then
     SIMFILE="/tmp/pkg_update.sim"
-    apt-get -s -o Dpkg::Use-Pty=0 dist-upgrade > ${SIMFILE} 2>/dev/null
+    # A single solver pass: with dist-upgrade, --print-uris keeps apt's
+    # Inst/Conf/Remv plan lines (consumed by parse-upgrade.awk) and additionally
+    # appends the download URIs and their sizes. We used to run the dependency
+    # solver twice (once for the package list, once for the size); reusing one
+    # output halves that cost on the synchronous status check.
+    apt-get -s -o Dpkg::Use-Pty=0 --print-uris dist-upgrade > ${SIMFILE} 2>/dev/null
 
     # split apt's Inst/Remv lines into the JSON arrays the GUI expects
     KERN=$(awk -f ${BASEDIR}/parse-upgrade.awk ${SIMFILE})
@@ -134,8 +139,7 @@ if [ "${connection}" = "ok" ] && [ "${repository}" = "ok" ]; then
     rm -f /tmp/fw_parse_upg /tmp/fw_parse_new /tmp/fw_parse_rem
 
     # total download size of the pending .deb archives, rendered for display
-    size_bytes=$(apt-get -s -o Dpkg::Use-Pty=0 --print-uris dist-upgrade 2>/dev/null | \
-        awk '/^.?http/ || /^.?file:/ || /^.?cdrom:/ {s+=$3} END{printf "%.0f", s+0}')
+    size_bytes=$(awk '/^.?http/ || /^.?file:/ || /^.?cdrom:/ {s+=$3} END{printf "%.0f", s+0}' ${SIMFILE})
     if [ -n "${size_bytes}" ] && [ "${size_bytes}" != "0" ]; then
         download_size=$(numfmt --to=iec --suffix=B "${size_bytes}" 2>/dev/null)
     fi

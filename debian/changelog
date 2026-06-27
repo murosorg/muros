@@ -1,3 +1,19 @@
+muros (0.9.49) trixie; urgency=medium
+
+  * Firmware: make the status and health pages load fast again. The health
+    audit verified file integrity by checksumming every file of every installed
+    package (debsums -s, or dpkg --verify with no argument as a fallback), which
+    walked the whole filesystem and took about 60 seconds. It now scopes the
+    integrity scan to the appliance's own footprint (the core meta package, the
+    os-* plugins and the kernel images), matching the original intent of only
+    verifying the base and kernel sets. Health drops from ~60s to ~5s.
+  * Firmware: the status check ran apt's dependency solver twice per refresh,
+    once to list pending packages and once to total the download size. A single
+    --print-uris dist-upgrade pass now yields both, cutting the synchronous
+    status check from ~6.3s to ~3.6s.
+
+ -- MurOS <dev@muros.org>  Sat, 27 Jun 2026 16:05:00 +0200
+
 muros (0.9.48) trixie; urgency=medium
 
   * IPsec: make route-based (VTI) tunnels actually carry traffic on Linux. The

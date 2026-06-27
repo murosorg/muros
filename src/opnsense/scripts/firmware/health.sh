@@ -159,11 +159,23 @@ if [ -z "${CMD}" -o "${CMD}" = "packages" ]; then
 	output_cmd sh -c 'apt-get -o Dpkg::Use-Pty=0 check 2>&1 || true'
 
 	output_txt ">>> Check for missing or altered package files"
-	if command -v debsums >/dev/null 2>&1; then
-		output_cmd sh -c 'debsums -s 2>&1 || true'
+	# The FreeBSD original verified the signed base and kernel sets only, not
+	# every third-party file on disk. Checksumming all installed packages
+	# (debsums -s with no argument, or dpkg --verify with no argument) walks
+	# tens of thousands of files and took ~60s on a stock install. Scope the
+	# scan to the appliance's own footprint instead: the core meta package, the
+	# os-* plugins and the kernel images. That keeps the meaningful integrity
+	# signal while bringing the check down to a couple of seconds.
+	INTEG_PKGS=$(dpkg-query -W -f='${db:Status-Abbrev} ${Package}\n' \
+		"${CORE}" 'os-*' 'linux-image-*' 2>/dev/null | \
+		awk '$1 == "ii" && $2 ~ /^(linux-image-[0-9]|os-|'"${CORE}"')/ { printf "%s ", $2 }')
+	if [ -z "${INTEG_PKGS}" ]; then
+		output_txt "No appliance packages found to verify."
+	elif command -v debsums >/dev/null 2>&1; then
+		output_cmd sh -c "debsums -s ${INTEG_PKGS} 2>&1 || true"
 	else
-		output_txt "debsums is not installed; verifying packaged files through dpkg instead."
-		output_cmd sh -c 'dpkg --verify 2>&1 || true'
+		output_txt "debsums is not installed; verifying appliance packages through dpkg instead."
+		output_cmd sh -c "dpkg --verify ${INTEG_PKGS} 2>&1 || true"
 	fi
 fi
 
