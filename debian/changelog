@@ -1,3 +1,21 @@
+muros (0.9.51) trixie; urgency=medium
+
+  * IPsec: port the raw SAD and SPD diagnostic panels from the FreeBSD/KAME
+    setkey tool to the Linux XFRM stack. The Security Association and Security
+    Policy listings now read "ip xfrm state" and "ip xfrm policy", and the
+    per-entry delete actions use "ip xfrm state delete" and
+    "ip xfrm policy delete". The legacy manual-SPD reconciliation no longer
+    aborts when setkey is absent.
+  * DHCP relay: port the relay to the Debian isc-dhcp-relay package. It now
+    drives the single /usr/sbin/dhcrelay with -4/-6, builds the IPv6 lower and
+    upper links (-l/-u), maps the relay agent information option (82) onto
+    -a/-m, and detects the upstream interface that routes to each server.
+    isc-dhcp-relay is added to Recommends.
+  * DHCP leases: the Kea leases grid always receives a valid JSON envelope, so
+    an empty lease set renders an empty table instead of a decode error.
+
+ -- MurOS <dev@muros.org>  Sat, 27 Jun 2026 17:00:00 +0200
+
 muros (0.9.50) trixie; urgency=medium
 
   * Branding: the browser tab favicon now matches the marketing site. Both the

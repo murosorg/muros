@@ -13,7 +13,7 @@ s=%%CORE_NAME%%=muros=g
 s=%%CORE_NEXT%%=1.1=g
 s=%%CORE_NICKNAME%%=Debian=g
 s=%%CORE_PACKAGESITE%%=https://download.muros.org=g
-s=%%CORE_PKGVERSION%%=0.9.48=g
+s=%%CORE_PKGVERSION%%=0.9.51=g
 s=%%CORE_PRODUCT%%=MurOS=g
 s=%%CORE_PYTHON_DOT%%=3.13=g
 s=%%CORE_SERIES_FW%%=1.0=g
