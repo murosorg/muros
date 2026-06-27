@@ -6,8 +6,8 @@
 # no net.inet.carp.demotion sysctl to seed here, and keepalived has not been
 # started yet at this stage of boot, so nothing needs to be done early.
 #
-# Service-failure demotion (the old rc.carp_service_status.d checks) is being
-# reworked as keepalived track_script entries and is intentionally not triggered
-# from here.
+# Service-failure demotion (the old rc.carp_service_status.d checks) is handled
+# by keepalived itself through the carp_service_status track_script that
+# vrrp.inc adds to every instance, so there is nothing to trigger from here.
 
 exit 0
