@@ -117,8 +117,11 @@ MUROS_APT_URL="${MUROS_APT_URL:-https://download.muros.org}"
 # package, which changes every release, can silently go stale and ship
 # old code on the ISO. Surfacing the version here makes that obvious.
 bundled_muros_version() {
-  ls "${OFFLINE_DIR}"/pool/muros_*_all.deb 2>/dev/null \
-    | sed -n 's#.*/muros_\(.*\)_all\.deb#\1#p' | sort -V | tail -1
+  # The muros package may be published as _amd64.deb (or _arm64.deb) or as
+  # _all.deb depending on the build; match any arch and never fail under
+  # 'set -euo pipefail' when the pool holds no muros .deb yet (|| true).
+  ls "${OFFLINE_DIR}"/pool/muros_*.deb 2>/dev/null \
+    | sed -n 's#.*/muros_\(.*\)_[a-z0-9]*\.deb#\1#p' | sort -V | tail -1 || true
 }
 
 # Refresh ONLY the muros .deb inside an existing cached pool. This runs on
@@ -175,7 +178,9 @@ refresh_muros_deb() {
     prepare_offline_bundle
     return
   fi
-  rm -f "${OFFLINE_DIR}"/pool/muros_*_all.deb
+  # Drop every previously cached muros .deb (any version/arch) so the pool
+  # never ships a duplicate or stale package alongside the fresh one.
+  rm -f "${OFFLINE_DIR}"/pool/muros_*.deb
   cp "${tmp}/muros.deb" "${OFFLINE_DIR}/pool/$(basename "${filename}")"
   ( cd "${OFFLINE_DIR}/pool" && dpkg-scanpackages -m . /dev/null > Packages )
   gzip -9c "${OFFLINE_DIR}/pool/Packages" > "${OFFLINE_DIR}/pool/Packages.gz"

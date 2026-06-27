@@ -93,7 +93,7 @@ footer {
 }
 
 .content h1 {
-  color: #F5C518
+  color: #fff41a
 }
 
 
@@ -141,7 +141,7 @@ input[type="text"], input[type="password"] {
     display: inline-block;
     line-height: 1;
     padding:13px 25px 16px;
-    background: #F5C518;
+    background: #fff41a;
     border-radius: 25px;
     text-align: center;
     font-style: normal;

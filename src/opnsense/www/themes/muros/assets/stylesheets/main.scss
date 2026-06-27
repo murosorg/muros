@@ -825,3 +825,21 @@ ul.jqtree-tree .jqtree-title {
 .diff_record_default {
   color: #fff !important;
 }
+
+/* Tighten the expanded sidebar navigation. The legacy list-group spacing left
+   the menu entries too far apart; reduce the vertical padding on the top level
+   entries and submenu rows and pull the brand closer to the first item. Scoped
+   to the expanded sidebar so content panels keep the default list-group size. */
+.page-side:not(.col-sidebar-left) {
+  .muros-brand {
+    padding: 10px 12px 4px 12px;
+  }
+  #mainmenu a.list-group-item {
+    padding-top: 3px;
+    padding-bottom: 3px;
+  }
+  #mainmenu .list-group-submenu a.list-group-item {
+    padding-top: 2px;
+    padding-bottom: 2px;
+  }
+}

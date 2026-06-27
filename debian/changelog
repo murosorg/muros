@@ -1,3 +1,18 @@
+muros (0.9.43) trixie; urgency=medium
+
+  * Installer: default the system hostname to "muros" (lowercase) instead of
+    "MurOS" so the running hostname, the web UI footer and the installer
+    preseed value all agree.
+  * Web UI: increase the font size of the account identity (user@hostname)
+    and the Logout link in the sidebar footer for better readability.
+  * Theme: unify the brand colour on the install button yellow (#fff41a)
+    across the web UI, captive portal and logos, replacing the older gold so
+    the software and the website use a single yellow.
+  * Web UI: tighten the expanded sidebar navigation spacing. The menu entries
+    were too far apart; the top level and submenu rows are now more compact.
+
+ -- MurOS <dev@muros.org>  Sat, 27 Jun 2026 14:45:00 +0200
+
 muros (0.9.42) trixie; urgency=high
 
   * Dashboard: fix a web UI hang where the product info feed widget could

@@ -4,7 +4,7 @@
   <theme>muros</theme>
   <system>
     <optimization>normal</optimization>
-    <hostname>MurOS</hostname>
+    <hostname>muros</hostname>
     <domain>internal</domain>
     <dnsallowoverride>1</dnsallowoverride>
     <dnsallowoverride_exclude/>
