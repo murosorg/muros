@@ -1,3 +1,17 @@
+muros (0.9.52) trixie; urgency=medium
+
+  * Console: require authentication on the local console. Earlier installers
+    wrote agetty autologin drop-ins that logged root straight into the operator
+    menu (interface assignment, IP setup, shell) without any password. The
+    console now presents a standard login prompt and authenticates through PAM
+    against the local accounts, which are kept in sync with the web interface
+    users, so it is the same login and password as the GUI. New installs no
+    longer ship the autologin drop-ins, and an upgrade removes the legacy ones
+    from getty@tty1 and serial-getty@ttyS0 and respawns the consoles so the
+    login prompt takes effect without a reboot.
+
+ -- MurOS <dev@muros.org>  Sat, 27 Jun 2026 17:30:00 +0200
+
 muros (0.9.51) trixie; urgency=medium
 
   * IPsec: port the raw SAD and SPD diagnostic panels from the FreeBSD/KAME

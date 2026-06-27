@@ -133,6 +133,29 @@ STRONGSWAN
     systemctl disable --now keepalived 2>/dev/null || true
     systemctl disable --now conntrackd 2>/dev/null || true
 
+    # Console login: remove the legacy autologin drop-ins shipped by earlier
+    # installers, which logged root straight into the operator menu without any
+    # authentication. The console must present a standard login prompt and
+    # authenticate through PAM against the local accounts (kept in sync with the
+    # web interface users), exactly like the web interface. Reaching the
+    # interface assignment or any other menu entry now requires a valid login.
+    console_autologin_removed=0
+    for u in getty@tty1 serial-getty@ttyS0; do
+      dropin="/etc/systemd/system/${u}.service.d/muros-autologin.conf"
+      if [ -e "$dropin" ]; then
+        rm -f "$dropin"
+        console_autologin_removed=1
+        # Drop the drop-in directory too if it is now empty.
+        rmdir "/etc/systemd/system/${u}.service.d" 2>/dev/null || true
+      fi
+    done
+    if [ "$console_autologin_removed" = 1 ]; then
+      systemctl daemon-reload 2>/dev/null || true
+      # Respawn the consoles so the login prompt takes effect without a reboot.
+      systemctl restart getty@tty1 2>/dev/null || true
+      systemctl restart serial-getty@ttyS0 2>/dev/null || true
+    fi
+
     # Purge the compiled Volt template cache so the UI/template changes shipped
     # in this package are recompiled from the new sources on the next request,
     # instead of being served from stale compiled copies left by a prior version.

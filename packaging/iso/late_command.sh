@@ -82,29 +82,27 @@ GRUBCFG
 in-target update-grub || true
 
 # 3d. Interactive console (OPNsense-style). The appliance has no graphical
-#     login: the local VGA console (tty1) and the first serial port autologin
-#     as root straight into the MurOS console. /usr/local/sbin/muros-console
-#     runs the one-time setup wizard on first boot (keyboard layout, interface
-#     assignment, LAN IP/mask/gateway) and then the operator menu. Hostname,
-#     DNS, timezone and language are handled by the web setup wizard.
+#     login: the local VGA console (tty1) and the first serial port present a
+#     standard login prompt and authenticate through PAM against the local
+#     accounts, which are kept in sync with the web interface users (same
+#     login and password). Once authenticated, root's login shell is
+#     /usr/local/sbin/muros-console, which runs the one-time setup wizard on
+#     first boot (keyboard layout, interface assignment, LAN IP/mask/gateway)
+#     and then the operator menu. There is intentionally NO console autologin:
+#     reaching the interface assignment or any other menu entry requires a
+#     valid login, exactly like the web interface. Hostname, DNS, timezone and
+#     language are handled by the web setup wizard.
 in-target chsh -s /usr/local/sbin/muros-console root || true
 if ! grep -qx /usr/local/sbin/muros-console /target/etc/shells 2>/dev/null; then
   echo /usr/local/sbin/muros-console >> /target/etc/shells
 fi
 
-mkdir -p /target/etc/systemd/system/getty@tty1.service.d
-cat > /target/etc/systemd/system/getty@tty1.service.d/muros-autologin.conf <<'GETTY'
-[Service]
-ExecStart=
-ExecStart=-/sbin/agetty --autologin root --noclear %I $TERM
-GETTY
-
-mkdir -p /target/etc/systemd/system/serial-getty@ttyS0.service.d
-cat > /target/etc/systemd/system/serial-getty@ttyS0.service.d/muros-autologin.conf <<'SGETTY'
-[Service]
-ExecStart=
-ExecStart=-/sbin/agetty --autologin root --keep-baud 115200,57600,38400,9600 %I $TERM
-SGETTY
+# The local video terminal (getty@tty1) is managed by systemd's autovt and
+# already shows a login prompt out of the box, so no drop-in is needed there.
+# The serial console only needs to be enabled; its stock ExecStart already
+# presents a login prompt with baud auto-negotiation. The baud rate can later
+# be pinned from the web interface (System: Settings: Administration), which
+# writes its own drop-in without re-enabling autologin.
 in-target systemctl enable serial-getty@ttyS0.service || true
 
 # First-boot marker consumed by /usr/local/sbin/muros-console: present means
