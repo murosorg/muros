@@ -7375,12 +7375,12 @@ ul.jqtree-tree .jqtree-title {
 }
 
 /* MurOS: amber primary buttons with black text (replaces brick orange) */
-.btn-primary { background-color: #fff41a !important; border-color: #ffdc00 !important; color: #1a1a1a !important; }
+.btn-primary { background-color: #fff41a !important; border-color: #ecdf00 !important; color: #1a1a1a !important; }
 .btn-primary:hover,
 .btn-primary:focus,
 .btn-primary:active,
 .btn-primary.active,
-.open > .btn-primary.dropdown-toggle { background-color: #ffdc00 !important; border-color: #e6b100 !important; color: #1a1a1a !important; }
+.open > .btn-primary.dropdown-toggle { background-color: #e6d600 !important; border-color: #ccbe00 !important; color: #1a1a1a !important; }
 .btn-primary .badge { color: #fff41a !important; background-color: #1a1a1a !important; }
 
 /* keep readable black text on amber accent surfaces */
@@ -7451,7 +7451,7 @@ ul.jqtree-tree .jqtree-title {
 }
 .muros-logout:hover,
 .muros-logout:focus {
-  color: #ffdc00;
+  color: #fff41a;
   text-decoration: none;
 }
 .muros-logout .fa {
