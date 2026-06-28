@@ -21,8 +21,8 @@
  *   - NAT: automatic/hybrid outbound masquerade, advanced outbound rules
  *     (source/destination match, No-NAT exclusions, fixed source port),
  *     destination NAT port forwards (matched on the published destination
- *     and optional source, with their associated forward pass) and 1:1 NAT
- *     for single IPv4 hosts
+ *     and optional source, with No-rdr exclusions and their associated
+ *     forward pass) and 1:1 NAT for single IPv4 hosts
  *
  * Not yet handled (kept on the roadmap): IPv6 NPt and subnet 1:1 netmap,
  * policy based routing (route-to/reply-to), traffic shaping/dummynet, and
@@ -477,6 +477,7 @@ function build_nat(SimpleXMLElement $cfg, array $ifaces, array $wanDevs, array $
     }
 
     /* port forwards: destination NAT plus an associated forward pass. */
+    $noRdr = [];
     if (isset($cfg->nat->rule)) {
         foreach ($cfg->nat->rule as $r) {
             if (isset($r->disabled)) {
@@ -485,10 +486,6 @@ function build_nat(SimpleXMLElement $cfg, array $ifaces, array $wanDevs, array $
             $dev = $ifaces[trim((string)$r->interface)]['device'] ?? null;
             $proto = strtolower(trim((string)$r->protocol)) ?: 'tcp';
             if (!in_array($proto, ['tcp', 'udp'], true)) {
-                continue;
-            }
-            $target = trim((string)$r->target);
-            if (!filter_var($target, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
                 continue;
             }
             $extPort = resolve_port((string)($r->{'destination'}->port ?? ''), $aliases);
@@ -512,6 +509,21 @@ function build_nat(SimpleXMLElement $cfg, array $ifaces, array $wanDevs, array $
             $parts[] = "$proto";
             if ($extPort !== null) {
                 $parts[] = "dport $extPort";
+            }
+
+            /* A no-rdr rule excludes matching traffic from redirection (for
+             * example to let a management subnet reach a service directly
+             * while everyone else is forwarded). Emit it as a return in the
+             * prerouting chain, ordered before the dnat rules. It carries no
+             * translation target, so handle it before the target check. */
+            if (!empty((string)($r->nordr ?? ''))) {
+                $noRdr[] = '        ' . implode(' ', $parts) . ' counter return comment "no rdr"';
+                continue;
+            }
+
+            $target = trim((string)$r->target);
+            if (!filter_var($target, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+                continue;
             }
             $to = $localPort !== '' ? "$target:$localPort" : $target;
             $pre[] = '        ' . implode(' ', $parts) . " dnat to $to comment \"port forward\"";
@@ -574,6 +586,10 @@ function build_nat(SimpleXMLElement $cfg, array $ifaces, array $wanDevs, array $
      * masquerade which would otherwise claim addresses that should follow a
      * more specific mapping. */
     $post = array_merge($noNat, $post, $autoMasq);
+
+    /* No-rdr returns must be evaluated before any dnat rule so excluded
+     * traffic is never redirected. */
+    $pre = array_merge($noRdr, $pre);
 
     return ['pre' => $pre, 'post' => $post, 'passes' => $passes];
 }
