@@ -18,7 +18,8 @@
  *     based expiry for external aliases)
  *   - block-private / block-bogons martian drops on flagged interfaces
  *   - a mandatory anti-lockout allowance (ssh + web to the firewall)
- *   - NAT: automatic/hybrid outbound masquerade, advanced outbound rules,
+ *   - NAT: automatic/hybrid outbound masquerade, advanced outbound rules
+ *     (source/destination match, No-NAT exclusions, fixed source port),
  *     destination NAT port forwards (matched on the published destination
  *     and optional source, with their associated forward pass) and 1:1 NAT
  *     for single IPv4 hosts
@@ -412,7 +413,12 @@ function build_nat(SimpleXMLElement $cfg, array $ifaces, array $wanDevs, array $
         }
     }
 
-    /* advanced / hybrid: explicit outbound rules. */
+    /* advanced / hybrid: explicit outbound rules. No-NAT rules are collected
+     * separately so they can be evaluated before any translating rule: a
+     * "return" in the postrouting chain stops NAT processing for the matched
+     * traffic (the equivalent of a pf "no nat" rule), which is how traffic to
+     * a remote VPN subnet is kept un-translated. */
+    $noNat = [];
     if ($mode !== 'disabled' && isset($cfg->nat->outbound->rule)) {
         foreach ($cfg->nat->outbound->rule as $r) {
             if (isset($r->disabled)) {
@@ -427,15 +433,45 @@ function build_nat(SimpleXMLElement $cfg, array $ifaces, array $wanDevs, array $
             if ($src !== null) {
                 $parts[] = "ip saddr $src";
             }
+            $dst = resolve_endpoint($r->destination ?? null, 'ip', $ifaces, $aliases);
+            if ($dst !== null) {
+                $parts[] = "ip daddr $dst";
+            }
             $proto = strtolower(trim((string)$r->protocol));
+            $hasL4 = false;
             if ($proto === 'tcp' || $proto === 'udp') {
                 $dport = resolve_port((string)($r->destination->port ?? ''), $aliases);
                 if ($dport !== null) {
                     $parts[] = "$proto dport $dport";
+                    $hasL4 = true;
                 }
             }
+
+            if (!empty((string)($r->nonat ?? ''))) {
+                $noNat[] = '        ' . implode(' ', $parts) . ' counter return comment "no nat"';
+                continue;
+            }
+
             $target = trim((string)$r->target);
-            $verb = filter_var($target, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) ? "snat to $target" : 'masquerade';
+            if (filter_var($target, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+                /* A natport translates the source port to a fixed value; with
+                 * static-port (or no natport) we leave it to conntrack, which
+                 * preserves the original source port whenever it can. */
+                $natport = trim((string)$r->natport);
+                if ($natport !== '' && ($proto === 'tcp' || $proto === 'udp')) {
+                    /* nft only accepts a port in the snat target after a
+                     * transport protocol match, so add one when the rule does
+                     * not already carry a dport clause. */
+                    if (!$hasL4) {
+                        $parts[] = "meta l4proto $proto";
+                    }
+                    $verb = "snat to $target:$natport";
+                } else {
+                    $verb = "snat to $target";
+                }
+            } else {
+                $verb = 'masquerade';
+            }
             $post[] = '        ' . implode(' ', $parts) . " counter $verb comment \"outbound nat\"";
         }
     }
@@ -532,10 +568,12 @@ function build_nat(SimpleXMLElement $cfg, array $ifaces, array $wanDevs, array $
         }
     }
 
-    /* Specific source NAT (manual outbound rules and 1:1 NAT) must be
-     * evaluated before the automatic masquerade, otherwise the broad
-     * masquerade would claim addresses that should follow a 1:1 mapping. */
-    $post = array_merge($post, $autoMasq);
+    /* Ordering in the postrouting chain matters: No-NAT "return" rules first
+     * so excluded traffic is never translated, then the specific source NAT
+     * (manual outbound rules and 1:1 NAT), and finally the broad automatic
+     * masquerade which would otherwise claim addresses that should follow a
+     * more specific mapping. */
+    $post = array_merge($noNat, $post, $autoMasq);
 
     return ['pre' => $pre, 'post' => $post, 'passes' => $passes];
 }
