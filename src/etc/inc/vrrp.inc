@@ -233,6 +233,49 @@ function vrrp_configure()
     }
 
     /*
+     * Group instances that share a priority into a vrrp_sync_group so every
+     * virtual IP a node should own fails over together. Without this each
+     * instance transitions on its own, so a single interface or service
+     * failure could move one VIP to the peer while the rest stay put, leaving
+     * the cluster split across both nodes with asymmetric routing. Instances
+     * carrying a different priority (a deliberate active/active split through
+     * advskew) stay in their own group, so that intent is preserved.
+     */
+    $groups = [];
+    foreach ($instances as $inst) {
+        $groups[$inst['priority']][] = $inst['name'];
+    }
+    $gidx = 0;
+    foreach ($groups as $members) {
+        if (count($members) < 2) {
+            continue;
+        }
+        $gidx++;
+        $conf .= sprintf("vrrp_sync_group muros_ha_%d {\n", $gidx);
+        $conf .= "    group {\n";
+        foreach ($members as $member) {
+            $conf .= sprintf("        %s\n", $member);
+        }
+        $conf .= "    }\n";
+        $conf .= "}\n\n";
+    }
+
+    /*
+     * Drop state files left over from instances that no longer exist (a VIP
+     * was removed or its interface/vhid changed), otherwise the UI keeps
+     * reporting a phantom instance forever.
+     */
+    $live = [];
+    foreach ($instances as $inst) {
+        $live[$inst['name']] = true;
+    }
+    foreach (glob(VRRP_STATE_DIR . '/*.state') ?: [] as $stale) {
+        if (empty($live[basename($stale, '.state')])) {
+            @unlink($stale);
+        }
+    }
+
+    /*
      * Validate before installing. A malformed keepalived.conf would take HA
      * down on reload, so mirror the firewall's "nft -c" safety net: test the
      * candidate with "keepalived -t" and keep the running configuration when
