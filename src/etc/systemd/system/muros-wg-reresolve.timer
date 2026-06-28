@@ -1,0 +1,15 @@
+# Periodic trigger for the WireGuard endpoint DNS re-resolution. Enabled and
+# disabled at runtime by wg-service-control.php so a box without WireGuard
+# carries no timer. A two minute cadence matches the resolver's staleness
+# window (it only acts on peers without a recent handshake).
+[Unit]
+Description=MurOS WireGuard endpoint DNS re-resolution timer
+Documentation=https://github.com/ecritel/muros
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=2min
+AccuracySec=20s
+
+[Install]
+WantedBy=timers.target

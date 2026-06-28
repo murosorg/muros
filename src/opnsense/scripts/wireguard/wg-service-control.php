@@ -341,6 +341,17 @@ if (isset($opts['h']) || empty($args) || !in_array($args[0], ['start', 'stop', '
                 }
             }
         }
+
+        /* Drive the endpoint DNS re-resolution timer from the full picture:
+         * run it while at least one tunnel is up (so peers with a hostname
+         * endpoint recover when the remote address changes) and stop it when
+         * none remain or everything was stopped, leaving no idle timer on a
+         * box without WireGuard. */
+        if ($action != 'stop' && count($server_devs)) {
+            mwexecf('/usr/bin/systemctl enable --now muros-wg-reresolve.timer', [], true);
+        } else {
+            mwexecf('/usr/bin/systemctl disable --now muros-wg-reresolve.timer', [], true);
+        }
     }
 
     if (count($server_devs) && $action == 'restart') {

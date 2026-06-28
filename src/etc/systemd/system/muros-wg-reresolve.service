@@ -1,0 +1,16 @@
+# MurOS WireGuard endpoint DNS re-resolution.
+# Peers configured with a hostname endpoint stop receiving traffic once the
+# remote address changes, because the kernel keeps the address resolved at
+# configuration time. reresolve-dns.py re-resolves the endpoints of peers that
+# have gone stale (no recent handshake) and pushes the new address with
+# 'wg set'. It is a no-op when no tunnel is stale. The companion timer drives
+# it periodically and is enabled by wg-service-control.php only while at least
+# one instance is configured.
+[Unit]
+Description=MurOS WireGuard endpoint DNS re-resolution
+Documentation=https://github.com/ecritel/muros
+ConditionPathExists=/usr/local/etc/wireguard
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/python3 /usr/local/opnsense/scripts/wireguard/reresolve-dns.py

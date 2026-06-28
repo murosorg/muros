@@ -37,6 +37,11 @@ override_dh_installsystemd:
 	# preset (90-muros.preset) alongside the other data-plane units, so it never
 	# auto-starts at install before interfaces have been assigned.
 	dh_installsystemd --name=muros-carp --no-enable --no-start muros-carp.service
+	# WireGuard endpoint DNS re-resolution timer. Shipped disabled; enabled and
+	# disabled at runtime by wg-service-control.php so a box without WireGuard
+	# carries no periodic job.
+	dh_installsystemd --name=muros-wg-reresolve --no-enable --no-start muros-wg-reresolve.timer
+	dh_installsystemd --name=muros-wg-reresolve --no-enable --no-start muros-wg-reresolve.service
 
 # Large interpreted payload: these steps are irrelevant and slow.
 override_dh_strip:
