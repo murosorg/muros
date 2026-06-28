@@ -23,10 +23,12 @@
  *     destination NAT port forwards (matched on the published destination
  *     and optional source, with No-rdr exclusions and their associated
  *     forward pass) and 1:1 NAT for single IPv4 hosts
+ *   - policy based routing (route-to): a pass rule pinned to a gateway is
+ *     marked in a mangle prerouting chain so the routing decision sends it
+ *     out that uplink (see setup_policy_routing.php for the matching tables)
  *
  * Not yet handled (kept on the roadmap): IPv6 NPt and subnet 1:1 netmap,
- * policy based routing (route-to/reply-to), traffic shaping/dummynet, and
- * the finer pf state options.
+ * reply-to, traffic shaping/dummynet, and the finer pf state options.
  *
  * Usage: nft_build.php [config.xml]   (defaults to /conf/config.xml)
  * The ruleset is written to stdout.
@@ -645,9 +647,22 @@ function icmp_type_match(string $names, string $family): ?string
     return "$kw type { " . implode(', ', $out) . ' }';
 }
 
+/* Stable firewall mark for a gateway (or gateway group) name. Policy routing
+ * tags a flow with this mark in the mangle chain; a matching "ip rule fwmark
+ * <mark> lookup <mark>" then steers it into a per-gateway routing table. Both
+ * sides (here and setup_policy_routing.php) compute it the same way, so they
+ * agree without sharing state. Kept inside 1000..60999 to stay clear of marks
+ * other subsystems might use. */
+function gateway_mark(string $name): int
+{
+    return 1000 + (crc32($name) % 60000);
+}
+
 /* Translate a single <rule> into one nft statement, or null when the rule
- * uses a feature this iteration does not handle yet. */
-function rule_line(SimpleXMLElement $rule, array $ifaces, array $aliases = []): ?string
+ * uses a feature this iteration does not handle yet. When $mangle is provided
+ * and the rule routes through a gateway, a matching prerouting mark rule is
+ * appended to it (policy based routing / route-to). */
+function rule_line(SimpleXMLElement $rule, array $ifaces, array $aliases = [], ?array &$mangle = null): ?string
 {
     if (isset($rule->disabled)) {
         return null;
@@ -781,6 +796,21 @@ function rule_line(SimpleXMLElement $rule, array $ifaces, array $aliases = []): 
     $descr = str_replace('"', "'", $descr);
 
     $stmt = trim(implode(' ', $parts));
+
+    /* Policy based routing (route-to): a pass rule pinned to a gateway tags
+     * its new connections with the gateway's mark so the routing decision
+     * picks that gateway's table. The mark is saved on the conntrack entry,
+     * and the chain restores it on later packets, so the whole flow (and its
+     * replies) stays on the chosen uplink. */
+    $gw = trim((string)($rule->gateway ?? ''));
+    if ($mangle !== null && $verdict === 'accept' && $gw !== '') {
+        $mark = gateway_mark($gw);
+        $gwName = preg_replace('/[^\x20-\x7E]/', '', $gw);
+        $gwName = str_replace('"', "'", $gwName);
+        $mangle[] = '        ' . ($stmt === '' ? '' : $stmt . ' ')
+            . "ct state new meta mark set $mark ct mark set $mark comment \"route-to $gwName\"";
+    }
+
     $line = '        ' . ($stmt === '' ? '' : $stmt . ' ') . "counter $verdict";
     if ($descr !== '') {
         $line .= " comment \"$descr\"";
@@ -1034,10 +1064,13 @@ $default_block_drop = !isset($cfg->syslog->nologdefaultblock)
     : '        counter drop comment "default deny rule"';
 
 $rules = [];
+/* prerouting mark rules for policy based routing (route-to), collected from
+ * gateway-pinned pass rules and emitted as a mangle chain. */
+$mangle = [];
 /* legacy <filter><rule> entries */
 if (isset($cfg->filter)) {
     foreach ($cfg->filter->rule as $rule) {
-        $line = rule_line($rule, $ifaces, $aliases);
+        $line = rule_line($rule, $ifaces, $aliases, $mangle);
         if ($line !== null) {
             $rules[] = $line;
         }
@@ -1134,6 +1167,21 @@ if (!empty($nat['post'])) {
     $out[] = '    chain postrouting {';
     $out[] = '        type nat hook postrouting priority srcnat; policy accept;';
     foreach ($nat['post'] as $line) {
+        $out[] = $line;
+    }
+    $out[] = '    }';
+    $out[] = '';
+}
+if (!empty($mangle)) {
+    /* Policy based routing marks are applied before the routing decision, so
+     * they live in a prerouting chain at the "mangle" priority. The first rule
+     * restores the gateway mark saved on the conntrack entry, so every packet
+     * of an existing flow (and its replies) keeps using the same uplink; the
+     * collected per-rule rules then mark new connections. */
+    $out[] = '    chain mangle_prerouting {';
+    $out[] = '        type filter hook prerouting priority mangle; policy accept;';
+    $out[] = '        ct mark != 0 meta mark set ct mark';
+    foreach ($mangle as $line) {
         $out[] = $line;
     }
     $out[] = '    }';
