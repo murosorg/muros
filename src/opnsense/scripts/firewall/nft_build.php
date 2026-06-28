@@ -26,9 +26,11 @@
  *   - policy based routing (route-to): a pass rule pinned to a gateway is
  *     marked in a mangle prerouting chain so the routing decision sends it
  *     out that uplink (see setup_policy_routing.php for the matching tables)
+ *   - reply-to: on a multi-WAN box, new connections arriving on a WAN are
+ *     marked with that WAN's gateway so their replies leave the same uplink
  *
  * Not yet handled (kept on the roadmap): IPv6 NPt and subnet 1:1 netmap,
- * reply-to, traffic shaping/dummynet, and the finer pf state options.
+ * traffic shaping/dummynet, and the finer pf state options.
  *
  * Usage: nft_build.php [config.xml]   (defaults to /conf/config.xml)
  * The ruleset is written to stdout.
@@ -658,6 +660,45 @@ function gateway_mark(string $name): int
     return 1000 + (crc32($name) % 60000);
 }
 
+/* Reply-to: on a multi-WAN box, traffic that entered through one uplink must
+ * have its replies leave through the same uplink, otherwise the answer follows
+ * the default route and is dropped by the other ISP's anti-spoofing. We mark
+ * every new connection arriving on a WAN interface with that WAN's gateway
+ * mark; the conntrack entry then keeps the reply path pinned (the chain's
+ * restore rule re-applies the mark to the return packets).
+ *
+ * Returns mangle prerouting lines, emitted only when at least two WANs carry a
+ * gateway (single-WAN setups need no reply-to and pay no overhead). */
+function reply_to_lines(SimpleXMLElement $cfg, array $ifaces): array
+{
+    if (!isset($cfg->interfaces)) {
+        return [];
+    }
+    $wanGw = [];
+    foreach ($ifaces as $key => $itf) {
+        $node = $cfg->interfaces->$key ?? null;
+        if ($node === null) {
+            continue;
+        }
+        $gw = trim((string)$node->gateway);
+        /* only statically named gateways map to a provisioned table */
+        if ($gw === '' || !preg_match('/^[A-Za-z0-9_]+$/', $gw)) {
+            continue;
+        }
+        $wanGw[$itf['device']] = $gw;
+    }
+    if (count($wanGw) < 2) {
+        return [];
+    }
+    $lines = [];
+    foreach ($wanGw as $device => $gw) {
+        $mark = gateway_mark($gw);
+        $lines[] = '        iifname ' . ifname_token($device)
+            . " ct state new meta mark set $mark ct mark set $mark comment \"reply-to $gw\"";
+    }
+    return $lines;
+}
+
 /* Translate a single <rule> into one nft statement, or null when the rule
  * uses a feature this iteration does not handle yet. When $mangle is provided
  * and the rule routes through a gateway, a matching prerouting mark rule is
@@ -1172,15 +1213,20 @@ if (!empty($nat['post'])) {
     $out[] = '    }';
     $out[] = '';
 }
-if (!empty($mangle)) {
+$replyTo = reply_to_lines($cfg, $ifaces);
+if (!empty($mangle) || !empty($replyTo)) {
     /* Policy based routing marks are applied before the routing decision, so
      * they live in a prerouting chain at the "mangle" priority. The first rule
      * restores the gateway mark saved on the conntrack entry, so every packet
      * of an existing flow (and its replies) keeps using the same uplink; the
-     * collected per-rule rules then mark new connections. */
+     * reply-to rules then pin new inbound WAN connections, and the collected
+     * per-rule route-to rules mark new outbound connections. */
     $out[] = '    chain mangle_prerouting {';
     $out[] = '        type filter hook prerouting priority mangle; policy accept;';
     $out[] = '        ct mark != 0 meta mark set ct mark';
+    foreach ($replyTo as $line) {
+        $out[] = $line;
+    }
     foreach ($mangle as $line) {
         $out[] = $line;
     }
