@@ -41,6 +41,7 @@ require_once 'interfaces.inc';
 define('VRRP_CONF', '/etc/keepalived/keepalived.conf');
 define('VRRP_STATE_DIR', '/var/run/vrrp');
 define('CONNTRACKD_CONF', '/etc/conntrackd/conntrackd.conf');
+define('KEEPALIVED_BIN', '/usr/sbin/keepalived');
 
 /*
  * CARP prefers the lowest advskew as master; VRRP prefers the highest
@@ -231,7 +232,24 @@ function vrrp_configure()
         $conf .= "}\n\n";
     }
 
-    file_put_contents(VRRP_CONF, $conf);
+    /*
+     * Validate before installing. A malformed keepalived.conf would take HA
+     * down on reload, so mirror the firewall's "nft -c" safety net: test the
+     * candidate with "keepalived -t" and keep the running configuration when
+     * it does not pass.
+     */
+    $candidate = VRRP_CONF . '.candidate';
+    file_put_contents($candidate, $conf);
+    $out = [];
+    $rc = 0;
+    exec(KEEPALIVED_BIN . ' -t -f ' . escapeshellarg($candidate) . ' 2>&1', $out, $rc);
+    if ($rc !== 0) {
+        @unlink($candidate);
+        log_error('vrrp: refusing to apply an invalid keepalived configuration: '
+            . trim(implode('; ', $out)));
+        return;
+    }
+    rename($candidate, VRRP_CONF);
 
     if (keepalived_running()) {
         mwexecf('/usr/bin/systemctl reload keepalived', [], true);
