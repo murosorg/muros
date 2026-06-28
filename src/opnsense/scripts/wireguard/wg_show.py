@@ -73,10 +73,26 @@ if sp.returncode == 0:
             # two minutes, so treat a peer as online when it handshaked within
             # the last three minutes and offline otherwise.
             handshake = record['latest-handshake']
+            # Seconds since the last handshake, or -1 when the peer has never
+            # completed one. Lets the UI render a "last seen" without repeating
+            # the clock arithmetic.
+            record['handshake-age'] = int(time.time() - handshake) if handshake else -1
             record['status'] = 'online' if handshake and (time.time() - handshake) <= 180 else 'offline'
         else:
             continue
         result['records'].append(record)
+
+    # Annotate every interface record with how many peers it has and how many
+    # are currently online, so a dashboard can summarise a tunnel at a glance
+    # without grouping the flat record list itself.
+    for record in result['records']:
+        if record.get('type') != 'interface':
+            continue
+        peers = [r for r in result['records']
+                 if r.get('type') == 'peer' and r.get('if') == record['if']]
+        record['peers'] = len(peers)
+        record['peers-online'] = sum(1 for r in peers if r.get('status') == 'online')
+
     result['status'] = 'ok'
 else:
     result['status'] = 'failed'
