@@ -26,6 +26,7 @@
     POSSIBILITY OF SUCH DAMAGE.
 """
 import subprocess
+import time
 import ujson
 
 
@@ -67,6 +68,12 @@ if sp.returncode == 0:
             record['transfer-rx'] = int(parts[6]) if parts[6].isdigit() else 0
             record['transfer-tx'] = int(parts[7]) if parts[7].isdigit() else 0
             record['persistent-keepalive'] = parts[8]
+            # Derive a coarse connection status from the last handshake so the
+            # UI does not have to. WireGuard refreshes a session roughly every
+            # two minutes, so treat a peer as online when it handshaked within
+            # the last three minutes and offline otherwise.
+            handshake = record['latest-handshake']
+            record['status'] = 'online' if handshake and (time.time() - handshake) <= 180 else 'offline'
         else:
             continue
         result['records'].append(record)
