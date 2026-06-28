@@ -112,6 +112,15 @@ function vrrp_collect_instances()
             if ($peer === '224.0.0.18' || $peer === 'ff02::12') {
                 $peer = '';
             }
+            /* For unicast VRRP (used when the L2 segment filters multicast,
+             * common on cloud and Proxmox bridges) pin the source address so
+             * adverts always leave from the right local IP. */
+            $src = '';
+            if ($peer !== '') {
+                $src = $family === 6
+                    ? (string)get_interface_ipv6($vip['interface'])
+                    : (string)get_interface_ip($vip['interface']);
+            }
             $instances[$key] = [
                 'name' => vrrp_instance_name($device, $vip['vhid'], $family),
                 'device' => $device,
@@ -121,6 +130,7 @@ function vrrp_collect_instances()
                 'advert_int' => !empty($vip['advbase']) ? (int)$vip['advbase'] : 1,
                 'password' => isset($vip['password']) ? str_replace(' ', '', $vip['password']) : '',
                 'peer' => $peer,
+                'src' => $src,
                 'addresses' => [],
             ];
         }
@@ -208,10 +218,18 @@ function vrrp_configure()
             $conf .= "    nopreempt\n";
         }
         if (!empty($inst['peer'])) {
+            if (!empty($inst['src'])) {
+                $conf .= sprintf("    unicast_src_ip %s\n", $inst['src']);
+            }
             $conf .= "    unicast_peer {\n";
             $conf .= sprintf("        %s\n", $inst['peer']);
             $conf .= "    }\n";
         }
+        /* Re-broadcast the VIP ownership periodically so downstream switches
+         * and hosts keep a fresh ARP/ND entry; this shortens the blackout
+         * window after a failover on flaky layer-2 segments. */
+        $conf .= "    garp_master_refresh 60\n";
+        $conf .= "    garp_master_delay 5\n";
         if ($inst['password'] !== '') {
             $conf .= "    authentication {\n";
             $conf .= "        auth_type PASS\n";
