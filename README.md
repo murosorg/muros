@@ -1,5 +1,3 @@
-<p align="center"><img src=".github/banner.jpg" alt="MurOS" width="880"></p>
-
 MurOS
 =====
 
