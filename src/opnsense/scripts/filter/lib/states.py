@@ -26,6 +26,8 @@
 """
 import ipaddress
 import subprocess
+import xml.etree.ElementTree
+import zlib
 import ujson
 
 # MurOS: the firewall state table is the Linux connection tracking table
@@ -34,6 +36,10 @@ import ujson
 # tuple. Unlike pf, conntrack does not associate a flow with the rule that
 # created it, so the rule/label/interface columns are left empty.
 CONNTRACK = '/usr/sbin/conntrack'
+CONFIG_XML = '/conf/config.xml'
+MARK_MIN = 1000
+MARK_RANGE = 60000
+_gateway_marks = None
 
 
 class AddressParser:
@@ -83,6 +89,58 @@ def fetch_rule_labels():
         :return: dict
     """
     return {}
+
+
+def gateway_mark(name):
+    """ Firewall mark used by policy based routing for a gateway name, computed
+        with the same formula as nft_build.php gateway_mark() and
+        setup_policy_routing.php so all three agree without sharing state. """
+    return MARK_MIN + (zlib.crc32(name.encode()) % MARK_RANGE)
+
+
+def fetch_gateway_marks():
+    """ Build the reverse mark to gateway name mapping for every configured
+        gateway. A flow steered by route-to or pinned by reply-to carries the
+        gateway mark on its conntrack entry, which is the only place Linux keeps
+        the uplink association pf used to expose per state.
+        :return: dict of mark -> gateway name
+    """
+    global _gateway_marks
+    if _gateway_marks is not None:
+        return _gateway_marks
+
+    _gateway_marks = {}
+    try:
+        root = xml.etree.ElementTree.parse(CONFIG_XML).getroot()
+    except (OSError, xml.etree.ElementTree.ParseError):
+        return _gateway_marks
+
+    paths = [
+        'OPNsense/Gateways/gateway_item',
+        'gateways/gateway_item',
+        'gateways/gateway_group'
+    ]
+    for path in paths:
+        for item in root.findall(path):
+            name = (item.findtext('name') or '').strip()
+            if name != '':
+                _gateway_marks[gateway_mark(name)] = name
+
+    return _gateway_marks
+
+
+def resolve_gateway(mark):
+    """ Translate a conntrack mark into the gateway name it stands for, or None
+        when the flow carries no (known) gateway mark. """
+    if not mark:
+        return None
+    try:
+        value = int(mark, 16) if str(mark).startswith('0x') else int(mark)
+    except ValueError:
+        return None
+    if value < MARK_MIN or value >= MARK_MIN + MARK_RANGE:
+        return None
+    return fetch_gateway_marks().get(value)
 
 
 def parse_conntrack_line(line):
@@ -208,7 +266,7 @@ def state_to_record(entry):
         'descr': '',
         'nat_addr': nat_addr,
         'nat_port': nat_port,
-        'gateway': None,
+        'gateway': resolve_gateway(entry['mark']),
         'iface': '',
         'proto': entry['proto'],
         'ipproto': entry['ipproto'],
@@ -316,7 +374,7 @@ def query_top():
             'src_port': orig.get('sport', '0'),
             'dst_addr': orig.get('dst'),
             'dst_port': orig.get('dport', '0'),
-            'gw_addr': None,
+            'gw_addr': resolve_gateway(entry['mark']),
             'gw_port': None,
             'state': derived_state(entry),
             'age': 0,
