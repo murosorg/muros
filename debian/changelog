@@ -1,3 +1,25 @@
+muros (0.9.58) trixie; urgency=medium
+
+  * IPv6 WAN: finish the port. An interface in slaac mode was rendered with
+    IPv6AcceptRA=no, so the kernel ignored the router advertisements and the
+    interface never got an address, and interface_dhcpv6_configure() still
+    started rtsold, which does not exist on Debian and was the only thing
+    starting dhcp6c. Advertisements are now accepted on the link, the networkd
+    units are re-rendered and the link reconfigured so the DHCPv6 client
+    solicits immediately. The DHCPv6 options of the interface (prefix delegation
+    hint, resolver request) are rendered into the unit.
+  * IPv6 WAN: the lease handler also diffs the dynamic IPv6 addresses and the
+    default router of each device, publishes the router through ifctl and
+    replays the newipv6 chain. Advertisements leave no file to watch, so a
+    periodic sweep was added next to the DHCPv4 path unit.
+  * Interfaces: speed and duplex are read and forced with ethtool instead of
+    ifconfig media. The details parser reported no media at all, so the settings
+    page offered an empty list and hid the field, and the enforcement code read
+    an undefined value. Values migrated from a FreeBSD configuration are
+    normalised. ethtool is now a dependency.
+
+ -- MurOS <dev@muros.org>  Sun, 30 Aug 2026 22:05:00 +0200
+
 muros (0.9.57) trixie; urgency=medium
 
   * Interfaces: finish the ifconfig removal in interface_configure(). MAC
