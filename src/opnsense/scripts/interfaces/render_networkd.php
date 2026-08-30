@@ -147,6 +147,26 @@ foreach ($cfg->interfaces->children() as $key => $node) {
      * enables per link.
      */
     $v6slaac = ($ip6 === 'slaac');
+
+    /*
+     * Prefix delegation. FreeBSD had the dhcp6c script carve a /64 out of the
+     * IA_PD and assign it to the tracking interface; networkd does that on its
+     * own once the downstream interface points at the upstream one and picks a
+     * subnet in the delegated prefix. Announcing the prefix is left to radvd,
+     * which owns the router advertisements of this platform.
+     */
+    $v6track = ($ip6 === 'track6');
+    $trackdev = '';
+    $trackid = '';
+    if ($v6track) {
+        $trackif = trim((string)$node->{'track6-interface'});
+        if ($trackif !== '' && isset($cfg->interfaces->$trackif)) {
+            $trackdev = trim((string)$cfg->interfaces->$trackif->if);
+        }
+        /* stored as a decimal integer, the GUI converts the hexadecimal input */
+        $trackid = trim((string)$node->{'track6-prefix-id'});
+        $trackid = ctype_digit($trackid) ? $trackid : '0';
+    }
     $v4static = filter_var($ip4, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) && ctype_digit($sub4);
     $v6static = filter_var($ip6, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) && ctype_digit($sub6);
 
@@ -174,6 +194,9 @@ foreach ($cfg->interfaces->children() as $key => $node) {
     $lines[] = 'DHCP=' . $dhcp;
     $lines[] = 'ConfigureWithoutCarrier=yes';
     $lines[] = 'IPv6AcceptRA=' . ($v6dhcp || $v6slaac ? 'yes' : 'no');
+    if ($v6track && $trackdev !== '') {
+        $lines[] = 'DHCPPrefixDelegation=yes';
+    }
     if ($v4static) {
         $lines[] = 'Address=' . $ip4 . '/' . $sub4;
     }
@@ -223,6 +246,15 @@ foreach ($cfg->interfaces->children() as $key => $node) {
         if (!empty($deny)) {
             $lines[] = 'DenyList=' . implode(' ', $deny);
         }
+        $lines[] = '';
+    }
+
+    if ($v6track && $trackdev !== '') {
+        $lines[] = '[DHCPPrefixDelegation]';
+        $lines[] = 'UplinkInterface=' . $trackdev;
+        $lines[] = 'SubnetId=' . $trackid;
+        /* radvd sends the advertisements on this platform */
+        $lines[] = 'Announce=no';
         $lines[] = '';
     }
 

@@ -2789,9 +2789,16 @@ function interface_track6_configure($interface, $lancfg, $reload = false)
             interface_track6_6rd_configure($interface, $lancfg);
             break;
         case 'dhcp6':
+            /*
+             * MurOS: the delegated prefix is handled by networkd, which carves
+             * the subnet out of the IA_PD of the upstream interface itself
+             * (DHCPPrefixDelegation, rendered by render_networkd.php). Only the
+             * units have to be refreshed and the link reconfigured, there is no
+             * dhcp6c to signal.
+             */
             if ($reload || !isset($lancfg['enable'])) {
-                interface_dhcpv6_prepare($lancfg['track6-interface'], $trackcfg);
-                killbypid('/var/run/dhcp6c.pid', 'HUP');
+                mwexecf('/usr/bin/php %s', '/usr/local/opnsense/scripts/interfaces/render_networkd.php');
+                mwexecfm('/usr/bin/networkctl reconfigure %s', $lancfg['if']);
             }
             break;
     }
