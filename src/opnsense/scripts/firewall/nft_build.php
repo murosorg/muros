@@ -952,7 +952,7 @@ function mvc_resolve_net(string $value, string $family, array $ifaces, array $al
  * gets its own translator. A rule may yield several lines: an "any" (inet46)
  * rule is emitted once per family. Every line carries the rule uuid as its
  * comment so per-rule counters can be mapped back to the GUI. */
-function mvc_rule_line(SimpleXMLElement $rule, array $ifaces, array $aliases): array
+function mvc_rule_line(SimpleXMLElement $rule, array $ifaces, array $aliases, ?array &$mangle = null): array
 {
     if (trim((string)($rule->enabled ?? '1')) === '0') {
         return [];
@@ -993,6 +993,10 @@ function mvc_rule_line(SimpleXMLElement $rule, array $ifaces, array $aliases): a
     $dport = resolve_port((string)($rule->destination_port ?? ''), $aliases);
     $sneg = trim((string)($rule->source_not ?? '0')) === '1' ? '!= ' : '';
     $dneg = trim((string)($rule->destination_not ?? '0')) === '1' ? '!= ' : '';
+
+    $gw = trim((string)($rule->gateway ?? ''));
+    $gwMark = $gw !== '' ? gateway_mark($gw) : 0;
+    $gwName = str_replace('"', "'", preg_replace('/[^\x20-\x7E]/', '', $gw));
 
     $lines = [];
     foreach ($families as $family) {
@@ -1088,6 +1092,22 @@ function mvc_rule_line(SimpleXMLElement $rule, array $ifaces, array $aliases): a
             $log = 'log prefix "muros,' . $action . ',' . $uuid . ' " ';
         }
         $stmt = trim(implode(' ', $parts));
+
+        /* Policy based routing (route-to) for the model rules, same contract as
+         * the legacy rules: a gateway pinned pass rule marks its new
+         * connections with the gateway mark, which setup_policy_routing.php
+         * turns into a lookup in that gateway's table. The egress interface is
+         * unknown in prerouting, so an oifname match is left out of the copy. */
+        if ($mangle !== null && $verdict === 'accept' && $gw !== '') {
+            $mangleParts = $kw === 'oifname'
+                ? array_values(array_filter($parts, function ($part) {
+                    return strncmp($part, 'oifname ', 8) !== 0;
+                }))
+                : $parts;
+            $mangleStmt = trim(implode(' ', $mangleParts));
+            $mangle[] = '        ' . ($mangleStmt === '' ? '' : $mangleStmt . ' ')
+                . "ct state new meta mark set $gwMark ct mark set $gwMark comment \"route-to $gwName\"";
+        }
         $line = '        ' . ($stmt === '' ? '' : $stmt . ' ') . $log . "counter $verdict";
         if ($uuid !== '') {
             $line .= " comment \"$uuid\"";
@@ -1165,7 +1185,7 @@ if (isset($cfg->OPNsense->Firewall->Filter->rules->rule)) {
         return ((int)$a->sequence) <=> ((int)$b->sequence);
     });
     foreach ($mvcRules as $rule) {
-        foreach (mvc_rule_line($rule, $ifaces, $aliases) as $line) {
+        foreach (mvc_rule_line($rule, $ifaces, $aliases, $mangle) as $line) {
             $rules[] = $line;
         }
     }
