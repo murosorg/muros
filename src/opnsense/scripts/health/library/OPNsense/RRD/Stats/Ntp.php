@@ -38,23 +38,26 @@ class Ntp extends Base
 
         $data = [];
 
-        $fieldmap = [
-            'offset' => 'offset',
-            'frequency' => 'freq',
-            'sys_jitter' => 'sjit',
-            'clk_jitter' => 'cjit',
-            'clk_wander' => 'wander',
-            'rootdisp' => 'disp',
-        ];
+        /*
+         * MurOS: the time daemon is chrony, so the numbers come from the single
+         * CSV line of "chronyc -c tracking" instead of the ntpq variables.
+         * Offsets and dispersion are reported in seconds and converted to the
+         * milliseconds the graph expects, frequencies stay in ppm. The clock
+         * jitter of the reference implementation has no counterpart and is left
+         * out, the update marks it unknown.
+         */
+        $tracking = $this->shellCmd('/usr/bin/chronyc -c tracking');
+        $fields = explode(',', trim((string)($tracking[0] ?? '')));
 
-        foreach ($this->shellCmd('/usr/local/sbin/ntpq -c rv') as $idx => $item) {
-            foreach (explode(',', $item) as $part) {
-                $tmp = explode('=', trim($part));
-                if (isset($fieldmap[$tmp[0]])) {
-                    $data[$fieldmap[$tmp[0]]] = $tmp[1];
-                }
-            }
+        if (count($fields) < 12) {
+            return $data;
         }
+
+        $data['offset'] = (float)$fields[5] * 1000;
+        $data['sjit'] = (float)$fields[6] * 1000;
+        $data['freq'] = (float)$fields[7];
+        $data['wander'] = (float)$fields[9];
+        $data['disp'] = (float)$fields[11] * 1000;
 
         return $data;
     }
