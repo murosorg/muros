@@ -7,7 +7,7 @@ AF="${2}"
 
 /usr/bin/logger -t ppp "ppp-linkdown: executing on ${IF} for ${AF}"
 
-ngctl shutdown ${IF}:
+# MurOS: no netgraph to shut down, pppd removes the interface itself.
 
 if [ "${AF}" = "inet" ]; then
 	/usr/local/sbin/ifctl -i ${IF} -4nd
@@ -27,7 +27,7 @@ fi
 
 UPTIME=$(/usr/local/opnsense/scripts/interfaces/ppp-uptime.sh ${IF})
 if [ -n "${UPTIME}" -a -f "/conf/${IF}.log" ]; then
-	echo $(date -j +%Y.%m.%d-%H:%M:%S) ${UPTIME} >> /conf/${IF}.log
+	echo $(date +%Y.%m.%d-%H:%M:%S) ${UPTIME} >> /conf/${IF}.log
 fi
 
 rm -f /tmp/${IF}_uptime

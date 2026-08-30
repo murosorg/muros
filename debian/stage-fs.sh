@@ -88,6 +88,28 @@ pm.max_requests = 500
 request_terminate_timeout = 120
 POOL
 
+# pppd hooks: PPPoE sessions are run by pppd, which only executes the scripts
+# found in its own hook directories. They call the MurOS adapter, which maps the
+# pppd environment onto the link scripts (ifctl publication plus the newip /
+# newipv6 chain).
+for hook in ip-up ip-down ipv6-up ipv6-down; do
+    install -d "$DEST/etc/ppp/$hook.d"
+    case "$hook" in
+    *-up) action=up ;;
+    *) action=down ;;
+    esac
+    case "$hook" in
+    ipv6-*) family=inet6 ;;
+    *) family=inet ;;
+    esac
+    cat > "$DEST/etc/ppp/$hook.d/muros" <<HOOK
+#!/bin/sh
+# Installed by the muros package.
+exec /usr/local/opnsense/scripts/interfaces/pppd-hook.sh $action $family
+HOOK
+    chmod 755 "$DEST/etc/ppp/$hook.d/muros"
+done
+
 # sysctl: routing forwarding for a firewall.
 install -d "$DEST/etc/sysctl.d"
 cat > "$DEST/etc/sysctl.d/muros.conf" <<'SCTL'
