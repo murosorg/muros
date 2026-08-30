@@ -84,7 +84,12 @@ function upload_crash_report($files, $agent)
 
 include('head.inc');
 
-$plugins = implode(' ', shell_safe('/usr/local/sbin/pkg-static info -g "os-*"', [], true));
+/* MurOS: installed plugin packages, listed with dpkg instead of pkg */
+$plugins = implode(' ', shell_safe(
+    '/usr/bin/dpkg-query -W -f=\'${binary:Package}-${Version} \' "muros-*" 2> /dev/null',
+    [],
+    true
+));
 $product = product::getInstance();
 
 $crash_report_header = sprintf(
@@ -97,7 +102,7 @@ $crash_report_header = sprintf(
     empty($plugins) ? '' : "Plugins $plugins\n",
     date('r'),
     shell_safe('/usr/bin/openssl version | cut -f -2 -d \' \''),
-    shell_safe('/usr/local/bin/python3 -V'),
+    shell_safe('/usr/bin/python3 -V'),
     PHP_VERSION
 );
 
