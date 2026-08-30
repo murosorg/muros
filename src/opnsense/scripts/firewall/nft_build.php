@@ -719,12 +719,28 @@ function rule_line(SimpleXMLElement $rule, array $ifaces, array $aliases = [], ?
 
     $parts = [];
 
-    /* ingress/egress interface match. */
+    /* ingress/egress interface match. Floating rules store several interfaces
+     * as a comma separated list and can invert the selection (interfacenot),
+     * like the MVC rules do. Matching the whole list as a single token would
+     * never resolve, silently turning an interface scoped rule into a rule
+     * applying to every interface. */
     $dir = trim((string)$rule->direction) ?: 'in';
-    $ifkey = trim((string)$rule->interface);
-    if ($ifkey !== '' && isset($ifaces[$ifkey])) {
-        $kw = $dir === 'out' ? 'oifname' : 'iifname';
-        $parts[] = "$kw " . ifname_token($ifaces[$ifkey]['device']);
+    $kw = $dir === 'out' ? 'oifname' : 'iifname';
+    $devs = [];
+    foreach (preg_split('/[\s,]+/', trim((string)$rule->interface)) ?: [] as $ifkey) {
+        $ifkey = trim($ifkey);
+        if ($ifkey !== '' && isset($ifaces[$ifkey])) {
+            $devs[] = $ifaces[$ifkey]['device'];
+        }
+    }
+    $devs = array_values(array_unique($devs));
+    if (!empty($devs)) {
+        $ifneg = isset($rule->interfacenot) && trim((string)$rule->interfacenot) !== '0' ? '!= ' : '';
+        if (count($devs) === 1 && $ifneg === '') {
+            $parts[] = "$kw " . ifname_token($devs[0]);
+        } else {
+            $parts[] = "$kw $ifneg" . '{ ' . implode(', ', array_map('ifname_token', $devs)) . ' }';
+        }
     }
 
     /* layer 4 protocol. */
