@@ -1,4 +1,4 @@
-#!/usr/local/bin/php
+#!/usr/bin/php
 <?php
 /*
  * Copyright (C) 2025 Deciso B.V.
