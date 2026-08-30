@@ -1,0 +1,19 @@
+# MurOS DHCPv4 lease change watcher.
+# systemd-networkd has no per-lease hook: it writes the lease it obtained to
+# /run/systemd/netif/leases/<ifindex>. Watching that directory is the Debian
+# replacement for the dhclient-script hook that used to run the newwanip chain
+# on every BOUND/RENEW/EXPIRE transition.
+[Unit]
+Description=MurOS DHCP lease change watcher
+Documentation=https://github.com/ecritel/muros
+After=systemd-networkd.service
+
+[Path]
+# networkd writes the lease atomically (temporary file plus rename), which
+# shows up as a change of the directory.
+PathModified=/run/systemd/netif/leases
+MakeDirectory=no
+Unit=muros-lease-watch.service
+
+[Install]
+WantedBy=paths.target

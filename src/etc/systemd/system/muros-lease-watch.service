@@ -1,0 +1,10 @@
+# Replays the newwanip chain for the interfaces whose DHCPv4 lease changed.
+# Triggered by muros-lease-watch.path, never enabled on its own.
+[Unit]
+Description=MurOS DHCP lease change handler
+Documentation=https://github.com/ecritel/muros
+After=muros-configd.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/php /usr/local/opnsense/scripts/interfaces/networkd_lease_event.php

@@ -53,9 +53,15 @@ done
 # Debian package unit directory so systemd and dh_installsystemd find them.
 if [ -d "$DEST/usr/local/etc/systemd/system" ]; then
     mkdir -p "$DEST/lib/systemd/system"
-    for u in "$DEST/usr/local/etc/systemd/system"/*.service; do
+    # Every unit type, not only services: the timers and path units were left
+    # behind under /usr/local/etc/systemd/system, where systemd never looks.
+    for u in "$DEST/usr/local/etc/systemd/system"/*; do
         [ -e "$u" ] || continue
-        mv "$u" "$DEST/lib/systemd/system/"
+        case "$u" in
+        *.service | *.socket | *.timer | *.path | *.target | *.mount)
+            mv "$u" "$DEST/lib/systemd/system/"
+            ;;
+        esac
     done
     rmdir "$DEST/usr/local/etc/systemd/system" 2>/dev/null || true
 fi
