@@ -1,0 +1,16 @@
+# Periodic sweep for the lease change handler.
+# The path unit reacts to DHCPv4 leases immediately, but the IPv6 side has no
+# file to watch: router advertisements and the DHCPv6 client state are only
+# visible in the kernel, so the handler polls them.
+[Unit]
+Description=MurOS DHCP lease change sweep
+Documentation=https://github.com/ecritel/muros
+
+[Timer]
+OnBootSec=90
+OnUnitInactiveSec=30
+AccuracySec=5
+Unit=muros-lease-watch.service
+
+[Install]
+WantedBy=timers.target

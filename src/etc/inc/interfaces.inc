@@ -2901,29 +2901,25 @@ function interface_dhcpv6_configure($interface, $wancfg)
         return;
     }
 
-    /* always kill rtsold in case of reconfigure */
+    /*
+     * MurOS: neither rtsold nor dhcp6c exist on Debian. Router advertisements
+     * are processed by the kernel and the DHCPv6 client is systemd-networkd,
+     * configured per link by render_networkd.php (IPv6AcceptRA plus the
+     * [DHCPv6] options). Accepting advertisements must be requested explicitly
+     * because the box forwards, then the link is reconfigured so the client
+     * solicits immediately instead of waiting for the next advertisement. The
+     * RA timeout of the FreeBSD hybrid approach has no equivalent: networkd
+     * solicits on its own when no advertisement arrives.
+     *
+     * Anything left over from an older release is stopped first.
+     */
     killbypid('/var/run/rtsold.pid');
+    killbypid('/var/run/dhcp6c.pid');
     @unlink("/tmp/rtsold.{$wancfg['if']}.done");
 
-    $rtsold_frmt = ['/usr/sbin/rtsold -%s -aiu -p %s -A %s -R %s'];
-    $rtsold_args = [
-        $settings->dhcp6_debug->isEmpty() ? 'd' : 'D',
-        '/var/run/rtsold.pid',
-        '/usr/local/opnsense/scripts/interfaces/rtsold_script.sh',
-        '/usr/local/opnsense/scripts/interfaces/rtsold_resolvconf.sh',
-    ];
-
-    /* fire up rtsold for IPv6 RAs first */
-    mwexecf($rtsold_frmt, $rtsold_args);
-
-    /*
-     * Trigger for hybrid approach to allow reloading without
-     * advertisements after timeout which can be necessary.
-     * Can be adjusted to fit ISP timing or completely disabled.
-     */
-    if (!$settings->dhcp6_ratimeout->isEmpty()) {
-        mwexecfb('/usr/local/opnsense/scripts/interfaces/rtsold_script.sh %s', [$wancfg['if']]);
-    }
+    interface_ipv6_flags($wancfg['if'], ['accept_ra' => 2, 'disable_ipv6' => 0]);
+    mwexecf('/usr/bin/php %s', '/usr/local/opnsense/scripts/interfaces/render_networkd.php');
+    mwexecfm('/usr/bin/networkctl reconfigure %s', $wancfg['if']);
 }
 
 function interface_dhcpv6_id($interface): string

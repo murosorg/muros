@@ -134,11 +134,89 @@ foreach (glob($leaseDir . '/*') as $file) {
     exec('/usr/local/sbin/configctl -d interface newip ' . escapeshellarg($device) . ' force > /dev/null 2>&1');
 }
 
+/*
+ * IPv6 side. There is no lease file for router advertisements and networkd
+ * keeps its DHCPv6 state private, so the acquired state is read back from the
+ * kernel: only addresses flagged dynamic come from an advertisement or from the
+ * DHCPv6 client, which excludes the statically configured interfaces. The
+ * router is taken from the default route of the device, as the rtsold script
+ * used to publish it.
+ */
+function dynamic_addresses6($device)
+{
+    $json = shell_exec(sprintf('/usr/sbin/ip -6 -j addr show dev %s scope global 2>/dev/null', escapeshellarg($device)));
+    $addresses = [];
+    foreach (json_decode((string)$json, true) ?: [] as $entry) {
+        foreach (($entry['addr_info'] ?? []) as $ai) {
+            if (!empty($ai['dynamic']) && !empty($ai['local'])) {
+                $addresses[] = $ai['local'] . '/' . ($ai['prefixlen'] ?? 128);
+            }
+        }
+    }
+    sort($addresses);
+
+    return $addresses;
+}
+
+function router6($device)
+{
+    $json = shell_exec(sprintf('/usr/sbin/ip -6 -j route show default dev %s 2>/dev/null', escapeshellarg($device)));
+    foreach (json_decode((string)$json, true) ?: [] as $route) {
+        if (!empty($route['gateway'])) {
+            return $route['gateway'];
+        }
+    }
+
+    return '';
+}
+
+foreach (glob('/sys/class/net/*') as $path) {
+    $device = basename($path);
+    if ($device === 'lo' || (!empty($only) && !in_array($device, $only, true))) {
+        continue;
+    }
+
+    $addresses = dynamic_addresses6($device);
+    $router = router6($device);
+    $stateFile = $stateDir . '/' . $device . '.v6';
+    $current = implode(' ', $addresses) . "\n" . $router . "\n";
+    $previous = @file_get_contents($stateFile);
+
+    if ($previous === $current) {
+        continue;
+    }
+    if ($previous === false && empty($addresses)) {
+        /* never acquired anything, nothing to announce */
+        continue;
+    }
+
+    if (empty($addresses)) {
+        @unlink($stateFile);
+    } else {
+        file_put_contents($stateFile, $current);
+        chmod($stateFile, 0600);
+    }
+
+    $args = ['-i', $device, '-6rd'];
+    if (filter_var($router, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
+        $args[] = '-a';
+        $args[] = $router;
+    }
+    ifctl($args);
+
+    echo 'ipv6 change on ' . $device . ' (' . (empty($addresses) ? 'released' : implode(' ', $addresses)) . ')' . PHP_EOL;
+    exec('/usr/local/sbin/configctl -d interface newipv6 ' . escapeshellarg($device) . ' force > /dev/null 2>&1');
+}
+
 /* A lease that disappeared (released, expired, interface reset) leaves the
  * published router and resolver behind, so clear them and let the chain run
  * once more to drop the gateway and reload the ruleset. */
 foreach (glob($stateDir . '/*') as $stateFile) {
     $device = basename($stateFile);
+    /* the IPv6 state files of the loop above are not DHCPv4 leases */
+    if (substr($device, -3) === '.v6') {
+        continue;
+    }
     if (isset($seen[$device]) || (!empty($only) && !in_array($device, $only, true))) {
         continue;
     }
