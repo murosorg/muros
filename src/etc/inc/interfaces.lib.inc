@@ -379,11 +379,18 @@ function _legacy_interfaces_details_iproute2($intf = null)
 
         foreach (($entry['addr_info'] ?? []) as $ai) {
             $family = $ai['family'] ?? '';
+            /* On a point to point address (tun, gif, gre, ppp, ipsec vti)
+             * iproute2 reports the peer in "address" next to the local
+             * "local". That is the tunnel endpoint the FreeBSD parser exposed,
+             * and consumers such as the OpenVPN link-up hook or the IPsec vti
+             * bring-up need it to find the other end of the tunnel. */
+            $peer = ($ai['address'] ?? '') !== ($ai['local'] ?? '') ? ($ai['address'] ?? '') : '';
             if ($family === 'inet') {
                 $rec['ipv4'][] = [
                     'ipaddr' => $ai['local'] ?? '',
                     'subnetbits' => (int)($ai['prefixlen'] ?? 32),
-                    'tunnel' => false,
+                    'tunnel' => $peer !== '',
+                    'endpoint' => $peer,
                 ];
             } elseif ($family === 'inet6') {
                 $addr = $ai['local'] ?? '';
@@ -395,7 +402,8 @@ function _legacy_interfaces_details_iproute2($intf = null)
                     'link-local' => (($ai['scope'] ?? '') === 'link') || (bool)preg_match('/^fe[89ab][0-9a-f]:/i', $addr),
                     'pltime' => (string)($ai['preferred_life_time'] ?? '0'),
                     'tentative' => !empty($ai['tentative']),
-                    'tunnel' => false,
+                    'tunnel' => $peer !== '',
+                    'endpoint' => $peer,
                     'vltime' => (string)($ai['valid_life_time'] ?? '0'),
                     'subnetbits' => (int)($ai['prefixlen'] ?? 128),
                 ];
