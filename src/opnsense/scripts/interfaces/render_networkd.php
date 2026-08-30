@@ -140,6 +140,13 @@ foreach ($cfg->interfaces->children() as $key => $node) {
 
     $v4dhcp = ($ip4 === 'dhcp');
     $v6dhcp = ($ip6 === 'dhcp6');
+    /*
+     * SLAAC: no DHCPv6 client, the address comes from the router
+     * advertisements. FreeBSD ran rtsold for this, on Linux the kernel builds
+     * the address as soon as advertisements are accepted, which networkd
+     * enables per link.
+     */
+    $v6slaac = ($ip6 === 'slaac');
     $v4static = filter_var($ip4, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) && ctype_digit($sub4);
     $v6static = filter_var($ip6, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) && ctype_digit($sub6);
 
@@ -166,7 +173,7 @@ foreach ($cfg->interfaces->children() as $key => $node) {
     $lines[] = '[Network]';
     $lines[] = 'DHCP=' . $dhcp;
     $lines[] = 'ConfigureWithoutCarrier=yes';
-    $lines[] = 'IPv6AcceptRA=' . ($v6dhcp ? 'yes' : 'no');
+    $lines[] = 'IPv6AcceptRA=' . ($v6dhcp || $v6slaac ? 'yes' : 'no');
     if ($v4static) {
         $lines[] = 'Address=' . $ip4 . '/' . $sub4;
     }
@@ -215,6 +222,31 @@ foreach ($cfg->interfaces->children() as $key => $node) {
         }
         if (!empty($deny)) {
             $lines[] = 'DenyList=' . implode(' ', $deny);
+        }
+        $lines[] = '';
+    }
+
+    /*
+     * DHCPv6 client options, the counterpart of the dhcp6c configuration.
+     * "dhcp6prefixonly" (request a prefix but no address) has no networkd
+     * switch and is not rendered.
+     */
+    if ($v6dhcp) {
+        $lines[] = '[DHCPv6]';
+        /* do not overwrite the resolver with the values from the lease */
+        if (trim((string)$node->dhcp6_norequest_dns) !== '') {
+            $lines[] = 'UseDNS=no';
+        }
+        /*
+         * Prefix hint: the GUI stores the number of bits below /64, so a
+         * delegation size of /48 is stored as 16.
+         */
+        $pdlen = trim((string)$node->{'dhcp6-ia-pd-len'});
+        if (trim((string)$node->{'dhcp6-ia-pd-send-hint'}) !== '' && ctype_digit($pdlen)) {
+            $prefixlen = 64 - (int)$pdlen;
+            if ($prefixlen > 0 && $prefixlen <= 64) {
+                $lines[] = 'PrefixDelegationHint=::/' . $prefixlen;
+            }
         }
         $lines[] = '';
     }
