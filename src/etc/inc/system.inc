@@ -181,6 +181,14 @@ function system_sysctl_defaults()
         /* SYN flood mitigation (was net.inet.tcp.syncookies) */
         'net.ipv4.tcp_syncookies' => [ 'default' => '1', 'description' => 'Enable TCP SYN cookies' ],
 
+        /* connection tracking: stamp every flow with its creation time so the
+         * state table and pftop can report a real age, which pf exposed per
+         * state and netfilter only keeps with this extension enabled */
+        'net.netfilter.nf_conntrack_timestamp' => [
+            'default' => '1',
+            'description' => 'Record connection tracking timestamps (firewall state age)'
+        ],
+
         /* ICMP hardening (was net.inet.icmp.*) */
         'net.ipv4.icmp_echo_ignore_broadcasts' => [ 'default' => '1', 'description' => 'Ignore ICMP echo/timestamp sent to broadcast (smurf protection)' ],
         'net.ipv4.icmp_ignore_bogus_error_responses' => [ 'default' => '1', 'description' => 'Ignore bogus ICMP error responses' ],

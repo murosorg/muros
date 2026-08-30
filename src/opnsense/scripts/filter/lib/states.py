@@ -161,6 +161,7 @@ def parse_conntrack_line(line):
         'flags': [],
         'id': None,
         'mark': None,
+        'age': None,
     }
 
     idx = 5
@@ -187,13 +188,26 @@ def parse_conntrack_line(line):
             entry['id'] = value
         elif key == 'mark':
             entry['mark'] = value
+        elif key == 'delta-time':
+            entry['age'] = value
 
     return entry
 
 
+def entry_age(entry):
+    """ Age of a flow in seconds. conntrack reports it as delta-time when the
+        connection timestamp extension is enabled (net.netfilter
+        .nf_conntrack_timestamp), which MurOS turns on by default; when the
+        extension is off the field is absent and the age is unknown (0). """
+    try:
+        return max(int(entry['age']), 0)
+    except (KeyError, TypeError, ValueError):
+        return 0
+
+
 def iter_conntrack():
     """ Yield every connection tracking entry as a normalized dict. """
-    sp = subprocess.run([CONNTRACK, '-L', '-o', 'extended,id'], capture_output=True, text=True)
+    sp = subprocess.run([CONNTRACK, '-L', '-o', 'extended,id,timestamp'], capture_output=True, text=True)
     for line in sp.stdout.strip().split('\n'):
         entry = parse_conntrack_line(line)
         if entry is not None:
@@ -280,7 +294,7 @@ def state_to_record(entry):
         # keep a "/" so the GUI delete route receives a creator id segment
         'id': '%s/0' % (entry['id'] or '0'),
         'rule': '',
-        'age': 0,
+        'age': entry_age(entry),
         'expires': int(entry['timeout']) if entry['timeout'] else 0,
         'pkts': [int(orig.get('packets', 0)), int(reply.get('packets', 0))],
         'bytes': [int(orig.get('bytes', 0)), int(reply.get('bytes', 0))],
@@ -367,6 +381,8 @@ def query_top():
 
     for entry in iter_conntrack():
         orig = entry['orig']
+        age = entry_age(entry)
+        total_bytes = int(orig.get('bytes', 0)) + int(entry['reply'].get('bytes', 0))
         record = {
             'proto': entry['proto'],
             'dir': 'out',
@@ -377,11 +393,11 @@ def query_top():
             'gw_addr': resolve_gateway(entry['mark']),
             'gw_port': None,
             'state': derived_state(entry),
-            'age': 0,
+            'age': age,
             'expire': int(entry['timeout']) if entry['timeout'] else 0,
             'pkts': int(orig.get('packets', 0)) + int(entry['reply'].get('packets', 0)),
-            'bytes': int(orig.get('bytes', 0)) + int(entry['reply'].get('bytes', 0)),
-            'avg': 0,
+            'bytes': total_bytes,
+            'avg': int(total_bytes / age) if age > 0 else 0,
             'rule': '',
         }
         result['details'].append(record)
