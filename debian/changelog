@@ -1,3 +1,46 @@
+muros (0.9.56) trixie; urgency=medium
+
+  * Policy based routing (route-to/reply-to): finish the port.
+    - setup_policy_routing.php was never invoked, so the gateway marks emitted
+      by the ruleset landed on packets with no matching routing table or ip
+      rule and pinned flows quietly followed the default route. nft_apply.sh now
+      reconciles the tables after every ruleset load, with a new --auto mode
+      that reads the active gateways (name, address, device) from the Gateways
+      model. Best effort: a routing problem cannot fail the firewall reload.
+    - The lookup rule is created in the address family of the gateway. An IPv6
+      gateway had its table populated with ip -6 but the steering rule created
+      with a plain ip rule (IPv4 only), and stale IPv6 rules were never
+      reconciled.
+    - Model (MVC) firewall rules honour their gateway selection like the legacy
+      rules did, and the mangle copy of the match drops an egress interface
+      match that prerouting cannot evaluate.
+  * Firewall: per-rule logging on legacy filter rules, which emitted no nft log
+    statement at all, so those rules were invisible in the log viewer. The
+    legacy rule uuid is read from the rule attribute where the edit page stores
+    it. Legacy floating rules also resolve a comma separated interface list and
+    honour interfacenot; the list used to fail to resolve and silently widened
+    the rule to every interface.
+  * Firewall states: real age. net.netfilter.nf_conntrack_timestamp is enabled by
+    default (visible as a tunable) and the conntrack delta-time is read back, so
+    the states view and pftop show an age instead of 0 and pftop can compute a
+    bytes per second average.
+  * WAN address change: rc.newwanip flushes the stale flows with conntrack on the
+    four tuple ends (a source NATed flow only carries the address in its reply
+    tuple) and by gateway mark, instead of the pfctl -k calls that did nothing.
+  * OpenVPN: instances run as systemd units (muros-openvpn@.service template,
+    instantiated on the mode id) instead of an unsupervised openvpn --config, so
+    a crashed tunnel is restarted and its output reaches the journal. The pid
+    file contract and the GUI service status are unchanged.
+  * Interfaces: the iproute2 details parser exposes the point to point peer as
+    the endpoint field, which the OpenVPN link-up hook needs to find the tunnel
+    gateway and the IPsec vti bring-up to match its remote.
+  * HA: conntrackd is only restarted when its generated configuration actually
+    changed (a restart drops the state caches, and the generator runs on every
+    interface or filter reconfiguration), and a FAULT transition demotes
+    conntrackd like a backup transition does.
+
+ -- MurOS <dev@muros.org>  Sun, 30 Aug 2026 21:20:00 +0200
+
 muros (0.9.55) trixie; urgency=medium
 
   * HA (CARP/VRRP): permit incoming VRRP adverts on the firewall input chain.
