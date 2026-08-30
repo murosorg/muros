@@ -20,6 +20,7 @@
  *
  * Usage:
  *   setup_policy_routing.php name gateway-ip device [name gw dev ...]
+ *   setup_policy_routing.php --auto
  *   setup_policy_routing.php --flush
  */
 
@@ -90,13 +91,43 @@ function remove_mark(string $fam, int $mark): void
     run(sprintf('/usr/sbin/ip %s route flush table %d', $fam, $mark));
 }
 
+/* Read the gateways to provision from the running configuration, as
+ * name/address/device triplets. This lets the firewall apply refresh the
+ * tables after every ruleset reload without knowing the topology, and keeps
+ * the tables in sync when a gateway address or interface changes. Disabled,
+ * loopback and inactive gateways are skipped by the model. */
+function discover_gateways(): array
+{
+    require_once 'config.inc';
+    require_once 'util.inc';
+    require_once 'interfaces.inc';
+
+    $triplets = [];
+    foreach ((new \OPNsense\Routing\Gateways())->gatewaysIndexedByName() as $name => $gw) {
+        $gwip = (string)($gw['gateway'] ?? '');
+        $dev = (string)($gw['if'] ?? '');
+        if ((string)$name === '' || $dev === '' || filter_var($gwip, FILTER_VALIDATE_IP) === false) {
+            continue;
+        }
+        $triplets[] = (string)$name;
+        $triplets[] = $gwip;
+        $triplets[] = $dev;
+    }
+
+    return $triplets;
+}
+
 $args = array_slice($argv, 1);
 $GLOBALS['dry_run'] = in_array('--dry-run', $args, true);
-$args = array_values(array_filter($args, fn ($a) => $a !== '--dry-run'));
+$auto = in_array('--auto', $args, true);
+$args = array_values(array_filter($args, fn ($a) => $a !== '--dry-run' && $a !== '--auto'));
 $flush = in_array('--flush', $args, true);
 
 $desired = [];
 if (!$flush) {
+    if ($auto) {
+        $args = discover_gateways();
+    }
     if (count($args) % 3 !== 0) {
         fwrite(STDERR, "expected name/gateway/device triplets\n");
         exit(1);

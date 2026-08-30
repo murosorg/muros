@@ -30,3 +30,14 @@ CP_SETUP=/usr/local/opnsense/scripts/captiveportal/setup_fw.py
 if [ -x "$CP_SETUP" ] && grep -q '<captiveportal>' "$CONFIG" 2> /dev/null; then
     "$CP_SETUP" "$CONFIG" > /dev/null 2>&1 || true
 fi
+
+# Policy based routing (route-to and reply-to): the ruleset above only tags the
+# flows with a gateway mark, the mark is worthless until the matching routing
+# table and ip rule exist. Reconcile them from the configuration on every
+# reload, which also picks up a gateway whose address or interface changed.
+# Best effort: a routing provisioning problem must not fail the firewall
+# reload, the ruleset itself is already committed.
+POLICY_ROUTING=/usr/local/opnsense/scripts/routes/setup_policy_routing.php
+if [ -f "$POLICY_ROUTING" ]; then
+    php "$POLICY_ROUTING" --auto > /dev/null 2>&1 || true
+fi
