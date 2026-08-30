@@ -1802,9 +1802,22 @@ include("head.inc");
                               <?= gettext('When used on a single VLAN interface the setting "Promiscuous mode" is required for this to work. ' .
                                   'Alternatively, the parent interface MAC can be spoofed applying the MAC address to all attached VLAN children automatically.') ?><br />
 <?php
+                              /* MurOS: the neighbour table is read with iproute2,
+                                 arp(8) is not part of this platform */
                               $ip = getenv('REMOTE_ADDR');
-                              $mac = `/usr/sbin/arp -an | grep {$ip} | cut -d" " -f4`;
-                              $mac = str_replace("\n","",$mac);
+                              $mac = '';
+                              if (filter_var($ip, FILTER_VALIDATE_IP)) {
+                                  $neigh = json_decode(shell_safe(
+                                      '/usr/sbin/ip -j neigh show %s',
+                                      $ip
+                                  ), true);
+                                  foreach ($neigh ?: [] as $entry) {
+                                      if (!empty($entry['lladdr'])) {
+                                          $mac = $entry['lladdr'];
+                                          break;
+                                      }
+                                  }
+                              }
                               if (!empty($mac)):
 ?>
                               <a onclick="document.getElementById('spoofmac').value='<?= html_safe($mac) ?>';" href="#"><?=gettext("Insert my currently connected MAC address (use with care)"); ?></a><br />
