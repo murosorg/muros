@@ -328,6 +328,55 @@ function legacy_interface_stats($ifs = null)
 /* MurOS: collect interface details from iproute2 (ip -j -d addr show) and
  * shape them into the structure historically produced by the FreeBSD
  * ifconfig parser, so existing consumers keep working unchanged. */
+/*
+ * MurOS: media, duplex and the list of supported link modes. FreeBSD read them
+ * from ifconfig, on Linux they come from ethtool. Speed and duplex are exposed
+ * as "<speed> <duplex>" (for instance "1000 full"), which keeps the two token
+ * layout the interface settings page stores in media and mediaopt.
+ */
+function _legacy_interface_media_ethtool($device)
+{
+    $media = ['media' => '', 'media_raw' => '', 'supported_media' => []];
+
+    exec(sprintf('/usr/sbin/ethtool %s 2> /dev/null', escapeshellarg($device)), $out, $ret);
+    if ($ret != 0) {
+        return $media;
+    }
+
+    $speed = '';
+    $duplex = '';
+    $in_supported = false;
+
+    foreach ($out as $raw) {
+        $line = trim($raw);
+        if (stripos($line, 'Supported link modes:') === 0) {
+            $in_supported = true;
+            $line = trim(substr($line, strlen('Supported link modes:')));
+        } elseif (strpos($line, ':') !== false) {
+            /* any other keyword ends the (multi line) list of modes */
+            $in_supported = false;
+        }
+
+        if ($in_supported && preg_match_all('#(\d+)base\S*?/(Full|Half)#', $line, $matches, PREG_SET_ORDER)) {
+            foreach ($matches as $mode) {
+                $media['supported_media'][] = $mode[1] . ' ' . strtolower($mode[2]);
+            }
+        }
+
+        if (preg_match('/^Speed:\s*(\d+)/', $line, $matches)) {
+            $speed = $matches[1];
+        } elseif (preg_match('/^Duplex:\s*(\w+)/', $line, $matches)) {
+            $duplex = strtolower($matches[1]);
+        }
+    }
+
+    $media['supported_media'] = array_values(array_unique($media['supported_media']));
+    $media['media'] = trim($speed . ' ' . $duplex);
+    $media['media_raw'] = $media['media'];
+
+    return $media;
+}
+
 function _legacy_interfaces_details_iproute2($intf = null)
 {
     $result = [];
@@ -365,10 +414,22 @@ function _legacy_interfaces_details_iproute2($intf = null)
             'ipv4' => [],
             'ipv6' => [],
             'supported_media' => [],
+            'media' => '',
+            'media_raw' => '',
             'is_physical' => !count(array_intersect(preg_split('/\d+/', $dev), $vfaces)),
             'device' => $dev,
             'mtu' => (string)($entry['mtu'] ?? ''),
         ];
+
+        /*
+         * ethtool is one process per device, so the media is only collected
+         * when a single interface was requested: that is what the interface
+         * settings page and the media enforcement need, the bulk listings never
+         * look at it.
+         */
+        if (!empty($intf) && $rec['is_physical']) {
+            $rec = array_merge($rec, _legacy_interface_media_ethtool($dev));
+        }
 
         /* present a FreeBSD-like link status used by the GUI */
         if (in_array('up', $flags)) {

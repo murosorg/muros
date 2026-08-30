@@ -2454,31 +2454,31 @@ function interface_configure($verbose = false, $interface = 'wan', $reload = fal
     }
 
     if (!empty($wancfg['media'])) {
-        $intf_details = $ifconfig_details[$realhwif];
-        /* sanitizing current media to avoid mismatching on change detection */
-        $media_changed = stripos(explode('(', $intf_details['media_raw'])[0], $wancfg['media']) == false;
-        if (!empty($wancfg['mediaopt'])) {
-            /*
-             * XXX Not sanitizing current media here, because in
-             * testing 'mediaopt' was not working consistently and
-             * may even differ per driver.  If someone set 'media'
-             * it will very likely be set once with the right
-             * 'mediaopt' so the behaviour should be consistent.
-             */
-            $media_changed |= stripos($intf_details['media_raw'], $wancfg['mediaopt']) == false;
-        }
-        if ($media_changed) {
-            $cmd_frmt = ['/sbin/ifconfig %s'];
-            $cmd_args = [$realhwif];
-
-            if (!empty($wancfg['media'])) {
-                $cmd_frmt[] = 'media %s';
-                $cmd_args[] = $wancfg['media'];
+        /*
+         * MurOS: speed and duplex are forced with ethtool. The stored value is
+         * "<speed> <duplex>" as offered by the settings page, but a
+         * configuration migrated from FreeBSD carries media "1000baseT" and
+         * mediaopt "full-duplex", so both are normalised here. Autonegotiation
+         * has to be switched off for a forced setting to stick.
+         */
+        $speed = preg_replace('/\D/', '', $wancfg['media']);
+        $duplex = '';
+        foreach (['half', 'full'] as $candidate) {
+            if (stripos($wancfg['media'] . ' ' . ($wancfg['mediaopt'] ?? ''), $candidate) !== false) {
+                $duplex = $candidate;
             }
+        }
 
-            if (!empty($wancfg['mediaopt'])) {
-                $cmd_frmt[] = 'mediaopt %s';
-                $cmd_args[] = $wancfg['mediaopt'];
+        $wanted = trim($speed . ' ' . $duplex);
+        $current = _legacy_interface_media_ethtool($realhwif)['media'];
+
+        if ($speed !== '' && $wanted !== $current) {
+            $cmd_frmt = ['/usr/sbin/ethtool -s %s autoneg off speed %s'];
+            $cmd_args = [$realhwif, $speed];
+
+            if ($duplex !== '') {
+                $cmd_frmt[] = 'duplex %s';
+                $cmd_args[] = $duplex;
             }
 
             mwexecf($cmd_frmt, $cmd_args);
