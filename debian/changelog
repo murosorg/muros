@@ -1,3 +1,41 @@
+muros (0.9.57) trixie; urgency=medium
+
+  * Interfaces: finish the ifconfig removal in interface_configure(). MAC
+    spoofing, promiscuous mode, the interface alias and the link up now go
+    through ip link, and the per-interface IPv6 behaviour (accept_ra,
+    accept_dad, disable_ipv6) through /proc/sys/net/ipv6/conf/<dev>/, with
+    accept_ra=2 where advertisements must be accepted since the box forwards.
+    The promiscuous state was also compared against the FreeBSD ppromisc flag
+    name, which iproute2 never reports.
+  * Interfaces: the 6rd and 6to4 tracking interfaces assign and remove their
+    delegated /64 with iproute2 instead of ifconfig inet6 prefixlen, so a LAN
+    tracking such a WAN finally gets its address.
+  * Interfaces: the point to point peer reported by iproute2 is exposed as the
+    endpoint field of the address, which the OpenVPN link-up hook needs to find
+    the tunnel gateway and the IPsec vti bring-up to match its remote.
+  * DHCP client: stop spawning isc dhclient next to systemd-networkd, which owns
+    the addressing of every assigned interface. Two clients raced for the
+    address, the routes and the resolver, and dhclient is deprecated in Debian
+    13. An interface apply re-renders the networkd units and reconfigures the
+    link instead, and an interface reset releases the lease the same way.
+  * DHCP client: the DHCP options of the interface (sent hostname, fixed alias
+    address, honour the offered MTU, servers to reject) are rendered into the
+    networkd unit instead of being lost with the dhclient configuration.
+  * DHCP client: new muros-lease-watch.path/.service, which replaces the
+    dhclient-script hook. networkd has no per-lease hook, so the lease directory
+    is watched and the newwanip chain (ifctl router, nameservers and search
+    domain, then configd) is replayed for the interfaces whose lease changed. A
+    DHCP WAN could otherwise renew or change address without a gateway update,
+    a ruleset reload or a dynamic DNS update.
+  * OpenVPN: instances run under a muros-openvpn@.service template instead of an
+    unsupervised openvpn --config, so a crashed tunnel is restarted and its
+    output reaches the journal.
+  * Packaging: stage-fs.sh relocates every unit type into the package unit
+    directory, not only *.service. The WireGuard re-resolution timer was left in
+    /usr/local/etc/systemd/system, where systemd never looks.
+
+ -- MurOS <dev@muros.org>  Sun, 30 Aug 2026 21:45:00 +0200
+
 muros (0.9.56) trixie; urgency=medium
 
   * Policy based routing (route-to/reply-to): finish the port.
