@@ -182,14 +182,15 @@ function unbound_generate_config()
 
     $general = config_read_array('OPNsense', 'unboundplus', 'general');
 
-    $pythonv = readlink('/usr/local/bin/python3');
-    $python_dir = "/usr/local/lib/{$pythonv}";
-    $chroot_python_dir = "/var/unbound{$python_dir}";
-
-    $dirs = ['/data', '/dev', '/etc', '/lib', '/run', '/usr', '/var/db', '/var/run', '/unbound-dnsbl/lib', $python_dir];
-
-    foreach ($dirs as $dir) {
-        mwexecf('/bin/mkdir -p %s', "/var/unbound{$dir}");
+    /*
+     * MurOS: /var/unbound is a plain state directory here, not a chroot (the
+     * generated configuration sets chroot to the empty string), so the copies
+     * of /dev, /lib, /usr and of the Python runtime that FreeBSD had to
+     * populate inside the jail are gone. Only the directories unbound itself
+     * writes to, plus the one holding the DNSBL Python module, are created.
+     */
+    foreach (['/data', '/etc', '/run', '/var/db', '/var/run', '/unbound-dnsbl/lib'] as $dir) {
+        @mkdir("/var/unbound{$dir}", 0750, true);
     }
 
     /* deploy python module (without test suite) */
