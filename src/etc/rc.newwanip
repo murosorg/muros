@@ -126,15 +126,35 @@ filter_configure_sync();
 
 if (is_ipaddr($cacheip) && $ip != $cacheip) {
     log_msg("IP address change detected, killing states for $cacheip");
-    mwexecf('/sbin/pfctl -k 0.0.0.0/0 -k %s', $cacheip);
-    mwexecf('/sbin/pfctl -k %s', $cacheip);
+    /*
+     * MurOS: netfilter replacement for "pfctl -k". Every flow still holding
+     * the previous address is stale, either because it was sourced from it or
+     * addressed to it, or because it was source NATed to it (the address then
+     * only shows up in the reply tuple), so all four tuple ends are cleared.
+     */
+    foreach (['--orig-src', '--orig-dst', '--reply-src', '--reply-dst'] as $selector) {
+        mwexecfm('/usr/sbin/conntrack -D %s %s', [$selector, $cacheip]);
+    }
 }
 
 @file_put_contents($cacheip_file, $ip . PHP_EOL);
 
 if (is_ipaddr($cachegw) && is_ipaddr($gw) && $gw != $cachegw) {
     log_msg("IP gateway change detected, killing states for $cachegw");
-    mwexecf('/sbin/pfctl -k gateway -k %s', $cachegw);
+    /*
+     * Connection tracking keeps no gateway per state, but policy based routing
+     * tags a pinned flow with the mark of its gateway (same formula as
+     * nft_build.php gateway_mark() and setup_policy_routing.php). Dropping the
+     * marked flows of this interface's gateways is the equivalent of
+     * "pfctl -k gateway": the next packet is re-evaluated and routed through
+     * the new gateway address.
+     */
+    foreach ((new \OPNsense\Routing\Gateways())->gatewaysIndexedByName() as $gwname => $gwitem) {
+        if (($gwitem['interface'] ?? '') !== $interface) {
+            continue;
+        }
+        mwexecfm('/usr/sbin/conntrack -D -m %s', 1000 + (crc32((string)$gwname) % 60000));
+    }
 }
 
 @file_put_contents($cachegw_file, $gw . PHP_EOL);
