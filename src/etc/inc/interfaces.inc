@@ -1736,45 +1736,37 @@ function _interfaces_wlan_clone($device, $wlcfg)
         $wlcfg_mode = $wlcfg['mode'] ?? 'bss';
     }
 
-    if (does_interface_exist($device)) {
-        $ifconfig_str = shell_safe('/sbin/ifconfig %s', $device);
-        if (($wlcfg_mode == 'hostap') && !preg_match('/hostap/si', $ifconfig_str)) {
-            log_msg("Interface {$device} changed to hostap mode");
-            $needs_clone = true;
-        }
-        if (($wlcfg_mode == 'adhoc') && !preg_match('/adhoc/si', $ifconfig_str)) {
-            log_msg("Interface {$device} changed to adhoc mode");
-            $needs_clone = true;
-        }
-        if (($wlcfg_mode == 'bss') && preg_match('/hostap|adhoc/si', $ifconfig_str)) {
-            log_msg("Interface {$device} changed to infrastructure mode");
-            $needs_clone = true;
-        }
-    } else {
-        $needs_clone = true;
+    /*
+     * MurOS: Linux has no wlan clone device. The wireless device itself is
+     * configured and its mode is an interface type, changed with iw while the
+     * link is down. hostapd sets the access point type on its own, but it is
+     * enforced here too so the device is in a known state before it starts.
+     */
+    if (!does_interface_exist($device)) {
+        log_msg("Wireless device {$device} does not exist, assign the wireless " .
+            "device itself instead of a FreeBSD wlan clone", LOG_ERR);
+        return null;
     }
 
+    if (!is_dir("/sys/class/net/{$device}/wireless") && !is_dir("/sys/class/net/{$device}/phy80211")) {
+        log_msg("Device {$device} is not a wireless device", LOG_ERR);
+        return null;
+    }
+
+    $types = ['bss' => 'managed', 'hostap' => '__ap', 'adhoc' => 'ibss'];
+    $wanted = $types[$wlcfg_mode] ?? 'managed';
+
+    $info = shell_safe('/usr/sbin/iw dev %s info', $device);
+    $current = preg_match('/^\s*type\s+(\S+)/mi', $info, $matches) ? strtolower($matches[1]) : '';
+    $needs_clone = $current !== strtolower(ltrim($wanted, '_'));
+
     if ($needs_clone) {
-        $baseif = interface_get_wireless_base($wlcfg['if']);
-
-        legacy_interface_destroy($device);
-
-        $wlan_frmt = ['/sbin/ifconfig wlan create wlandev %s'];
-        $wlan_args = [$baseif];
-
-        if (in_array($wlcfg_mode, ['adhoc', 'hostap'])) {
-            $wlan_frmt[] = 'wlanmode %s';
-            $wlan_args[] = $wlcfg_mode;
-        }
-
-        $wlan_frmt[] = 'bssid name %s';
-        $wlan_args[] = $device;
-
-        if (mwexecf($wlan_frmt, $wlan_args)) {
-            log_msg("Failed to clone interface {$baseif} to {$device}", LOG_ERR);
+        log_msg("Interface {$device} changed to {$wlcfg_mode} mode");
+        mwexecf('/usr/sbin/ip link set dev %s down', [$device]);
+        if (mwexecf('/usr/sbin/iw dev %s set type %s', [$device, $wanted])) {
+            log_msg("Failed to set {$wlcfg_mode} mode on {$device}", LOG_ERR);
             return null;
         }
-
         file_put_contents("/tmp/{$device}_oldmac", get_interface_mac($device));
     }
 
@@ -2120,9 +2112,33 @@ EOD;
                 $wpa_passphrase = "";
             }
             if (isset($wlcfg['wpa']['enable'])) {
+                /*
+                 * MurOS: nl80211 is the Linux driver interface, and the radio
+                 * settings FreeBSD applied with ifconfig on the clone device
+                 * (band and channel) are part of the hostapd configuration
+                 * here. Channel 0 means "let hostapd pick one" (ACS).
+                 */
+                $hw_mode = 'g';
+                if (!empty($wlcfg['standard']) && preg_match('/11a/', $wlcfg['standard'])) {
+                    $hw_mode = 'a';
+                }
+                $radio = 'hw_mode=' . $hw_mode . PHP_EOL;
+                $radio .= 'channel=' . (isset($wlcfg['channel']) ? (int)$wlcfg['channel'] : 0) . PHP_EOL;
+                if (!empty($wlcfg['standard']) && preg_match('/11n/', $wlcfg['standard'])) {
+                    $radio .= 'ieee80211n=1' . PHP_EOL;
+                }
+                if (!empty($wlcfg['standard']) && preg_match('/11ac/', $wlcfg['standard'])) {
+                    $radio .= 'ieee80211ac=1' . PHP_EOL;
+                }
+                if (!empty($wlcfg['regcountry'])) {
+                    $radio .= 'country_code=' . $wlcfg['regcountry'] . PHP_EOL;
+                    $radio .= 'ieee80211d=1' . PHP_EOL;
+                }
+
                 $wpa = <<<EOD
 interface={$if}
-driver=bsd
+driver=nl80211
+{$radio}
 logger_syslog=-1
 logger_syslog_level=0
 logger_stdout=-1
@@ -2190,6 +2206,54 @@ EOD;
             }
             break;
     }
+
+    /*
+     * MurOS: everything below this point was ifconfig on a wlan clone device,
+     * netgraph and dev.<driver>.<unit> sysctls. On Linux the radio is driven by
+     * the regulatory database and by the two daemons: hostapd owns the channel
+     * and the band in access point mode, wpa_supplicant follows the access
+     * point in station mode. Only the settings that exist on this platform are
+     * applied here (regulatory domain, transmit power, channel outside access
+     * point mode); diversity, antenna selection, turbo, protection mode and
+     * apbridge have no Linux equivalent and are ignored.
+     */
+    fclose($fd_set);
+    @unlink("/tmp/{$if}_setup.sh");
+
+    if (!empty($wlcfg['regcountry'])) {
+        mwexecf('/usr/sbin/iw reg set %s', [$wlcfg['regcountry']]);
+    }
+
+    mwexecf('/usr/sbin/ip link set dev %s up', [$if]);
+
+    $mode = $wlcfg['mode'] ?? 'bss';
+
+    if ($mode != 'hostap' && !empty($wlcfg['channel']) && $wlcfg['channel'] != '0') {
+        mwexecfm('/usr/sbin/iw dev %s set channel %s', [$if, (int)$wlcfg['channel']]);
+    }
+
+    if (!empty($wlcfg['txpower'])) {
+        /* iw expects mBm, the GUI stores dBm */
+        mwexecfm('/usr/sbin/iw dev %s set txpower fixed %s', [$if, (int)$wlcfg['txpower'] * 100]);
+    }
+
+    if (isset($wlcfg['wpa']['enable'])) {
+        if ($mode == 'bss') {
+            mwexecf(
+                '/usr/sbin/wpa_supplicant -B -D nl80211 -i %s -c %s',
+                [$if, "/var/etc/wpa_supplicant_{$if}.conf"]
+            );
+        } elseif ($mode == 'hostap') {
+            mwexecf(
+                '/usr/sbin/hostapd -B -P %s %s',
+                ["/var/run/hostapd_{$if}.pid", "/var/etc/hostapd_{$if}.conf"]
+            );
+        }
+    } elseif (isset($wlcfg['wep']['enable'])) {
+        log_msg("Wireless {$if}: WEP is not supported on this platform.", LOG_ERR);
+    }
+
+    return;
 
     /*
      *    all variables are set, lets start up everything
