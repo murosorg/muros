@@ -34,7 +34,7 @@ if command -v conntrackd >/dev/null 2>&1 && [ -e /etc/conntrackd/conntrackd.conf
             conntrackd -R >/dev/null 2>&1 || true
             conntrackd -B >/dev/null 2>&1 || true
             ;;
-        BACKUP)
+        BACKUP|FAULT)
             conntrackd -t >/dev/null 2>&1 || true
             conntrackd -n >/dev/null 2>&1 || true
             ;;
