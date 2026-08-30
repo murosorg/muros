@@ -2595,7 +2595,7 @@ function interface_track6_configure($interface, $lancfg, $reload = false)
         return;
     }
 
-    mwexecf('/sbin/ifconfig %s inet6 %sifdisabled', [$lancfg['if'], isset($lancfg['enable']) ? '-' : '']);
+    interface_ipv6_flags($lancfg['if'], ['disable_ipv6' => isset($lancfg['enable']) ? 0 : 1]);
 
     switch ($trackcfg['ipaddrv6']) {
         case '6to4':
@@ -2664,11 +2664,12 @@ function interface_track6_6rd_configure($interface, $lancfg)
 
     list ($oip) = interfaces_primary_address6($interface);
     if (!empty($oip)) {
-        mwexecf('/sbin/ifconfig %s inet6 %s delete', [$lancfg['if'], $oip]);
+        legacy_interface_deladdress($lancfg['if'], $oip, 6);
     }
 
     log_msg("rd6 {$interface} with ipv6 address {$rd6lan} based on {$lancfg['track6-interface']} ipv4 {$ip4address}");
-    mwexecf('/sbin/ifconfig %s inet6 %s prefixlen 64', [$lancfg['if'], $rd6lan]);
+    /* MurOS: a delegated /64 for the tracking interface, assigned with iproute2 */
+    legacy_interface_setaddress($lancfg['if'], "{$rd6lan}/64", 6);
 }
 
 function interface_track6_6to4_configure($interface, $lancfg)
@@ -2709,11 +2710,12 @@ function interface_track6_6to4_configure($interface, $lancfg)
 
     list ($oip) = interfaces_primary_address6($interface);
     if (!empty($oip)) {
-        mwexecf('/sbin/ifconfig %s inet6 %s delete', [$lancfg['if'], $oip]);
+        legacy_interface_deladdress($lancfg['if'], $oip, 6);
     }
 
     log_msg("6to4 {$interface} with ipv6 address {$sixto4lan} based on {$lancfg['track6-interface']} ipv4 {$ip4address}");
-    mwexecf('/sbin/ifconfig %s inet6 %s prefixlen 64', [$lancfg['if'], $sixto4lan]);
+    /* MurOS: a delegated /64 for the tracking interface, assigned with iproute2 */
+    legacy_interface_setaddress($lancfg['if'], "{$sixto4lan}/64", 6);
 }
 
 function interface_6rd_configure($interface, $wancfg, $update = false)
