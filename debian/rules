@@ -42,6 +42,10 @@ override_dh_installsystemd:
 	# carries no periodic job.
 	dh_installsystemd --name=muros-wg-reresolve --no-enable --no-start muros-wg-reresolve.timer
 	dh_installsystemd --name=muros-wg-reresolve --no-enable --no-start muros-wg-reresolve.service
+	# muros-openvpn@.service is a template: instances are started and stopped by
+	# openvpn.inc when a VPN instance is applied, so there is nothing to enable
+	# here. The unit file is staged like the others and the daemon-reload
+	# performed for the units above also picks it up.
 
 # Large interpreted payload: these steps are irrelevant and slow.
 override_dh_strip:

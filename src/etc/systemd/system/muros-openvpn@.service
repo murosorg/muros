@@ -1,0 +1,22 @@
+[Unit]
+# Instance name is the OpenVPN mode id used everywhere else in the stack
+# (server1, client2, ...), so the generated configuration, the pid file and the
+# unit instance all carry the same identifier.
+Description=MurOS OpenVPN instance %i
+Documentation=https://github.com/ecritel/muros
+After=network-online.target muros-interfaces.service
+Wants=network-online.target
+ConditionPathExists=/var/etc/openvpn/%i.conf
+
+[Service]
+# The generated configuration keeps "daemon" and "writepid", so openvpn forks
+# and writes the pid file the GUI service status already reads.
+Type=forking
+PIDFile=/var/run/openvpn_%i.pid
+ExecStart=/usr/sbin/openvpn --config /var/etc/openvpn/%i.conf
+Restart=on-failure
+RestartSec=5
+KillMode=process
+
+[Install]
+WantedBy=multi-user.target

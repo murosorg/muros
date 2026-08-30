@@ -914,6 +914,19 @@ function openvpn_reconfigure($mode, $settings, $device_only = false)
     file_put_contents("/var/etc/openvpn/{$mode_id}.conf", $conf);
 }
 
+/*
+ * MurOS: instance lifecycle is owned by systemd through the muros-openvpn@
+ * template unit, instantiated on the mode id (server1, client2, ...). Starting
+ * the daemon by hand left it unsupervised: a crash or an OOM kill took the
+ * tunnel down until the next configuration apply, and its output never reached
+ * the journal. The unit keeps the pid file the service status reads, so the GUI
+ * view is unchanged.
+ */
+function openvpn_unit($mode_id)
+{
+    return sprintf('muros-openvpn@%s.service', $mode_id);
+}
+
 function openvpn_restart($mode, $settings, $carp_event = false)
 {
     $vpnid = $settings['vpnid'];
@@ -924,7 +937,7 @@ function openvpn_restart($mode, $settings, $carp_event = false)
         return;
     }
 
-    killbypid("/var/run/openvpn_{$mode_id}.pid");
+    mwexecfm('/usr/bin/systemctl stop %s', openvpn_unit($mode_id));
 
     if (isset($settings['disable'])) {
         return;
@@ -949,7 +962,7 @@ function openvpn_restart($mode, $settings, $carp_event = false)
 
     openvpn_clear_route($mode, $settings);
 
-    if (!mwexecf('/usr/sbin/openvpn --config %s', "/var/etc/openvpn/{$mode_id}.conf")) {
+    if (!mwexecf('/usr/bin/systemctl start %s', openvpn_unit($mode_id))) {
         $pid = waitforpid("/var/run/openvpn_{$mode_id}.pid", 10);
         if ($pid) {
             log_msg(sprintf('OpenVPN %s %s instance started on PID %s.', $mode, $vpnid, $pid));
@@ -970,7 +983,7 @@ function openvpn_delete($mode, &$settings)
         $devname = "ovpnc{$vpnid}";
     }
 
-    killbypid("/var/run/openvpn_{$mode_id}.pid");
+    mwexecfm('/usr/bin/systemctl stop %s', openvpn_unit($mode_id));
 
     /* MurOS: tear down the persistent tun/tap device with iproute2. */
     legacy_interface_destroy($devname);
