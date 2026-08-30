@@ -49,13 +49,13 @@ function netflow_services()
     }
 
     $services[] = array(
-        'description' => gettext('NetFlow Distributor'),
+        'description' => gettext('NetFlow Exporter'),
         'configd' => array(
             'restart' => array('netflow restart'),
             'start' => array('netflow start'),
             'stop' => array('netflow stop'),
         ),
-        'name' => 'samplicate',
+        'name' => 'softflowd',
     );
 
     if (netflow_local_enabled()) {
@@ -84,6 +84,6 @@ function netflow_xmlrpc_sync()
         'description' => gettext('Netflow / Insight'),
         'id' => 'syslog', /* historic yet tolerated typo */
         'section' => 'OPNsense.Netflow',
-        'services' => ['samplicate', 'flowd_aggregate'],
+        'services' => ['softflowd', 'flowd_aggregate'],
     ]];
 }
