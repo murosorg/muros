@@ -852,7 +852,17 @@ function rule_line(SimpleXMLElement $rule, array $ifaces, array $aliases = [], ?
             . "ct state new meta mark set $mark ct mark set $mark comment \"route-to $gwName\"";
     }
 
-    $line = '        ' . ($stmt === '' ? '' : $stmt . ' ') . "counter $verdict";
+    /* Per-rule logging, same prefix contract as the MVC rules:
+     * "muros,<action>,<uuid> ", which read_log.py resolves back to the rule
+     * description for the firewall log viewer. Legacy rules store the flag as
+     * <log>1</log>, older configurations as an empty <log/> element. */
+    $log = '';
+    if (isset($rule->log) && trim((string)$rule->log) !== '0') {
+        $uuid = preg_replace('/[^A-Za-z0-9-]/', '', (string)$rule['uuid']);
+        $log = 'log prefix "muros,' . $type . ',' . $uuid . ' " ';
+    }
+
+    $line = '        ' . ($stmt === '' ? '' : $stmt . ' ') . $log . "counter $verdict";
     if ($descr !== '') {
         $line .= " comment \"$descr\"";
     }

@@ -67,9 +67,11 @@ def fetch_rule_details():
         uuid = rule.get('uuid')
         if uuid:
             rule_map[uuid] = (rule.findtext('description') or '').strip()
-    # legacy filter rules carrying a uuid
+    # legacy filter rules, where the uuid lives in an attribute (the rules the
+    # firewall_rules_edit.php page writes) or, on older configurations, in a
+    # child element
     for rule in root.findall('./filter/rule'):
-        uuid = rule.findtext('uuid')
+        uuid = rule.get('uuid') or rule.findtext('uuid')
         if uuid:
             rule_map[uuid.strip()] = (rule.findtext('descr') or '').strip()
     return rule_map
