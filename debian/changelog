@@ -1,3 +1,34 @@
+muros (0.9.60) trixie; urgency=medium
+
+  * Scripts: the Python and PHP shebangs point at the Debian interpreters.
+    Ninety scripts, configd and configd_ctl among them, still started with
+    #!/usr/local/bin/python3, a path nothing creates, so every one of them failed
+    with a missing interpreter as soon as configd, a syshook or a cron job
+    executed it directly.
+  * System: lighttpd (web GUI and captive portal), syslog-ng and syslog-ng-ctl,
+    dnsmasq and rrdtool are started from their Debian paths instead of the
+    FreeBSD prefix, which nothing symlinks. The health graphs, the logging
+    backend and the GUI restart all failed with a missing binary. syslog-ng-core
+    and rrdtool are now dependencies, dnsmasq a recommendation.
+  * IPv6 prefix delegation: an interface set to track6 is rendered with
+    DHCPPrefixDelegation pointing at its upstream interface and the configured
+    prefix id as subnet id, so a LAN tracking a DHCPv6 WAN finally receives a
+    prefix. The apply only sent a HUP to a dhcp6c that does not exist.
+  * Router advertisements: radvd is started from /usr/sbin and its configuration
+    digest is computed with sha256sum, not the FreeBSD sha256(1). Advertisements
+    were never sent at all, and the digest mismatch respawned the daemon on
+    every configure. radvd is now a dependency.
+  * Firmware: the upgrade sanity hook checks dpkg and apt-get instead of
+    pkg-static, verifies the core package is installed and refuses to run on a
+    half configured dpkg database. The crash reporter lists the installed
+    plugins with dpkg.
+  * Unbound: the configuration generator no longer builds the FreeBSD jail
+    layout under /var/unbound, including a Python runtime directory derived from
+    a path that does not exist here. Unbound runs without a chroot on this
+    platform.
+
+ -- MurOS <dev@muros.org>  Sun, 30 Aug 2026 22:50:00 +0200
+
 muros (0.9.59) trixie; urgency=medium
 
   * PPPoE: sessions are run by pppd with the rp-pppoe plugin under a
