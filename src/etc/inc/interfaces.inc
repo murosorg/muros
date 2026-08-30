@@ -952,7 +952,16 @@ function interface_reset($interface, $ifacecfg = false, $suspend = false)
 
     switch ($ifcfg['ipaddr'] ?? 'none') {
         case 'dhcp':
+            /*
+             * MurOS: networkd owns the lease. Re-render the units (the
+             * interface is being reset, so its unit is dropped or rewritten
+             * without DHCP) and reconfigure the link, which stops the client
+             * and releases the lease. A dhclient left over from an older
+             * release is stopped as well.
+             */
             killbypid("/var/run/dhclient.{$device}.pid");
+            mwexecf('/usr/bin/php %s', '/usr/local/opnsense/scripts/interfaces/render_networkd.php');
+            mwexecfm('/usr/bin/networkctl reconfigure %s', $device);
             break;
         default:
             break;
@@ -3390,18 +3399,21 @@ function interface_dhcp_configure($interface = 'wan')
 
     legacy_interface_flags($device, 'up');
 
-    mwexecfb(
-        '/sbin/dhclient -d -c %s -p %s %s',
-        [
-            "/var/etc/dhclient.{$device}.conf",
-            "/var/run/dhclient-.{$device}.pid",
-            $device,
-        ],
-        [
-            'pidfile' => "/var/run/dhclient.{$device}.pid",
-            'restart' => '10',
-        ]
-    );
+    /*
+     * MurOS: the lease is acquired by systemd-networkd, which already owns the
+     * addressing of every assigned interface. Starting a dhclient here would
+     * put a second DHCP client on the same device, racing networkd for the
+     * address, the routes and the resolver. The generated
+     * /var/etc/dhclient.<dev>.conf above is kept: the advanced options and
+     * config file override pages still write it and the diagnostics show it.
+     *
+     * render_networkd.php translates the interface configuration (including the
+     * DHCP options) into /etc/systemd/network/10-muros-<dev>.network and
+     * reconfiguring the link makes networkd pick it up and (re)start the client
+     * right away instead of waiting for the next carrier event.
+     */
+    mwexecf('/usr/bin/php %s', '/usr/local/opnsense/scripts/interfaces/render_networkd.php');
+    mwexecfm('/usr/bin/networkctl reconfigure %s', $device);
 }
 
 function DHCP_Config_File_Advanced($interface, $wancfg, $wanif)
