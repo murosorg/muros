@@ -18,7 +18,8 @@ Depends: ${misc:Depends},
  nftables, iproute2, ethtool, iw, chrony, openssl, ppp,
  conntrack, tcpdump, iftop, dpinger,
  iputils-ping, traceroute,
- kea-dhcp4-server, kea-dhcp6-server, kea-ctrl-agent, kea-dhcp-ddns-server
+ kea-dhcp4-server, kea-dhcp6-server, kea-ctrl-agent, kea-dhcp-ddns-server,
+ radvd
 Recommends: unbound, openssh-server, openvpn, wireguard-tools, strongswan, charon-systemd, strongswan-swanctl,
  keepalived, conntrackd, isc-dhcp-relay
 Suggests: suricata

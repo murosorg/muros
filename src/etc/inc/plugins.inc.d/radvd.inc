@@ -484,14 +484,15 @@ function radvd_configure_do($verbose = false, $ignorelist = [])
 
     if ($active) {
         $last_version = @file_get_contents("{$radvd_conf_file}.last");
-        $this_version = shell_safe('/bin/cat %s | sha256', $radvd_conf_file);
+        /* MurOS: sha256(1) is FreeBSD, coreutils spells it sha256sum */
+        $this_version = shell_safe('/usr/bin/sha256sum %s', $radvd_conf_file);
 
         if (isvalidpid($radvd_pid_file) && $last_version == $this_version) {
             killbypid($radvd_pid_file, 'HUP');
         } else {
             killbypid($radvd_pid_file);
             file_safe("{$radvd_conf_file}.last", $this_version);
-            mwexecf('/usr/local/sbin/radvd -d1 -p %s -C %s -m syslog', [
+            mwexecf('/usr/sbin/radvd -d1 -p %s -C %s -m syslog', [
                 $radvd_pid_file,
                 $radvd_conf_file,
             ]);
