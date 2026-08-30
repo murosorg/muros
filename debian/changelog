@@ -1,3 +1,31 @@
+muros (0.9.59) trixie; urgency=medium
+
+  * PPPoE: sessions are run by pppd with the rp-pppoe plugin under a
+    muros-pppoe@<interface>.service template, instead of an mpd5 configuration
+    driven through a netgraph control socket. None of that exists on Debian, so
+    a PPPoE WAN never came up at all. The generated options file carries the
+    service name, host-uniq, MTU and MRU, the compression switches, the idle
+    timeout and demand dialling, the peer nameservers when they may be used and
+    IPv6CP when the interface asks for it. pppd names the session interface
+    itself, so the device recorded in the configuration is unchanged. The other
+    PPP types now log an explicit unsupported message.
+  * PPPoE: the link scripts are reached through the pppd hook directories
+    (/etc/ppp/{ip,ipv6}-{up,down}.d), which nothing installed, and the down
+    script no longer shuts down a netgraph node nor stamps the session log with
+    date -j. The uptime helper used the BSD stat and date spellings and printed
+    nothing.
+  * Wireless: ported to Debian. The interface type is set with iw on the
+    wireless device itself (managed, access point, ibss) instead of expecting an
+    ifconfig wlan clone, hostapd is generated for nl80211 with the band, the
+    channel and the regulatory country that ifconfig used to apply, and both
+    daemons are started from their Debian paths. Regulatory domain, transmit
+    power and the channel outside access point mode are applied with iw.
+    Diversity, antenna selection, turbo, protection mode, apbridge and WEP have
+    no Linux equivalent and are reported as ignored.
+  * Dependencies: ethtool, iw and ppp.
+
+ -- MurOS <dev@muros.org>  Sun, 30 Aug 2026 22:25:00 +0200
+
 muros (0.9.58) trixie; urgency=medium
 
   * IPv6 WAN: finish the port. An interface in slaac mode was rendered with
