@@ -83,6 +83,11 @@ function keepalived_running()
     return mwexecf('/usr/bin/systemctl --quiet is-active keepalived', [], true) == 0;
 }
 
+function conntrackd_running()
+{
+    return mwexecf('/usr/bin/systemctl --quiet is-active conntrackd', [], true) == 0;
+}
+
 /*
  * Group the CARP virtual IPs into VRRP instances. Addresses that share an
  * interface, vhid and family belong to the same instance (one VRRP election
@@ -395,6 +400,17 @@ function conntrackd_configure()
     if (!is_dir(dirname(CONNTRACKD_CONF))) {
         @mkdir(dirname(CONNTRACKD_CONF), 0755, true);
     }
+
+    /*
+     * A restart drops the internal and external caches, so the replicated
+     * states are lost until the peers resynchronise. This generator runs on
+     * every interface or filter reconfiguration, so only touch the service
+     * when the configuration really changed (or when it is not running).
+     */
+    if (@file_get_contents(CONNTRACKD_CONF) === $conf && conntrackd_running()) {
+        return;
+    }
+
     file_put_contents(CONNTRACKD_CONF, $conf);
 
     mwexecf('/usr/bin/systemctl restart conntrackd', [], true);
