@@ -49,9 +49,9 @@ function run(string $cmd): void
  * deliberately ignores every rule without an fwmark so the kernel's built-in
  * local/main/default rules (priorities 0, 32766, 32767, which fall inside the
  * range) are never mistaken for ours and deleted. */
-function existing_marks(): array
+function existing_marks(string $fam): array
 {
-    $json = shell_exec('/usr/sbin/ip -j rule show 2>/dev/null') ?: '[]';
+    $json = shell_exec(sprintf('/usr/sbin/ip %s -j rule show 2>/dev/null', $fam)) ?: '[]';
     $rules = json_decode($json, true) ?: [];
     $marks = [];
     foreach ($rules as $rule) {
@@ -68,12 +68,12 @@ function existing_marks(): array
     return $marks;
 }
 
-function remove_mark(int $mark): void
+function remove_mark(string $fam, int $mark): void
 {
     /* Drop every rule at this priority, then clear its table. The guard keeps
      * the loop finite even if a delete unexpectedly fails. */
     for ($attempt = 0; $attempt < 16; $attempt++) {
-        $json = shell_exec('/usr/sbin/ip -j rule show 2>/dev/null') ?: '[]';
+        $json = shell_exec(sprintf('/usr/sbin/ip %s -j rule show 2>/dev/null', $fam)) ?: '[]';
         $rules = json_decode($json, true) ?: [];
         $found = false;
         foreach ($rules as $rule) {
@@ -85,9 +85,9 @@ function remove_mark(int $mark): void
         if (!$found) {
             break;
         }
-        run(sprintf('/usr/sbin/ip rule del priority %d', $mark));
+        run(sprintf('/usr/sbin/ip %s rule del priority %d', $fam, $mark));
     }
-    run(sprintf('/usr/sbin/ip route flush table %d', $mark));
+    run(sprintf('/usr/sbin/ip %s route flush table %d', $fam, $mark));
 }
 
 $args = array_slice($argv, 1);
@@ -109,31 +109,51 @@ if (!$flush) {
             fwrite(STDERR, "skipping invalid gateway\n");
             continue;
         }
-        $desired[gateway_mark($name)] = ['name' => $name, 'gwip' => $gwip, 'dev' => $dev];
+        $fam = strpos($gwip, ':') !== false ? '-6' : '-4';
+        $desired[$fam][gateway_mark($name)] = ['name' => $name, 'gwip' => $gwip, 'dev' => $dev];
     }
 }
 
-/* Remove tables/rules we own that are no longer wanted. */
-foreach (array_keys(existing_marks()) as $mark) {
-    if (!isset($desired[$mark])) {
-        remove_mark($mark);
+/* Remove tables/rules we own that are no longer wanted. Rules and tables are
+ * per address family, so both families are reconciled separately. */
+foreach (['-4', '-6'] as $fam) {
+    foreach (array_keys(existing_marks($fam)) as $mark) {
+        if (!isset($desired[$fam][$mark])) {
+            remove_mark($fam, $mark);
+        }
     }
 }
 
 /* Install or refresh the desired set. */
-foreach ($desired as $mark => $gw) {
-    $fam = strpos($gw['gwip'], ':') !== false ? '-6' : '-4';
-    run(sprintf(
-        '/usr/sbin/ip %s route replace default via %s dev %s table %d',
-        $fam,
-        escapeshellarg($gw['gwip']),
-        escapeshellarg($gw['dev']),
-        $mark
-    ));
-    /* (re)create the lookup rule at a fixed priority equal to the mark */
-    run(sprintf('/usr/sbin/ip rule del priority %d', $mark));
-    run(sprintf('/usr/sbin/ip rule add priority %d fwmark %d lookup %d', $mark, $mark, $mark));
-    printf("gateway %s -> mark %d, table %d via %s dev %s\n", $gw['name'], $mark, $mark, $gw['gwip'], $gw['dev']);
+foreach ($desired as $fam => $gateways) {
+    foreach ($gateways as $mark => $gw) {
+        run(sprintf(
+            '/usr/sbin/ip %s route replace default via %s dev %s table %d',
+            $fam,
+            escapeshellarg($gw['gwip']),
+            escapeshellarg($gw['dev']),
+            $mark
+        ));
+        /* (re)create the lookup rule at a fixed priority equal to the mark, in
+         * the family of the gateway: an "ip rule" without a family selector is
+         * IPv4 only, so an IPv6 gateway got a table no packet ever reached. */
+        run(sprintf('/usr/sbin/ip %s rule del priority %d', $fam, $mark));
+        run(sprintf(
+            '/usr/sbin/ip %s rule add priority %d fwmark %d lookup %d',
+            $fam,
+            $mark,
+            $mark,
+            $mark
+        ));
+        printf(
+            "gateway %s -> mark %d, table %d via %s dev %s\n",
+            $gw['name'],
+            $mark,
+            $mark,
+            $gw['gwip'],
+            $gw['dev']
+        );
+    }
 }
 
 if ($flush || empty($desired)) {
