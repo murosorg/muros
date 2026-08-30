@@ -858,7 +858,11 @@ function interface_vip_bring_down($vip)
     $vipif = get_real_interface($vip['interface']);
     switch ($vip['mode']) {
         case 'proxyarp':
-            killbypid("/var/run/choparp_{$vipif}.pid");
+            /* MurOS: drop the proxy neighbour entries answering for this VIP */
+            $family = is_ipaddrv6($vip['subnet']) ? 6 : 4;
+            foreach (_proxyarp_addresses($vip['subnet'], $vip['subnet_bits']) as $address) {
+                mwexecfm('/usr/sbin/ip -%s neigh del proxy %s dev %s', [$family, $address, $vipif]);
+            }
             break;
         case 'ipalias':
         case 'carp':
@@ -1568,14 +1572,64 @@ function interfaces_pfsync_configure()
     conntrackd_configure();
 }
 
+/*
+ * MurOS: the addresses a proxy ARP virtual IP has to answer for. choparp took
+ * networks and replied for every address in them; on Linux the same result is
+ * obtained with one proxy neighbour entry per address, so a network is expanded
+ * here. A single address (the usual case) is one entry, the network and
+ * broadcast addresses of a real subnet are skipped, and anything wider than a
+ * /20 is refused rather than filling the neighbour table.
+ */
+function _proxyarp_addresses($subnet, $bits)
+{
+    if (strpos($subnet, ':') !== false) {
+        /* proxy NDP entries are only created for a single address */
+        return (int)$bits == 128 ? [$subnet] : [];
+    }
+
+    $bits = (int)$bits;
+    $start = ip2long($subnet);
+
+    if ($start === false || $bits < 20 || $bits > 32) {
+        return [];
+    }
+
+    $count = 1 << (32 - $bits);
+    $start = $start & ~($count - 1);
+    $addresses = [];
+
+    for ($offset = 0; $offset < $count; $offset++) {
+        if ($bits <= 30 && ($offset == 0 || $offset == $count - 1)) {
+            continue;
+        }
+        $addresses[] = long2ip($start + $offset);
+    }
+
+    return $addresses;
+}
+
+function _proxyarp_flush($device)
+{
+    foreach ([4, 6] as $family) {
+        $json = shell_safe('/usr/sbin/ip -%s -j neigh show proxy dev %s', [$family, $device]);
+        foreach (json_decode((string)$json, true) ?: [] as $entry) {
+            if (!empty($entry['dst'])) {
+                mwexecfm('/usr/sbin/ip -%s neigh del proxy %s dev %s', [$family, $entry['dst'], $device]);
+            }
+        }
+    }
+}
+
 function interface_proxyarp_configure($interface = '')
 {
     $paa = [];
 
-    /* kill any running choparp, on restart "all" */
+    /* clear the entries of every interface, on restart "all" */
     if (empty($interface)) {
-        foreach (glob('/var/run/choparp_*.pid') as $pidfile) {
-            killbypid($pidfile);
+        foreach (config_read_array('virtualip', 'vip', false) as $vipent) {
+            if ($vipent['mode'] === 'proxyarp') {
+                _proxyarp_flush(get_real_interface($vipent['interface']));
+            }
         }
     }
 
@@ -1597,17 +1651,36 @@ function interface_proxyarp_configure($interface = '')
             continue;
         }
         $vipif = get_real_interface($paif);
-        $pid_filename = "/var/run/choparp_{$vipif}.pid";
-        $frmt = ['/usr/local/sbin/choparp -p %s %s auto'];
-        $args = [$pid_filename, $vipif];
-        foreach ($paents as $paent) {
-            $args[] = "{$paent['subnet']}/{$paent['subnet_bits']}";
-            $frmt[] = '%s';
-        }
+
         if (!empty($interface)) {
-            killbypid($pid_filename);
+            _proxyarp_flush($vipif);
         }
-        mwexecfb($frmt, $args);
+
+        /*
+         * MurOS: choparp does not exist on Debian, the kernel answers for a
+         * proxy neighbour entry on its own. Proxy NDP additionally has to be
+         * enabled per interface, unlike ARP where the entry is enough.
+         */
+        interface_ipv6_flags($vipif, ['proxy_ndp' => 1]);
+
+        foreach ($paents as $paent) {
+            $addresses = _proxyarp_addresses($paent['subnet'], $paent['subnet_bits']);
+
+            if (empty($addresses)) {
+                log_msg(sprintf(
+                    'Proxy ARP on %s: %s/%s is not a range this platform can answer for',
+                    $vipif,
+                    $paent['subnet'],
+                    $paent['subnet_bits']
+                ), LOG_ERR);
+                continue;
+            }
+
+            $family = strpos($paent['subnet'], ':') !== false ? 6 : 4;
+            foreach ($addresses as $address) {
+                mwexecfm('/usr/sbin/ip -%s neigh replace proxy %s dev %s', [$family, $address, $vipif]);
+            }
+        }
     }
 }
 
