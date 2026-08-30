@@ -2278,6 +2278,25 @@ function interfaces_addresses_flush($device, $family = 4, $ifconfig_details = nu
     }
 }
 
+/*
+ * MurOS: per-interface IPv6 behaviour. FreeBSD toggled ifconfig flags
+ * (accept_rtadv, no_dad, ifdisabled); on Linux the equivalent knobs live in
+ * /proc/sys/net/ipv6/conf/<dev>/. They are written through the proc file
+ * directly rather than sysctl(8) so device names containing dots (VLANs) need
+ * no quoting, and missing knobs (device gone, IPv6 compiled out) are ignored.
+ * accept_ra is set to 2 when advertisements must be accepted, the only value
+ * the kernel honours on a forwarding router.
+ */
+function interface_ipv6_flags($device, $flags)
+{
+    foreach ($flags as $knob => $value) {
+        $path = sprintf('/proc/sys/net/ipv6/conf/%s/%s', $device, $knob);
+        if (is_writable($path)) {
+            @file_put_contents($path, $value . PHP_EOL);
+        }
+    }
+}
+
 function interface_configure_mtu($device, $mtu, $ifconfig_details)
 {
     global $config;
@@ -2405,26 +2424,24 @@ function interface_configure($verbose = false, $interface = 'wan', $reload = fal
          * the kernel into the transition where it will auto-add the right
          * address on the following "up" event.
          */
-        $mac_frmt = ['/sbin/ifconfig %s link %s'];
-        $mac_args = [$realhwif, $mac_next];
-
         if ($realhwif == $realifv6) {
-            $ll_found = false;
-
             foreach (array_keys(interfaces_addresses($realifv6, true, $ifconfig_details)) as $tmpiface) {
                 if (is_linklocal($tmpiface)) {
                     $tmpip = explode('%', $tmpiface)[0];
                     legacy_interface_deladdress($realifv6, $tmpip, 6);
-                    $ll_found = true;
                 }
-            }
-
-            if ($ll_found) {
-                $mac_frmt[] = 'down';
             }
         }
 
-        mwexecf($mac_frmt, $mac_args);
+        /*
+         * MurOS: iproute2 owns the hardware address. Most Linux drivers refuse
+         * the change while the link is up, and the down/up cycle is also what
+         * makes the kernel regenerate the EUI-64 link-local address from the
+         * new MAC, which is what the FreeBSD "down" flag was used for here.
+         */
+        mwexecf('/usr/sbin/ip link set dev %s down', [$realhwif]);
+        mwexecf('/usr/sbin/ip link set dev %s address %s', [$realhwif, $mac_next]);
+        mwexecf('/usr/sbin/ip link set dev %s up', [$realhwif]);
     }
 
     if (!empty($wancfg['media'])) {
@@ -2459,9 +2476,13 @@ function interface_configure($verbose = false, $interface = 'wan', $reload = fal
         }
     }
 
-    /* set p(ermanent)-promiscuous mode required for e.g. VLAN MAC spoofing */
-    if (in_array('ppromisc', $ifconfig_details[$realhwif]['flags'] ?? []) !== !empty($wancfg['promisc'])) {
-        mwexecf('/sbin/ifconfig %s %spromisc', [$realhwif, empty($wancfg['promisc']) ? '-' : '']);
+    /*
+     * Set promiscuous mode, required for e.g. VLAN MAC spoofing. MurOS: the
+     * flag is reported as "promisc" by iproute2, FreeBSD called the permanent
+     * variant "ppromisc".
+     */
+    if (in_array('promisc', $ifconfig_details[$realhwif]['flags'] ?? []) !== !empty($wancfg['promisc'])) {
+        mwexecf('/usr/sbin/ip link set dev %s promisc %s', [$realhwif, empty($wancfg['promisc']) ? 'off' : 'on']);
     }
 
     /* apply interface hardware settings (tso, lro, ..) */
@@ -2493,12 +2514,15 @@ function interface_configure($verbose = false, $interface = 'wan', $reload = fal
      *    already does that so at this point try to be more consistent.
      */
     /* we do not set "ifdisabled" to avoid clobbering assigned tunnel devices */
-    mwexecf('/sbin/ifconfig %s inet6 -accept_rtadv -no_dad description %s up', [$device, $ifdescr]);
+    interface_ipv6_flags($device, ['accept_ra' => 0, 'accept_dad' => 1]);
+    mwexecf('/usr/sbin/ip link set dev %s alias %s', [$device, $ifdescr]);
+    mwexecf('/usr/sbin/ip link set dev %s up', [$device]);
 
     switch (is_ipv6_allowed() ? ($wancfg['ipaddrv6'] ?? 'none') : 'none') {
         case 'slaac':
         case 'dhcp6':
-            mwexecf('/sbin/ifconfig %s inet6 accept_rtadv -ifdisabled up', $device);
+            interface_ipv6_flags($device, ['accept_ra' => 2, 'disable_ipv6' => 0]);
+            mwexecf('/usr/sbin/ip link set dev %s up', [$device]);
 
             if (!interface_ppps_bound($interface)) {
                 interface_dhcpv6_prepare($interface, $wancfg);
@@ -2506,15 +2530,18 @@ function interface_configure($verbose = false, $interface = 'wan', $reload = fal
             }
             break;
         case 'linklocal':
-            mwexecf('/sbin/ifconfig %s inet6 -accept_rtadv -ifdisabled up', $device);
+            interface_ipv6_flags($device, ['accept_ra' => 0, 'disable_ipv6' => 0]);
+            mwexecf('/usr/sbin/ip link set dev %s up', [$device]);
             break;
         case '6rd':
             interface_6rd_configure($interface, $wancfg, $reload || $linkup);
-            mwexecf('/sbin/ifconfig %s inet6 description %s up', [$realifv6, $ifdescr]);
+            mwexecf('/usr/sbin/ip link set dev %s alias %s', [$realifv6, $ifdescr]);
+            mwexecf('/usr/sbin/ip link set dev %s up', [$realifv6]);
             break;
         case '6to4':
             interface_6to4_configure($interface, $wancfg, $reload || $linkup);
-            mwexecf('/sbin/ifconfig %s inet6 description %s up', [$realifv6, $ifdescr]);
+            mwexecf('/usr/sbin/ip link set dev %s alias %s', [$realifv6, $ifdescr]);
+            mwexecf('/usr/sbin/ip link set dev %s up', [$realifv6]);
             break;
         case 'idassoc6':
         case 'track6':
