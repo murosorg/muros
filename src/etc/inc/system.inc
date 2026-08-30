@@ -923,12 +923,12 @@ function system_syslog_start($verbose = false)
     $this_version = shell_safe('syslog-ng -V | sha256sum');
 
     if (isvalidpid('/var/run/syslog-ng.pid') && $last_version == $this_version) {
-        mwexecf('/usr/local/sbin/syslog-ng-ctl reload');
+        mwexecf('/usr/sbin/syslog-ng-ctl reload');
     } else {
         /* full restart: stop the running daemon, then relaunch it. syslog-ng
            daemonizes itself; pin the pid file so the service layer can track it. */
         killbypid('/var/run/syslog-ng.pid');
-        mwexecf('/usr/local/sbin/syslog-ng -f %s --pidfile %s', [
+        mwexecf('/usr/sbin/syslog-ng -f %s --pidfile %s', [
             '/usr/local/etc/syslog-ng.conf',
             '/var/run/syslog-ng.pid',
         ]);

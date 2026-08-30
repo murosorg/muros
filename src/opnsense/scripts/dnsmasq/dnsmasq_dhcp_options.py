@@ -66,7 +66,7 @@ with open('/usr/local/opnsense/contrib/' + option_src[args.mode], 'r') as csvfil
 
 # read dnsmasq supported options
 sp = subprocess.run(
-    ['/usr/local/sbin/dnsmasq', '--help', args.mode],
+    ['/usr/sbin/dnsmasq', '--help', args.mode],
     capture_output=True, text=True
 )
 

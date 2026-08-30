@@ -151,7 +151,7 @@ abstract class Base
             return $this;
         }
 
-        $cmd_frmt = ['/usr/local/bin/rrdtool create %s --step %s'];
+        $cmd_frmt = ['/usr/bin/rrdtool create %s --step %s'];
         $cmd_args = [$this->filename, 60];
 
         foreach ($this->datasets as $dataset) {
@@ -192,7 +192,7 @@ abstract class Base
             }
         }
 
-        Shell::run_safe('/usr/local/bin/rrdtool update %s N:%s', [
+        Shell::run_safe('/usr/bin/rrdtool update %s N:%s', [
             $this->filename, implode(':', $values),
         ], !$debug);
 

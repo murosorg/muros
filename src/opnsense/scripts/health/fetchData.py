@@ -66,7 +66,7 @@ if len(sys.argv) > 1:
     result = {}
     filename = get_filename(sys.argv[1])
     if filename:
-        sp = subprocess.run(['/usr/local/bin/rrdtool', 'dump', filename], capture_output=True, text=True)
+        sp = subprocess.run(['/usr/bin/rrdtool', 'dump', filename], capture_output=True, text=True)
         ruleData = element_to_dict(ElementTree.fromstring(sp.stdout))
         if type(ruleData.get('rra')) is list:
             result['sets'] = []

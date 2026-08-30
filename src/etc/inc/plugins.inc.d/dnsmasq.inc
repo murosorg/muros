@@ -181,7 +181,7 @@ function dnsmasq_configure_do($verbose = false)
     configd_run('template reload OPNsense/Dnsmasq');
 
     /* dnsmasq daemonizes itself and writes its pid file (set in dnsmasq.conf) */
-    mwexecf('/usr/local/sbin/dnsmasq -C %s', ['/usr/local/etc/dnsmasq.conf']);
+    mwexecf('/usr/sbin/dnsmasq -C %s', ['/usr/local/etc/dnsmasq.conf']);
 
     if (!empty($config['dnsmasq']['regdhcp'])) {
         /* XXX: deprecate when moving ISC to plugins ? */

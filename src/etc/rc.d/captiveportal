@@ -78,7 +78,7 @@ captiveportal_start()
     # if the API dispatcher is already running, we will assume all parts are running
     if ! pgrep -qF /var/run/lighttpd-api-dispatcher.pid 2> /dev/null; then
         echo "Starting API dispatcher"
-        /usr/local/sbin/lighttpd -f /var/etc/lighttpd-api-dispatcher.conf
+        /usr/sbin/lighttpd -f /var/etc/lighttpd-api-dispatcher.conf
 
         # generate ssl certificates
         /usr/local/opnsense/scripts/captiveportal/generate_certs.php
@@ -110,7 +110,7 @@ captiveportal_start()
 
             # start new instance
             echo "Start : zone $zoneid"
-            /usr/local/sbin/lighttpd -f /var/etc/lighttpd-cp-zone-$zoneid.conf
+            /usr/sbin/lighttpd -f /var/etc/lighttpd-cp-zone-$zoneid.conf
         done
 
         captiveportal_cleanup_zones

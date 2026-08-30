@@ -34,7 +34,7 @@ function rrd_export()
     $result = "\t<rrddata>\n";
     $rrd_files = glob("{$rrddbpath}/*.rrd");
     foreach ($rrd_files as $rrd_file) {
-        $xml_data = shell_safe('/usr/local/bin/rrdtool %s %s', ['dump', $rrd_file]);
+        $xml_data = shell_safe('/usr/bin/rrdtool %s %s', ['dump', $rrd_file]);
         if (!empty($xml_data)) {
             $basename = basename($rrd_file);
             $result .= "\t\t<rrddatafile>\n";
@@ -57,7 +57,7 @@ function rrd_import()
                 log_msg("Cannot write $xml_file", LOG_ERR);
                 continue;
             }
-            $output = shell_safe('/usr/local/bin/rrdtool %s %s %s %s', ['restore', '-f', $xml_file, $rrd_file]);
+            $output = shell_safe('/usr/bin/rrdtool %s %s %s %s', ['restore', '-f', $xml_file, $rrd_file]);
             if (!empty($output)) {
                 log_msg("rrdtool restore -f '{$xml_file}' '{$rrd_file}' failed returning {$status}.", LOG_ERR);
                 continue;
