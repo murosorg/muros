@@ -179,7 +179,45 @@ foreach ($cfg->interfaces->children() as $key => $node) {
     if ($v6static && filter_var($gw6, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
         $lines[] = 'Gateway=' . $gw6;
     }
+
+    /*
+     * A DHCP interface may still carry a fixed alias address, which the
+     * FreeBSD dhclient configuration expressed as an "alias" block.
+     */
+    $alias4 = trim((string)$node->{'alias-address'});
+    $aliassub4 = trim((string)$node->{'alias-subnet'});
+    if ($v4dhcp && filter_var($alias4, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) && ctype_digit($aliassub4)) {
+        $lines[] = 'Address=' . $alias4 . '/' . $aliassub4;
+    }
     $lines[] = '';
+
+    /*
+     * DHCPv4 client options. FreeBSD passed these to dhclient through
+     * /var/etc/dhclient.<dev>.conf; the lease is acquired by networkd here, so
+     * they belong to the unit. "dhcpvlanprio" has no networkd equivalent and is
+     * not rendered.
+     */
+    if ($v4dhcp) {
+        $hostname = trim((string)$node->dhcphostname);
+        $rejectFrom = trim((string)$node->dhcprejectfrom);
+        $lines[] = '[DHCPv4]';
+        /* honour the MTU offered by the server only when asked to */
+        $lines[] = 'UseMTU=' . (trim((string)$node->dhcphonourmtu) !== '' ? 'yes' : 'no');
+        if ($hostname !== '' && preg_match('/^[A-Za-z0-9._-]+$/', $hostname)) {
+            $lines[] = 'Hostname=' . $hostname;
+        }
+        /* ignore offers from these servers (dhclient "reject") */
+        $deny = array();
+        foreach (preg_split('/[\s,]+/', $rejectFrom) as $server) {
+            if (filter_var($server, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+                $deny[] = $server;
+            }
+        }
+        if (!empty($deny)) {
+            $lines[] = 'DenyList=' . implode(' ', $deny);
+        }
+        $lines[] = '';
+    }
 
     $target = $netDir . '/10-muros-' . $dev . '.network';
     file_put_contents($target, implode(PHP_EOL, $lines));
