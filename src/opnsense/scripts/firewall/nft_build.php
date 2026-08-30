@@ -864,7 +864,17 @@ function rule_line(SimpleXMLElement $rule, array $ifaces, array $aliases = [], ?
         $mark = gateway_mark($gw);
         $gwName = preg_replace('/[^\x20-\x7E]/', '', $gw);
         $gwName = str_replace('"', "'", $gwName);
-        $mangle[] = '        ' . ($stmt === '' ? '' : $stmt . ' ')
+        /* The mark is applied in prerouting, where the outgoing interface is
+         * not known yet: an egress match would make the rule unloadable (or
+         * dead), so it is dropped from the mangle copy of the match. The
+         * remaining criteria still select the flow to pin. */
+        $mangleParts = $kw === 'oifname'
+            ? array_values(array_filter($parts, function ($part) {
+                return strncmp($part, 'oifname ', 8) !== 0;
+            }))
+            : $parts;
+        $mangleStmt = trim(implode(' ', $mangleParts));
+        $mangle[] = '        ' . ($mangleStmt === '' ? '' : $mangleStmt . ' ')
             . "ct state new meta mark set $mark ct mark set $mark comment \"route-to $gwName\"";
     }
 
