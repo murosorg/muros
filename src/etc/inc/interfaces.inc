@@ -963,6 +963,10 @@ function interface_reset($interface, $ifacecfg = false, $suspend = false)
             mwexecf('/usr/bin/php %s', '/usr/local/opnsense/scripts/interfaces/render_networkd.php');
             mwexecfm('/usr/bin/networkctl reconfigure %s', $device);
             break;
+        case 'pppoe':
+            /* MurOS: the session is a pppd instance owned by systemd */
+            mwexecfm('/usr/bin/systemctl stop muros-pppoe@%s.service', $interface);
+            break;
         default:
             break;
     }
@@ -1104,6 +1108,105 @@ function interface_ppps_reset($interface, $suspend, $ifcfg, $ppps)
     }
 }
 
+/*
+ * MurOS: PPPoE session. mpd5 and netgraph do not exist on Debian, so the
+ * session is run by pppd with its rp-pppoe plugin, supervised by the
+ * muros-pppoe@<interface>.service template. pppd names the interface itself
+ * (ifname), so the device stays the one recorded in the configuration and every
+ * consumer (gateways, ruleset, monitoring) is unaffected. The link scripts are
+ * reached through the pppd hook directories, see pppd-hook.sh.
+ */
+function interface_pppoe_configure($interface, $ifcfg, $ppp, $ports, $mtus, $ipv6 = false)
+{
+    global $config;
+
+    $device = $ifcfg['if'];
+    $port = $ports[0];
+
+    if (count($ports) > 1) {
+        log_msg("PPPoE on {$device}: multilink is not supported, only {$port} is used.", LOG_WARNING);
+    }
+
+    /* the payload of a PPPoE session is 8 bytes smaller than the parent link */
+    $mtu = !empty($mtus[0]) ? (int)$mtus[0] : 1492;
+    $mru = !empty($ppp['mru']) ? (int)$ppp['mru'] : $mtu;
+
+    $conf = [
+        'plugin rp-pppoe.so',
+        sprintf('nic-%s', $port),
+        sprintf('ifname %s', $device),
+        sprintf('linkname %s', $interface),
+        sprintf('mtu %d', $mtu),
+        sprintf('mru %d', $mru),
+        /* the peer is not asked to authenticate and never provides a route or
+         * an address of ours we should trust blindly */
+        'noauth',
+        'noipdefault',
+        'nodefaultroute',
+        /* keep the session alive on its own, systemd only covers a real exit */
+        'persist',
+        'maxfail 0',
+        'holdoff 5',
+        'lcp-echo-interval 10',
+        'lcp-echo-failure 6',
+    ];
+
+    if (!empty($ppp['username'])) {
+        $conf[] = sprintf('user "%s"', str_replace('"', '', $ppp['username']));
+    }
+    if (!empty($ppp['password'])) {
+        $conf[] = sprintf('password "%s"', str_replace('"', '', base64_decode($ppp['password'])));
+    }
+    if (!empty($ppp['provider'])) {
+        $conf[] = sprintf('rp_pppoe_service "%s"', str_replace('"', '', $ppp['provider']));
+    }
+    if (!empty($ppp['hostuniq'])) {
+        $conf[] = sprintf('host-uniq "%s"', str_replace('"', '', $ppp['hostuniq']));
+    }
+    if (isset($ppp['vjcomp'])) {
+        $conf[] = 'novj';
+    }
+    if (isset($ppp['acfcomp'])) {
+        $conf[] = 'noaccomp';
+    }
+    if (isset($ppp['protocomp'])) {
+        $conf[] = 'nopcomp';
+    }
+    if (!empty($ppp['idletimeout'])) {
+        $conf[] = sprintf('idle %d', (int)$ppp['idletimeout']);
+        if (isset($ppp['ondemand'])) {
+            $conf[] = 'demand';
+            $conf[] = 'ktune';
+        }
+    }
+    /* the nameservers of the peer are only asked for when they may be used */
+    if (isset($config['system']['dnsallowoverride'])) {
+        $conf[] = 'usepeerdns';
+    }
+    if ($ipv6) {
+        $conf[] = '+ipv6';
+        $conf[] = 'ipv6cp-use-ipaddr';
+    }
+
+    @mkdir('/var/etc/ppp', 0750, true);
+    $conffile = "/var/etc/ppp/{$interface}.conf";
+    /* the file carries the session password, pppd reads it as root */
+    file_put_contents($conffile, implode(PHP_EOL, $conf) . PHP_EOL);
+    chmod($conffile, 0600);
+
+    $unit = sprintf('muros-pppoe@%s.service', $interface);
+    mwexecfm('/usr/bin/systemctl stop %s', $unit);
+    mwexecf('/usr/bin/systemctl start %s', $unit);
+
+    /* the interface only shows up once the session is negotiated */
+    for ($attempt = 0; $attempt < 30; $attempt++) {
+        if (does_interface_exist($device)) {
+            break;
+        }
+        usleep(500000);
+    }
+}
+
 function interface_ppps_configure($interface)
 {
     global $config;
@@ -1212,6 +1315,14 @@ function interface_ppps_configure($interface)
                 break;
         }
     }
+
+    if ($ppp['type'] == 'pppoe') {
+        interface_pppoe_configure($interface, $ifcfg, $ppp, $ports, $mtus, $ipv6_mode == 'enable');
+        return;
+    }
+
+    log_msg("PPP type {$ppp['type']} on {$ifcfg['if']} is not supported on this platform yet.", LOG_ERR);
+    return;
 
     // Construct the mpd.conf file
     $mpdconf = <<<EOD
