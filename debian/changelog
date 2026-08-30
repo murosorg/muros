@@ -1,3 +1,27 @@
+muros (0.9.61) trixie; urgency=medium
+
+  * Proxy ARP virtual IPs: answered by the kernel through proxy neighbour
+    entries instead of choparp, which is not packaged for Debian, so the mode
+    silently did nothing. A network is expanded into one entry per address, its
+    network and broadcast addresses skipped, anything wider than a /20 refused;
+    proxy NDP is enabled on the interface for the IPv6 case and the entries are
+    dropped again when the virtual IP goes down.
+  * NetFlow: flows are exported by softflowd, one instance per interface and per
+    collector. The exporter used to live in the kernel (ng_netflow nodes driven
+    by ngctl, datagrams fanned out by samplicate), so the feature could not run
+    at all here. The collectors are rendered as host:port, egress only
+    interfaces are captured with an outbound filter and the statistics come from
+    softflowctl. Local collection still relies on flowd, which has no Debian
+    package.
+  * Health: the time graph is fed from the chrony tracking line instead of the
+    ntpq variables of a daemon this platform does not ship, so the database was
+    only ever updated with unknowns.
+  * Interfaces: the MAC spoofing helper of the settings page reads the neighbour
+    table with iproute2 instead of arp(8), and validates the client address
+    before using it.
+
+ -- MurOS <dev@muros.org>  Sun, 30 Aug 2026 23:10:00 +0200
+
 muros (0.9.60) trixie; urgency=medium
 
   * Scripts: the Python and PHP shebangs point at the Debian interpreters.
