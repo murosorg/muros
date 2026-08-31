@@ -550,6 +550,162 @@ function network_of(string $ip, int $prefix): string
     return long2ip($long & $mask) . '/' . $prefix;
 }
 
+/* Path of the file holding the rules the plugins registered for themselves,
+ * written by plugin_rules.php just before the ruleset is built. */
+function plugin_rules_file(): string
+{
+    $path = (string)getenv('MUROS_PLUGIN_RULES');
+
+    return $path !== '' ? $path : '/var/etc/muros/plugin_rules.json';
+}
+
+/* Turn one address field of a plugin rule into an nft match. "(self)" means
+ * the firewall itself, a comma separates alternatives, and anything the
+ * generator cannot name (a pf table, an interface network macro) fails the
+ * whole rule rather than widening it. */
+function plugin_addr(string $value, string $family, string $keyword): ?string
+{
+    $value = trim($value);
+    if ($value === '' || strtolower($value) === 'any') {
+        return '';
+    }
+    if ($value === '(self)') {
+        return $keyword === 'daddr' ? 'fib daddr type local' : 'fib saddr type local';
+    }
+    $tokens = [];
+    foreach (explode(',', $value) as $part) {
+        $token = addr_token($part, $family);
+        if ($token === null) {
+            return null;
+        }
+        $tokens[] = $token;
+    }
+    if (empty($tokens)) {
+        return '';
+    }
+
+    return "$family $keyword " . (count($tokens) === 1 ? $tokens[0] : '{ ' . implode(', ', $tokens) . ' }');
+}
+
+function plugin_ignore(array $rule, string $reason): void
+{
+    $GLOBALS['muros_plugin'][] = [
+        'ref' => (string)($rule['ref'] ?? ''),
+        'description' => (string)($rule['descr'] ?? ''),
+        'reason' => $reason,
+    ];
+}
+
+/* Render the rules the plugins registered for themselves.
+ *
+ * They all address the firewall itself: a DHCP request sent to it, an IKE
+ * negotiation ending on it, a name resolution asked of it. They belong in the
+ * input chain, ahead of the rules the operator wrote, which is where the
+ * interface shows them. */
+function plugin_rule_lines(array $ifaces, array $aliases): array
+{
+    $file = plugin_rules_file();
+    if (!is_readable($file)) {
+        return [];
+    }
+    $rules = json_decode((string)file_get_contents($file), true);
+    if (!is_array($rules)) {
+        return [];
+    }
+
+    $lines = [];
+    foreach ($rules as $rule) {
+        if (!is_array($rule) || !empty($rule['disabled'])) {
+            continue;
+        }
+        if (strtolower((string)($rule['direction'] ?? 'in')) !== 'in') {
+            /* the output chain accepts everything, an outbound pass rule has
+               nothing to add there */
+            continue;
+        }
+        $action = strtolower((string)($rule['type'] ?? 'pass'));
+        $verdict = ['pass' => 'accept', 'block' => 'drop', 'reject' => 'reject'][$action] ?? null;
+        if ($verdict === null) {
+            plugin_ignore($rule, 'unknown action ' . $action);
+            continue;
+        }
+
+        $family = strtolower((string)($rule['ipprotocol'] ?? '')) === 'inet6' ? 'ip6' : 'ip';
+        if (empty($rule['ipprotocol'])) {
+            $probe = (string)($rule['from'] ?? '') . (string)($rule['to'] ?? '');
+            $family = strpos($probe, ':') !== false ? 'ip6' : 'ip';
+        }
+
+        $parts = [];
+        $devices = iface_devices($ifaces, (string)($rule['interface'] ?? ''));
+        if (!empty($rule['interface']) && empty($devices)) {
+            plugin_ignore($rule, 'unknown interface ' . $rule['interface']);
+            continue;
+        }
+        if (!empty($devices)) {
+            $parts[] = (!empty($rule['interfacenot']) ? 'iifname != ' : 'iifname ') . ifname_expr($devices);
+        }
+
+        $bad = false;
+        foreach (['from' => 'saddr', 'to' => 'daddr'] as $field => $keyword) {
+            $match = plugin_addr((string)($rule[$field] ?? ''), $family, $keyword);
+            if ($match === null) {
+                plugin_ignore($rule, 'cannot name ' . $field . ' ' . $rule[$field]);
+                $bad = true;
+                break;
+            }
+            if ($match !== '') {
+                $negated = !empty($rule[$field . '_not']);
+                if ($negated && strpos($match, 'fib ') === 0) {
+                    plugin_ignore($rule, 'cannot negate ' . $field);
+                    $bad = true;
+                    break;
+                }
+                $parts[] = $negated
+                    ? preg_replace('/^(ip6?) (s|d)addr /', '$1 $2addr != ', $match)
+                    : $match;
+            }
+        }
+        if ($bad) {
+            continue;
+        }
+
+        $proto = strtolower((string)($rule['protocol'] ?? ''));
+        $protocols = ($proto === '' || $proto === 'any') ? [] : ($proto === 'tcp/udp' ? ['tcp', 'udp'] : [$proto]);
+        if (count($protocols) === 1) {
+            $parts[] = 'meta l4proto ' . $protocols[0];
+        } elseif (count($protocols) > 1) {
+            $parts[] = 'meta l4proto { ' . implode(', ', $protocols) . ' }';
+        }
+        $ported = !empty($protocols) && count(array_diff($protocols, ['tcp', 'udp', 'sctp'])) === 0;
+        foreach (['from_port' => 'sport', 'to_port' => 'dport'] as $field => $keyword) {
+            $port = fmt_ports(trim((string)($rule[$field] ?? '')));
+            if ($port === null) {
+                continue;
+            }
+            if (!$ported) {
+                plugin_ignore($rule, 'a port on a protocol that carries none');
+                $bad = true;
+                break;
+            }
+            $parts[] = "th $keyword $port";
+        }
+        if ($bad) {
+            continue;
+        }
+
+        $label = trim((string)($rule['descr'] ?? ''));
+        if ($label === '') {
+            $label = 'automatic rule';
+        }
+        $log = !empty($rule['log']) ? 'log prefix "muros,auto " ' : '';
+        $lines[] = '        ' . implode(' ', $parts) . ' ' . $log . 'counter ' . $verdict
+            . ' comment "' . nft_comment($label) . '"';
+    }
+
+    return $lines;
+}
+
 /* Whether a <source>/<destination> block means "anything". Telling that apart
  * from a block the generator failed to resolve matters: an unresolved endpoint
  * dropped in silence turns a narrow rule into one that matches everything. */
@@ -2538,6 +2694,8 @@ $GLOBALS['muros_skipped'] = [];
 $GLOBALS['muros_degraded'] = [];
 /* address aliases that carry no element at all */
 $GLOBALS['muros_aliases'] = [];
+/* rules a plugin registered that could not be rendered */
+$GLOBALS['muros_plugin'] = [];
 /* match statements of the rules that asked for no connection tracking */
 $GLOBALS['muros_notrack'] = [];
 
@@ -2767,6 +2925,9 @@ if ($carp_enabled) {
 // WAN-on-LAN setup), block-private would otherwise drop new management
 // connections and lock the operator out of the box.
 $out[] = $lockout;
+foreach (plugin_rule_lines($ifaces, $aliases) as $line) {
+    $out[] = $line;
+}
 foreach ($martians as $m) {
     $out[] = $m;
 }
@@ -2998,5 +3159,6 @@ if ($report !== null) {
         'skipped' => $GLOBALS['muros_skipped'],
         'degraded' => $GLOBALS['muros_degraded'],
         'aliases' => $GLOBALS['muros_aliases'],
+        'plugin' => $GLOBALS['muros_plugin'],
     ]));
 }

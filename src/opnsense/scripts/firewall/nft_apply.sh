@@ -18,6 +18,19 @@ RULES="$RUNDIR/rules.nft"
 BUILD=/usr/local/opnsense/scripts/firewall/nft_build.php
 
 mkdir -p "$RUNDIR"
+
+# Several parts of the system register firewall rules of their own, without
+# which they cannot work: the DHCP servers need the requests addressed to them
+# to be let in, IPsec needs IKE and ESP from the peer, the captive portal needs
+# name resolution before a client is authenticated. Those rules live in the
+# plugin tree, not in the configuration file the generator reads, so collect
+# them first. Best effort: a plugin that fails to answer must not stop the
+# firewall from being applied, and the generator simply finds no file.
+PLUGIN_RULES=/usr/local/opnsense/scripts/firewall/plugin_rules.php
+if [ -r "$PLUGIN_RULES" ]; then
+    php "$PLUGIN_RULES" /var/etc/muros/plugin_rules.json > /dev/null 2>&1 || true
+fi
+
 php "$BUILD" "$CONFIG" > "$RULES"
 nft -c -f "$RULES"
 nft -f "$RULES"

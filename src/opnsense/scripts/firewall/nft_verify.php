@@ -182,7 +182,7 @@ function running_ruleset(?string $file): ?string
     return implode("\n", $output);
 }
 
-function intended_ruleset(string $path, array &$skipped, array &$degraded, array &$emptyAliases): ?string
+function intended_ruleset(string $path, array &$skipped, array &$degraded, array &$emptyAliases, array &$pluginRules): ?string
 {
     $output = [];
     $status = 0;
@@ -217,6 +217,9 @@ function intended_ruleset(string $path, array &$skipped, array &$degraded, array
             $emptyAliases[] = $entry;
         }
     }
+    foreach ($report['plugin'] ?? [] as $entry) {
+        $pluginRules[] = $entry;
+    }
 
     if ($status !== 0) {
         return null;
@@ -230,7 +233,8 @@ $running = running_ruleset($rulesetFile);
 $skipped = [];
 $degraded = [];
 $emptyAliases = [];
-$intended = intended_ruleset($path, $skipped, $degraded, $emptyAliases);
+$pluginRules = [];
+$intended = intended_ruleset($path, $skipped, $degraded, $emptyAliases, $pluginRules);
 
 if ($intended === null) {
     fwrite(STDERR, "the ruleset generator failed, nothing can be verified\n");
@@ -240,7 +244,8 @@ if ($intended === null) {
 $intendedTags = tags_of_ruleset($intended);
 $runningTags = $running === null ? [] : tags_of_ruleset($running);
 
-$report = ['applied' => [], 'scheduled' => [], 'pending' => [], 'missing' => [], 'stale' => [], 'degraded' => []];
+$report = ['applied' => [], 'scheduled' => [], 'excluded' => [], 'pending' => [], 'missing' => [],
+    'stale' => [], 'degraded' => []];
 $known = [];
 foreach ($items as $item) {
     $known[$item['uuid']] = true;
@@ -252,12 +257,27 @@ foreach ($items as $item) {
     if (isset($runningTags[$item['uuid']])) {
         $report['applied'][] = $item;
     } elseif (isset($skipped[$item['uuid']])) {
-        $item['description'] = trim(sprintf(
-            '%s (outside the window of schedule %s)',
-            $item['description'],
-            $skipped[$item['uuid']]['detail']
-        ));
-        $report['scheduled'][] = $item;
+        $entry = $skipped[$item['uuid']];
+        $reason = (string)($entry['reason'] ?? '');
+        $detail = trim((string)($entry['detail'] ?? ''));
+        if ($reason === 'schedule') {
+            $item['description'] = trim(sprintf(
+                '%s (outside the window of schedule %s)',
+                $item['description'],
+                $detail
+            ));
+            $report['scheduled'][] = $item;
+        } else {
+            /* left out for a reason that will not fix itself with time: say
+               which one instead of blaming a schedule that does not exist */
+            $item['description'] = trim(sprintf(
+                '%s (%s%s)',
+                $item['description'],
+                $reason,
+                $detail !== '' ? ': ' . $detail : ''
+            ));
+            $report['excluded'][] = $item;
+        }
     } elseif (isset($intendedTags[$item['uuid']])) {
         $report['pending'][] = $item;
     } else {
@@ -285,6 +305,7 @@ if ($json) {
         'counts' => [
             'applied' => count($report['applied']),
             'scheduled' => count($report['scheduled']),
+            'excluded' => count($report['excluded']),
             'pending' => count($report['pending']),
             'missing' => count($report['missing']),
             'stale' => count($report['stale']),
@@ -295,6 +316,7 @@ if ($json) {
         'stale' => $report['stale'],
         'degraded' => $report['degraded'],
         'empty_aliases' => $emptyAliases,
+        'plugin_rules' => $pluginRules,
     ]) . "\n";
     exit($failed > 0 ? 1 : 0);
 }
@@ -316,11 +338,12 @@ if ($running === null) {
 }
 
 printf(
-    "%d configured items, %d applied, %d outside their schedule, %d pending a reload, "
+    "%d configured items, %d applied, %d outside their schedule, %d left out, %d pending a reload, "
         . "%d never applied, %d stale in the kernel, %d with an ignored option\n\n",
     count($items),
     count($report['applied']),
     count($report['scheduled']),
+    count($report['excluded']),
     count($report['pending']),
     count($report['missing']),
     count($report['stale']),
@@ -329,9 +352,18 @@ printf(
 
 print_group('never applied, the generator produces no rule for these:', $report['missing']);
 print_group('outside their schedule, left out on purpose until the window opens:', $report['scheduled']);
+print_group('left out, the generator has no way to express these:', $report['excluded']);
 print_group('pending, the filter has not been reloaded since these changed:', $report['pending']);
 print_group('stale, loaded in the kernel but no longer configured:', $report['stale']);
 print_group('loaded, but an option they carry has no counterpart here:', $report['degraded']);
+
+if (!empty($pluginRules)) {
+    echo "rules a part of the system asked for and that could not be built:\n";
+    foreach ($pluginRules as $entry) {
+        printf("  %-40s %s\n", $entry['description'], $entry['reason']);
+    }
+    echo "\n";
+}
 
 if (!empty($emptyAliases)) {
     echo "aliases with no address at all, every rule referring to them matches nothing:\n";
@@ -341,7 +373,7 @@ if (!empty($emptyAliases)) {
     echo "\n";
 }
 
-if ($failed === 0 && count($report['stale']) === 0 && count($report['degraded']) === 0 && empty($emptyAliases)) {
+if ($failed === 0 && count($report['stale']) === 0 && count($report['degraded']) === 0 && count($report['excluded']) === 0 && empty($emptyAliases) && empty($pluginRules)) {
     echo "the configuration and the ruleset agree\n";
 }
 
