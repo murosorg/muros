@@ -1,3 +1,21 @@
+muros (0.9.95) trixie; urgency=medium
+
+  * The anti-lockout rule accepted ports 22, 80 and 443 on every interface,
+    including the one facing the internet, ahead of every rule the operator
+    wrote. On a firewall with a default deny policy and no rule at all, ssh
+    and the web interface answered from the outside. An explicit block for
+    those ports could not take effect either, since the rule came first. It is
+    now bound to the primary inside interface.
+  * The rule also carried a fixed list of ports, so an operator who had moved
+    the web interface or ssh elsewhere was left with the wrong ports open on
+    every interface and no protection at all on the right ones. It now carries
+    the ports actually configured, and the redirection port only when the
+    redirection is on.
+  * The setting that turns the anti-lockout rule off was ignored. It is
+    honoured.
+
+ -- MurOS <dev@muros.org>  Mon, 31 Aug 2026 22:55:45 +0200
+
 muros (0.9.94) trixie; urgency=medium
 
   * The address of the peer to replicate connection states to was read by the
