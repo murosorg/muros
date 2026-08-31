@@ -1,3 +1,19 @@
+muros (0.9.85) trixie; urgency=medium
+
+  * The traffic shaper can shape what arrives on an interface, which is the
+    setting most people reach for first: capping a download. A queueing
+    discipline only works on what leaves a device, and the older system shaped
+    both directions from one rule, so the inbound half of such a rule silently
+    did nothing here. An intermediate device now carries it, with the same tree
+    of pipes and queues as any other device.
+  * Classification for that direction is done by a filter of the traffic control
+    layer, since the redirection happens before the packet filter is consulted.
+    It understands a protocol, an address or a prefix and ports; a rule asking
+    for more, an alias, a negation, a packet length, is named by the shaper
+    notes rather than half applied.
+
+ -- MurOS <jpzi@proton.me>  Tue, 01 Sep 2026 00:25:00 +0200
+
 muros (0.9.84) trixie; urgency=medium
 
   * A pipe of the traffic shaper gets the queue it was configured with. The page
