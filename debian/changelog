@@ -1,3 +1,15 @@
+muros (0.9.90) trixie; urgency=medium
+
+  * A firewall reload replaced the entire nftables ruleset, which also took
+    away the tables other parts of the system own. The captive portal keeps
+    its authenticated clients and their traffic counters in one of them, so
+    every reload disconnected the users of a portal zone and reset the volume
+    they had consumed, which meant a data quota was never reached on a machine
+    that reloads its firewall. The generated ruleset now replaces its own
+    table and nothing else, in the same single transaction.
+
+ -- MurOS <dev@muros.org>  Mon, 31 Aug 2026 21:51:23 +0200
+
 muros (0.9.89) trixie; urgency=medium
 
   * NAT reflection, the last NAT feature with nothing behind it. A host on an
