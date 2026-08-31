@@ -44,6 +44,13 @@ A normal system directory layout using
 is expected with at least
 .Pa /conf/config.xml
 present.
+Every partition of the selected disk carrying a file system the kernel
+can read is tried in turn, and the first one holding an installation is
+kept, so a disk with a separate boot or EFI partition needs no help.
+Disk names are the Linux ones, for instance
+.Sq sda
+or
+.Sq nvme0n1 .
 If successful, the old configuration will be replaced.
 .Pp
 Encrypted
@@ -83,6 +90,9 @@ authentication settings to know good defaults.
 Set debug mode for shell script output.
 .It Fl z
 List all available ZFS pools to the system and exit.
+The pools are only listed when
+.Xr zpool 8
+is installed, which is optional: the installer lays out ext4.
 The listing consists of the
 .Sq name ,
 .Sq guid

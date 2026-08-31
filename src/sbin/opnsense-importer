@@ -132,12 +132,20 @@ timeout_prompt()
 	return ${RETURN}
 }
 
+# MurOS: ZFS is a loadable module here as well, but it is loaded with modprobe
+# and it is optional: the installer lays out ext4, so a machine without
+# zfsutils-linux simply has no pool to offer. The FreeBSD kldstat, kldload and
+# kldunload calls made every run of the importer fail before it listed anything.
 zfs_load()
 {
-	# we need to load ZFS to list pools
-	if ! kldstat -qm zfs; then
+	if ! have_zfs; then
+		export POOLS=
+		return 0
+	fi
+
+	if [ ! -d /proc/spl/kstat/zfs ]; then
 		export UNLOAD_ZFS="yes"
-		kldload zfs
+		modprobe zfs 2> /dev/null
 	fi
 
 	export POOLS=$(zfs_probe)
@@ -146,21 +154,52 @@ zfs_load()
 zfs_unload()
 {
 	if [ -n "${UNLOAD_ZFS}" ]; then
-		kldunload zfs
+		modprobe -r zfs 2> /dev/null
 	fi
+}
+
+have_zfs()
+{
+	command -v zpool > /dev/null 2>&1
 }
 
 zfs_probe()
 {
+	if ! have_zfs; then
+		return 0
+	fi
+
 	zpool import -aNf > /dev/null 2> /dev/null
 
-	zpool get -H cachefile | while read ZPOOL ZMORE; do
-		ZGUID=$(zpool get -H guid ${ZPOOL} | awk '{ print $3 }')
-		ZSIZE=$(zpool get -H size ${ZPOOL} | awk '{ print $3 }')
-		if [ "$(mount | grep -w / | grep -c ${ZPOOL})" = "0" ]; then
+	zpool list -H -o name | while read ZPOOL ZMORE; do
+		if [ -z "${ZPOOL}" ]; then
+			continue
+		fi
+		ZGUID=$(zpool list -H -o guid ${ZPOOL})
+		ZSIZE=$(zpool list -H -o size ${ZPOOL})
+		if ! findmnt -n -o SOURCE / | grep -q "^${ZPOOL}\b"; then
 			zpool export ${ZPOOL} > /dev/null 2> /dev/null
 		fi
 		echo "${ZPOOL} ${ZGUID} ${ZSIZE}"
+	done
+}
+
+# MurOS: the file system type as the kernel sees it, so the mount below does not
+# have to guess. FreeBSD probed fixed partition names, s1a for MBR UFS and p3
+# for GPT UFS, then fell back to msdos and cd9660 by name as well.
+fs_type()
+{
+	blkid -o value -s TYPE "${1}" 2> /dev/null
+}
+
+# MurOS: partitions of a device, in the order the kernel enumerates them. Covers
+# the sdXN, nvmeXnYpN and mmcblkXpN spellings without knowing about any of them.
+device_partitions()
+{
+	lsblk -lnp -o NAME,TYPE "/dev/${1}" 2> /dev/null | while read NAME NTYPE; do
+		if [ "${NTYPE}" = "part" ]; then
+			echo "${NAME}"
+		fi
 	done
 }
 
@@ -168,49 +207,51 @@ import_start()
 {
 	local DEV=${1}
 
-	# We are going to make an educated guess about the enclosed
-	# file system.  The types "msdos" and "cd9660" are meant as
-	# fallbacks to try, but by no means meant to be correct.
-	# Correctness stems from the selection of the device given,
-	# so that e.g. a CD will not have any attached partitions,
-	# but we do not actually check for the device node name.
+	# MurOS: no guessing anymore. blkid tells what each partition holds and
+	# the mount below is left on auto, which covers ext4 as installed, vfat
+	# and iso9660 of an installer image, and anything else the kernel can
+	# read. What is not a file system, a swap area, a LUKS container, an LVM
+	# member or a raid member, is skipped.
 
 	export PART=
 	export TYPE=
 	export POOL=
 
-	if [ -e "/dev/${DEV}s1a" ]; then
-		# MBR UFS
-		export PART="/dev/${DEV}s1a"
-		export TYPE="ufs"
-		return 0
-	elif [ -e "/dev/${DEV}p3" ]; then
-		# GPT UFS
-		export PART="/dev/${DEV}p3"
-		export TYPE="ufs"
-		return 0
-	elif [ "$(echo ${POOLS} | grep -c "^${DEV} ")" != "0" ]; then
-		# ZFS POOL
+	if [ "$(echo ${POOLS} | grep -c "^${DEV} ")" != "0" ]; then
+		# ZFS pool
 		export POOL="${DEV}"
-		return 0
-	elif [ -e "/dev/${DEV}s1" ]; then
-		# MBR MSDOS
-		export PART="/dev/${DEV}s1"
-		export TYPE="msdos"
-		return 0
-	elif [ -e "/dev/${DEV}p1" ]; then
-		# GPT MSDOS
-		export PART="/dev/${DEV}p1"
-		export TYPE="msdos"
-		return 0
-	elif [ -e "/dev/${DEV}" ]; then
-		# ISO 9660
-		export PART="/dev/${DEV}"
-		export TYPE="cd9660"
 		return 0
 	fi
 
-	return 1
+	# a partition of the device carrying a file system the kernel knows, the
+	# root of an installation first: the caller mounts each candidate in turn
+	# and keeps the one holding /conf/config.xml
+	for CANDIDATE in $(device_partitions ${DEV}); do
+		CTYPE=$(fs_type ${CANDIDATE})
+		case "${CTYPE}" in
+		''|swap|crypto_LUKS|LVM2_member|zfs_member|linux_raid_member)
+			continue
+			;;
+		esac
+		export PART="${PART}${PART:+ }${CANDIDATE}"
+	done
+
+	if [ -z "${PART}" ]; then
+		# the whole device, an installer image or a formatted disk without
+		# a partition table
+		CTYPE=$(fs_type "/dev/${DEV}")
+		if [ -n "${CTYPE}" ]; then
+			export PART="/dev/${DEV}"
+		fi
+	fi
+
+	if [ -z "${PART}" ]; then
+		return 1
+	fi
+
+	export TYPE="auto"
+
+	return 0
 }
 
 
@@ -249,17 +290,24 @@ if [ -n "${DO_DEV}" ]; then
 	fi
 fi
 
+# MurOS: the device list comes from lsblk, which covers the disks, the software
+# raid and the multipath devices in one go. camcontrol, gmirror and graid do not
+# exist here, so the list used to be empty and the prompt below had nothing to
+# offer.
 DEVS=$(
-	camcontrol devlist
+	lsblk -dn -o NAME,SIZE,MODEL,TYPE | while read LNAME LSIZE LREST; do
+		case "${LREST##* }" in
+		disk|raid*|md|dm|mpath)
+			printf "%-12s<%s %s>\n" "${LNAME}" "${LSIZE}" "${LREST% *}"
+			;;
+		esac
+	done
 	echo "${POOLS}" | while read ZPOOL ZGUID ZSIZE ZMORE; do
 		if [ -z "${ZPOOL}" ]; then
 			continue
 		fi
-		printf "%-35s%s\n" "<${ZGUID} ${ZSIZE}>" \
-		    "ZFS pool (${ZPOOL})"
+		printf "%-12s<%s %s>\n" "${ZPOOL}" "${ZSIZE}" "ZFS pool ${ZGUID}"
 	done
-	gmirror status -s
-	graid status -s
 )
 
 while : ; do
@@ -267,14 +315,14 @@ while : ; do
 		echo
 		echo "${DEVS}"
 		echo
-		read -p "Select device to import from (e.g. ada0) or leave blank to exit: " DEV
+		read -p "Select device to import from (e.g. sda) or leave blank to exit: " DEV
 		echo
 
 		if [ -z "${DEV}" ]; then
 			bootstrap_and_exit 0
 		elif [ "${DEV}" = "!" ]; then
 			# secret escape! (not so secret now, is it?)
-			csh
+			${SHELL}
 			continue
 		elif ! import_start ${DEV}; then
 			echo "No known partition layout was found for '${DEV}'."
@@ -284,19 +332,44 @@ while : ; do
 
 	mkdir -p ${MNT}
 
-	if [ -n "${PART}" -a -n "${TYPE}" ]; then
-		echo "Starting import for partition '${PART}'."
-		echo
+	if [ -n "${PART}" ]; then
+		# MurOS: PART holds every partition of the device carrying a known file
+		# system, in kernel order. Each one is checked, mounted and kept only if
+		# it looks like an installation, so a machine with a separate boot or
+		# EFI partition does not stop the importer on the first one.
+		CHOSEN=
 
-		if [ "${TYPE}" = "ufs" ]; then
-			echo -n "Running fsck..."
-			fsck -t ${TYPE} -y ${PART} > /dev/null
-			echo "done."
-		fi
+		for CANDIDATE in ${PART}; do
+			CTYPE=$(fs_type ${CANDIDATE})
+			echo "Starting import for partition '${CANDIDATE}' (${CTYPE:-unknown})."
+			echo
 
-		if ! mount -t ${TYPE} ${PART} ${MNT}; then
+			case "${CTYPE}" in
+			ext2|ext3|ext4)
+				echo -n "Running fsck..."
+				fsck -y -t ${CTYPE} ${CANDIDATE} > /dev/null 2> /dev/null
+				echo "done."
+				;;
+			esac
+
+			if ! mount ${CANDIDATE} ${MNT} 2> /dev/null; then
+				continue
+			fi
+
+			if [ -n "${DO_MANUAL}" ] || [ -f "${MNT}/conf/config.xml" ] || \
+			    [ -f "${MNT}/usr/local/sbin/opnsense-shell" ]; then
+				CHOSEN=${CANDIDATE}
+				break
+			fi
+
+			umount ${MNT}
+		done
+
+		if [ -z "${CHOSEN}" ]; then
 			echo "The device could not be mounted."
 			PART=
+		else
+			PART=${CHOSEN}
 		fi
 	elif [ -n "${POOL}" ]; then
 		echo "Starting import for ZFS pool '${POOL}'."
@@ -321,10 +394,18 @@ while : ; do
 		break
 	elif [ -n "${DO_PASSWORD}" ]; then
 		if [ -f "${MNT}/usr/local/sbin/opnsense-shell" ]; then
-			mount -t devfs devfs ${MNT}/dev
-			chroot ${MNT} /bin/sh /etc/rc.d/ldconfig start
+			# MurOS: a Debian chroot needs the three kernel file systems
+			# bind mounted, there is no devfs to mount, and the dynamic
+			# linker cache is refreshed by ldconfig itself and not by an
+			# rc script.
+			for KFS in dev proc sys; do
+				mount --bind /${KFS} ${MNT}/${KFS}
+			done
+			chroot ${MNT} /sbin/ldconfig
 			chroot ${MNT} /usr/local/sbin/opnsense-shell password root -x 0
-			umount ${MNT}/dev
+			for KFS in sys proc dev; do
+				umount ${MNT}/${KFS}
+			done
 
 			echo "The password was reset successfully."
 
