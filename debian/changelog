@@ -1,3 +1,17 @@
+muros (0.9.80) trixie; urgency=medium
+
+  * A firewall rule limited to a time window is limited again. The generator
+    never read the schedule of a rule, so a scheduled rule was permanently
+    active: a pass rule written to close at the end of its window never closed,
+    while the interface kept showing the schedule next to it. Weekday sets,
+    calendar days and hour ranges are all honoured, a rule outside its window is
+    not loaded at all, and the periodic filter reload that already existed for
+    schedules finally has something to change.
+  * The rule check tells a rule waiting for its window to open from one that
+    will never be applied.
+
+ -- MurOS <jpzi@proton.me>  Mon, 31 Aug 2026 22:05:00 +0200
+
 muros (0.9.79) trixie; urgency=medium
 
   * A firewall rule can now be checked against the kernel. Every silent failure
