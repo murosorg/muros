@@ -1375,6 +1375,8 @@
 /usr/local/opnsense/scripts/routes/gateway_status.php
 /usr/local/opnsense/scripts/routes/gateway_watcher.php
 /usr/local/opnsense/scripts/routes/gateways.php
+/usr/local/opnsense/scripts/routes/kill_gateway_states.php
+/usr/local/opnsense/scripts/routes/setup_policy_routing.php
 /usr/local/opnsense/scripts/routes/show_routes.py
 /usr/local/opnsense/scripts/shaper/dummynet_stats.py
 /usr/local/opnsense/scripts/shaper/flush_all.sh

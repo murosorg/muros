@@ -55,3 +55,15 @@ if ($monitor_hook) {
 }
 
 filter_configure_sync(true, false);
+
+/*
+ * MurOS: the ruleset and the policy routing tables now point at the surviving
+ * uplink, but the connections that were pinned to the gateway that just changed
+ * state still carry its mark and would keep being steered into its table. This
+ * is what "pfctl -k gateway" did on FreeBSD, and it has to run after the reload
+ * so the next packet of a dropped connection is evaluated against the new
+ * tables.
+ */
+if ($monitor_hook && !empty($monitor_gws)) {
+    pass_safe('/usr/local/opnsense/scripts/routes/kill_gateway_states.php %s', $monitor_gws);
+}
