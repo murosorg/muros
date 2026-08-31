@@ -1,3 +1,46 @@
+muros (0.9.68) trixie; urgency=medium
+
+  * Web interface: the administration page reconfigures the front end that is
+    actually serving. The package ships a lighttpd configuration and a unit
+    drop-in pointing at it, but webgui_configure_do() generated a different
+    configuration elsewhere, killed a pid file systemd does not own and spawned a
+    second lighttpd whose PHP backend was php-cgi at a FreeBSD path. Changing the
+    port, the certificate, the ciphers, HSTS or the listening interfaces had no
+    effect. It now generates where the unit reads, restarts php-fpm and lighttpd
+    through systemd, serves PHP from the packaged pool and reports the state of
+    the unit. Three directives fixed on the way: index-file.names, an empty
+    element in url.access-deny, and the server tag.
+  * Web interface: the PHP settings that come from the configuration, the
+    timezone, the session timeout, the output compression and the error reporting,
+    are written as drop-ins for the fpm and cli SAPIs instead of a php.ini in the
+    FreeBSD locations where nothing reads it. The timezone in particular never
+    left the packaged default.
+  * Captive portal: the control script was still an rc.subr script, so every
+    start, stop and restart died on the missing /etc/rc.subr. It is a plain
+    script now, the zone chroots get device nodes instead of a devfs mount, the
+    workers and the API dispatcher run as www-data, and the dispatcher hands PHP
+    to the php-fpm pool instead of php-cgi, without which every portal
+    authentication failed.
+  * configd: the credential of the caller is read with SO_PEERCRED. The FreeBSD
+    xucred path left the session context empty on Debian, so every action with an
+    allowed_groups constraint was refused, the five authentication actions
+    included. wheel and wwwonly become root and www-data, here, in the capture
+    download and in the test configuration.
+  * Logging: the messages come from the journal. The pipeline still read
+    /dev/klog and the FreeBSD datagram sockets, so syslog-ng saw nothing but its
+    own internal messages and every log page was empty. The configuration version
+    token, substituted with nothing, now says 4.8. The newsyslog template is gone,
+    log_archive does the rotation. The package log matches apt and dpkg.
+  * Logging: the lockout handler blocks again, with an nftables set element and a
+    conntrack flush of the address as source and as destination, instead of pfctl
+    and pfctl -k.
+  * Firewall: no more filterlog daemon spawned on pflog0 at every reload, and no
+    more bogonsv6 flush through pfctl. The firewall log is the kernel messages
+    carrying the ruleset marker, which is what the filter log and its remote
+    destinations select now.
+
+ -- MurOS <jpzi@proton.me>  Mon, 31 Aug 2026 09:55:00 +0200
+
 muros (0.9.67) trixie; urgency=medium
 
   * Boot: the boot lock and the syshook levels are back. Removing /etc/rc left
