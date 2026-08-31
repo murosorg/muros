@@ -1,3 +1,23 @@
+muros (0.9.91) trixie; urgency=medium
+
+  * The rules the plugins register for themselves were shown on the rule page
+    as automatically generated and never reached the kernel. Those rules are
+    not in the configuration file, each plugin declares them at build time,
+    and the nftables generator only ever read the configuration. A DHCP server
+    only answered if the operator had written the rule by hand, an IPsec
+    tunnel only came up if IKE and ESP had been allowed by hand, and the
+    captive portal could not resolve a name before authentication. They are
+    now collected and rendered ahead of the rules the operator wrote, where
+    the page says they are.
+  * The rule check tells a rule left out for good, and why, from a rule
+    waiting for its schedule to open. Both were reported as scheduled, so a
+    port forward on a protocol with no counterpart was announced as waiting
+    for a time window that did not exist.
+  * The rule check also names the rules a part of the system asked for and
+    that could not be built.
+
+ -- MurOS <dev@muros.org>  Mon, 31 Aug 2026 22:16:36 +0200
+
 muros (0.9.90) trixie; urgency=medium
 
   * A firewall reload replaced the entire nftables ruleset, which also took
