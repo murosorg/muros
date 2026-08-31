@@ -1,3 +1,40 @@
+muros (0.9.67) trixie; urgency=medium
+
+  * Boot: the boot lock and the syshook levels are back. Removing /etc/rc left
+    nobody holding the exclusive lock on /var/run/booting, so product::booting()
+    was always false: exit_on_bootup() deferred nothing during the boot chain and
+    the boot performance log stayed empty. Nothing ran the early and start syshook
+    levels either, so the templates were not regenerated before the chain and the
+    deferred work of the start level (dynamic addresses acquired during the chain,
+    syslog and cron restarts, tunables of late loaded modules) never happened. The
+    boot unit now runs the PHP subr, the early level, the chain under flock, the
+    start level, and the stop level on shutdown, which until now only an operator
+    reboot from the interface triggered.
+  * Boot: the early syshooks are Debian. 05-upgrade installed the kernel, base and
+    package sets staged by opnsense-update, which does not exist here; apt applies
+    everything before the reboot, so the hook finishes an interrupted dpkg run
+    instead. 10-configd starts the unit rather than the rc script. The rc scripts
+    of configd and flowd_aggregate are gone with them.
+  * Boot: the DHCP lease watcher is ordered after the boot chain. Its path and
+    timer were pulled in by paths.target and timers.target, long before the
+    interfaces are configured, and networkd usually gets its first lease exactly
+    there: the handler then replayed the newwanip chain and asked configd for a
+    reconfiguration while the chain was still configuring the same interface. The
+    handler also checks the boot lock itself for the window the ordering cannot
+    cover.
+  * System: the boot and shutdown melodies play again. opnsense-beep tested
+    /dev/speaker and ran the FreeBSD beep port with a pitch in units of 1/100 s;
+    it now uses beep(1), which drives the PC speaker on Linux and takes hertz and
+    milliseconds. The melody files keep their units. The binary is a suggestion,
+    a machine without a PC speaker exits silently.
+  * Templates: the generated /etc/rc.conf.d fragments of the ported services are
+    gone, they were read by rc.freebsd. The netflow template keeps netflow.conf,
+    the shaper template disappears entirely since tc_apply.py reads the model,
+    and so do the dead shaper scripts (dummynet statistics and its library, the
+    ipfw table updater, the ipfw and pf load order fixup, the dnctl setup).
+
+ -- MurOS <jpzi@proton.me>  Mon, 31 Aug 2026 08:20:00 +0200
+
 muros (0.9.66) trixie; urgency=medium
 
   * Boot: the configuration boot chain runs as a unit. On FreeBSD /etc/rc ran
