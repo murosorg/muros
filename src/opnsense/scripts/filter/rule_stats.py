@@ -55,8 +55,14 @@ def collect_rule_stats():
         rule = item.get('rule') if isinstance(item, dict) else None
         if not rule:
             continue
-        uuid = rule.get('comment')
-        if not uuid:
+        comment = rule.get('comment')
+        if not comment:
+            continue
+        """ the comment of a rule is its uuid, followed by the description of
+            the item it came from; an automatic rule has no uuid and no counter
+            to report """
+        uuid = comment.split(' ')[0]
+        if len(uuid) != 36 or uuid.count('-') != 4:
             continue
         packets = 0
         nbytes = 0

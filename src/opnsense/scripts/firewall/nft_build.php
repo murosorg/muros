@@ -490,6 +490,34 @@ function nft_comment(string $value): string
 }
 
 /*
+ * MurOS: the identity a rule carries into the ruleset.
+ *
+ * Everything generated from a configuration item is tagged with the uuid of
+ * that item, followed by its description when it has one. Two things depend on
+ * it: the per rule statistics, which attach a kernel counter to the rule the
+ * GUI shows, and the verifier, which tells an item that produced no rule at
+ * all from one that produced some. Rules that come from no configuration item,
+ * the automatic ones, keep a plain descriptive comment.
+ */
+function rule_tag($item, string $fallback = ''): string
+{
+    $uuid = '';
+    if ($item instanceof SimpleXMLElement) {
+        $uuid = trim((string)($item['uuid'] ?? ''));
+        if ($uuid === '') {
+            $uuid = trim((string)($item->uuid ?? ''));
+        }
+    } elseif (is_string($item)) {
+        $uuid = trim($item);
+    }
+
+    $uuid = preg_replace('/[^A-Za-z0-9-]/', '', $uuid);
+    $tag = trim($uuid . ' ' . nft_comment($fallback));
+
+    return substr($tag === '' ? 'rule' : $tag, 0, 120);
+}
+
+/*
  * MurOS: the one-to-one and NPTv6 rules of the model tree.
  *
  * Both used to live under <nat> and the model migrations moved them to
@@ -565,7 +593,7 @@ function build_model_nat(SimpleXMLElement $cfg, array $ifaces, array $aliases): 
             $peer = mvc_resolve_net((string)($r->destination_net ?? ''), $family, $ifaces, $aliases);
             $peerExpr = $peer['ok'] ? $peer['expr'] : null;
             $descr = nft_comment((string)($r->description ?? ''));
-            $comment = $descr === '' ? '1:1 nat' : $descr;
+            $comment = rule_tag($r, $descr === '' ? '1:1 nat' : $descr);
 
             $preParts = ['iifname ' . ifname_expr($devs), "$family daddr $outside"];
             if ($peerExpr !== null) {
@@ -612,7 +640,7 @@ function build_model_nat(SimpleXMLElement $cfg, array $ifaces, array $aliases): 
             }
 
             $descr = nft_comment((string)($r->description ?? ''));
-            $comment = $descr === '' ? 'npt' : $descr;
+            $comment = rule_tag($r, $descr === '' ? 'npt' : $descr);
 
             $post[] = '        oifname ' . ifname_expr($devs) . " ip6 saddr $inside"
                 . " snat ip6 prefix to $outside comment \"$comment outbound\"";
@@ -772,7 +800,7 @@ function build_model_snat(SimpleXMLElement $cfg, array $ifaces, array $aliases):
         }
 
         $descr = nft_comment((string)($r->description ?? ''));
-        $comment = $descr === '' ? ($isNoNat ? 'no source nat' : 'source nat') : $descr;
+        $comment = rule_tag($r, $descr === '' ? ($isNoNat ? 'no source nat' : 'source nat') : $descr);
         $log = trim((string)($r->log ?? '0')) === '1'
             ? 'log prefix "muros,nat,' . trim((string)$r['uuid']) . ' " ' : '';
 
@@ -877,7 +905,8 @@ function build_nat(SimpleXMLElement $cfg, array $ifaces, array $wanDevs, array $
             }
 
             if (!empty((string)($r->nonat ?? ''))) {
-                $noNat[] = '        ' . implode(' ', $parts) . ' counter return comment "no nat"';
+                $noNat[] = '        ' . implode(' ', $parts) . ' counter return comment "'
+                    . rule_tag($r, 'no nat') . '"';
                 continue;
             }
 
@@ -901,7 +930,8 @@ function build_nat(SimpleXMLElement $cfg, array $ifaces, array $wanDevs, array $
             } else {
                 $verb = 'masquerade';
             }
-            $post[] = '        ' . implode(' ', $parts) . " counter $verb comment \"outbound nat\"";
+            $post[] = '        ' . implode(' ', $parts) . " counter $verb comment \""
+                . rule_tag($r, 'outbound nat') . '"';
         }
     }
 
@@ -946,7 +976,8 @@ function build_nat(SimpleXMLElement $cfg, array $ifaces, array $wanDevs, array $
              * prerouting chain, ordered before the dnat rules. It carries no
              * translation target, so handle it before the target check. */
             if (!empty((string)($r->nordr ?? ''))) {
-                $noRdr[] = '        ' . implode(' ', $parts) . ' counter return comment "no rdr"';
+                $noRdr[] = '        ' . implode(' ', $parts) . ' counter return comment "'
+                    . rule_tag($r, 'no rdr') . '"';
                 continue;
             }
 
@@ -955,7 +986,8 @@ function build_nat(SimpleXMLElement $cfg, array $ifaces, array $wanDevs, array $
                 continue;
             }
             $to = $localPort !== '' ? "$target:$localPort" : $target;
-            $pre[] = '        ' . implode(' ', $parts) . " dnat to $to comment \"port forward\"";
+            $pre[] = '        ' . implode(' ', $parts) . " dnat to $to comment \""
+                . rule_tag($r, 'port forward') . '"';
 
             /* let the rewritten flow through the (drop-policy) forward hook. */
             $fp = ["ip daddr $target", $proto];
@@ -964,7 +996,8 @@ function build_nat(SimpleXMLElement $cfg, array $ifaces, array $wanDevs, array $
             } elseif ($extPort !== null) {
                 $fp[] = "dport $extPort";
             }
-            $passes[] = '        ' . implode(' ', $fp) . ' ct status dnat counter accept comment "port forward pass"';
+            $passes[] = '        ' . implode(' ', $fp) . ' ct status dnat counter accept comment "'
+                . rule_tag($r, 'port forward pass') . '"';
         }
     }
 
@@ -997,15 +1030,18 @@ function build_nat(SimpleXMLElement $cfg, array $ifaces, array $wanDevs, array $
             if ($peer !== null) {
                 $preParts[] = "ip saddr $peer";
             }
-            $pre[] = '        ' . implode(' ', $preParts) . " dnat to $internal comment \"1:1 nat inbound\"";
+            $pre[] = '        ' . implode(' ', $preParts) . " dnat to $internal comment \""
+                . rule_tag($r, '1:1 nat inbound') . '"';
 
             $postParts = ['oifname ' . ifname_expr($devs), "ip saddr $internal"];
             if ($peer !== null) {
                 $postParts[] = "ip daddr $peer";
             }
-            $post[] = '        ' . implode(' ', $postParts) . " snat to $external comment \"1:1 nat outbound\"";
+            $post[] = '        ' . implode(' ', $postParts) . " snat to $external comment \""
+                . rule_tag($r, '1:1 nat outbound') . '"';
 
-            $passes[] = "        ip daddr $internal ct status dnat counter accept comment \"1:1 nat pass\"";
+            $passes[] = "        ip daddr $internal ct status dnat counter accept comment \""
+                . rule_tag($r, '1:1 nat pass') . '"';
         }
     }
 
@@ -1334,9 +1370,7 @@ function rule_line(
     }
 
     $line = '        ' . ($stmt === '' ? '' : $stmt . ' ') . $log . "counter $verdict";
-    if ($descr !== '') {
-        $line .= " comment \"$descr\"";
-    }
+    $line .= ' comment "' . rule_tag($rule, $descr === '' ? $type : $descr) . '"';
 
     /* the per source limits guard the rule, so they are emitted just above it */
     if ($verdict === 'accept') {
@@ -1686,9 +1720,7 @@ function mvc_rule_line(
                 . "ct state new meta mark set $gwMark ct mark set $gwMark comment \"route-to $gwName\"";
         }
         $line = '        ' . ($stmt === '' ? '' : $stmt . ' ') . $log . "counter $verdict";
-        if ($uuid !== '') {
-            $line .= " comment \"$uuid\"";
-        }
+        $line .= ' comment "' . rule_tag($uuid, (string)($rule->description ?? '')) . '"';
 
         /* the per source limits guard the rule, so they are emitted just above
          * it, and a rule covering both families gets one set per family */

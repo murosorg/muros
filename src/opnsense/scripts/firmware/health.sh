@@ -183,4 +183,12 @@ if [ -z "${CMD}" -o "${CMD}" = "core" ]; then
 	core_check
 fi
 
+if [ -z "${CMD}" -o "${CMD}" = "firewall" ]; then
+	# Every configured rule should exist in the loaded ruleset. An item the
+	# generator ignores is accepted by the GUI, stored, listed back, and never
+	# applied, which no other check on this page would notice.
+	output_txt ">>> Check that the configured firewall rules reached the kernel"
+	output_cmd sh -c '/usr/local/opnsense/scripts/firewall/nft_verify.php 2>&1 || true'
+fi
+
 output_done
