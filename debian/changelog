@@ -1,3 +1,26 @@
+muros (0.9.66) trixie; urgency=medium
+
+  * Boot: the configuration boot chain runs as a unit. On FreeBSD /etc/rc ran
+    rc.bootup, which walks the whole configuration (login and resolver setup,
+    trust store, timezone, hostname, routing and the plugin chains); nothing
+    called it here, so every service described in config.xml stayed down until an
+    operator applied a page in the interface. The interactive interface
+    assignment it can reach is now conditional on an attached console so it
+    cannot hang the boot.
+  * Boot: the FreeBSD service and loader scaffolding is gone (/etc/rc with its
+    gpart and tunefs filesystem growth, the loader fragments, and rc.freebsd, an
+    rcorder walker over the generated rc.conf.d fragments). rc.reload_all and two
+    syshooks still called rc.freebsd, so a full reload ended on a missing script
+    instead of reloading anything.
+  * Traffic shaper: applying the page reloads the queueing disciplines and then
+    the ruleset that feeds them, instead of asking configd for the ipfw template
+    and rules that no longer exist. The statistics are reported in the shape the
+    page reads, with the counters of the classification rules taken from the
+    ruleset, which carries the rule uuid in its comment. The shaper service entry
+    also points at the tc backend instead of ipfw.
+
+ -- MurOS <dev@muros.org>  Mon, 31 Aug 2026 08:45:00 +0200
+
 muros (0.9.65) trixie; urgency=medium
 
   * Serial and USB modems: the last PPP type still generated for mpd5 is dialled
