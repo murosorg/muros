@@ -20,7 +20,10 @@
  *             since the configuration changed
  *   missing   neither carries it: nothing the box does will ever apply it
  *
- * A rule loaded for an item that no longer exists is reported as stale.
+ * A rule loaded for an item that no longer exists is reported as stale, and a
+ * rule loaded without one of the options it carries, because that option has
+ * no counterpart on this platform, is reported as degraded: it is in the
+ * kernel, it does not do everything it says.
  *
  * Usage: nft_verify.php [--json] [--ruleset <file>] [config.xml]
  * Exit status is 1 when an item is missing or pending, 0 otherwise.
@@ -179,7 +182,7 @@ function running_ruleset(?string $file): ?string
     return implode("\n", $output);
 }
 
-function intended_ruleset(string $path, array &$skipped): ?string
+function intended_ruleset(string $path, array &$skipped, array &$degraded): ?string
 {
     $output = [];
     $status = 0;
@@ -204,6 +207,11 @@ function intended_ruleset(string $path, array &$skipped): ?string
             $skipped[$entry['uuid']] = $entry;
         }
     }
+    foreach ($report['degraded'] ?? [] as $entry) {
+        if (!empty($entry['uuid'])) {
+            $degraded[$entry['uuid']][] = trim($entry['option'] . ' (' . $entry['detail'] . ')');
+        }
+    }
 
     if ($status !== 0) {
         return null;
@@ -215,7 +223,8 @@ function intended_ruleset(string $path, array &$skipped): ?string
 $items = expected_items($cfg);
 $running = running_ruleset($rulesetFile);
 $skipped = [];
-$intended = intended_ruleset($path, $skipped);
+$degraded = [];
+$intended = intended_ruleset($path, $skipped, $degraded);
 
 if ($intended === null) {
     fwrite(STDERR, "the ruleset generator failed, nothing can be verified\n");
@@ -225,10 +234,15 @@ if ($intended === null) {
 $intendedTags = tags_of_ruleset($intended);
 $runningTags = $running === null ? [] : tags_of_ruleset($running);
 
-$report = ['applied' => [], 'scheduled' => [], 'pending' => [], 'missing' => [], 'stale' => []];
+$report = ['applied' => [], 'scheduled' => [], 'pending' => [], 'missing' => [], 'stale' => [], 'degraded' => []];
 $known = [];
 foreach ($items as $item) {
     $known[$item['uuid']] = true;
+    if (isset($degraded[$item['uuid']])) {
+        $option = $item;
+        $option['description'] = trim($item['description'] . ' [' . implode(', ', $degraded[$item['uuid']]) . ']');
+        $report['degraded'][] = $option;
+    }
     if (isset($runningTags[$item['uuid']])) {
         $report['applied'][] = $item;
     } elseif (isset($skipped[$item['uuid']])) {
@@ -268,10 +282,12 @@ if ($json) {
             'pending' => count($report['pending']),
             'missing' => count($report['missing']),
             'stale' => count($report['stale']),
+            'degraded' => count($report['degraded']),
         ],
         'pending' => $report['pending'],
         'missing' => $report['missing'],
         'stale' => $report['stale'],
+        'degraded' => $report['degraded'],
     ]) . "\n";
     exit($failed > 0 ? 1 : 0);
 }
@@ -294,21 +310,23 @@ if ($running === null) {
 
 printf(
     "%d configured items, %d applied, %d outside their schedule, %d pending a reload, "
-        . "%d never applied, %d stale in the kernel\n\n",
+        . "%d never applied, %d stale in the kernel, %d with an ignored option\n\n",
     count($items),
     count($report['applied']),
     count($report['scheduled']),
     count($report['pending']),
     count($report['missing']),
-    count($report['stale'])
+    count($report['stale']),
+    count($report['degraded'])
 );
 
 print_group('never applied, the generator produces no rule for these:', $report['missing']);
 print_group('outside their schedule, left out on purpose until the window opens:', $report['scheduled']);
 print_group('pending, the filter has not been reloaded since these changed:', $report['pending']);
 print_group('stale, loaded in the kernel but no longer configured:', $report['stale']);
+print_group('loaded, but an option they carry has no counterpart here:', $report['degraded']);
 
-if ($failed === 0 && count($report['stale']) === 0) {
+if ($failed === 0 && count($report['stale']) === 0 && count($report['degraded']) === 0) {
     echo "the configuration and the ruleset agree\n";
 }
 

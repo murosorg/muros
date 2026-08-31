@@ -490,6 +490,45 @@ function nft_comment(string $value): string
 }
 
 /*
+ * MurOS: what a rule asks of connection tracking.
+ *
+ * pf let a rule choose how its connections were tracked. Most of that has no
+ * meaning here, some of it does, and all of it was read by the GUI and thrown
+ * away by the generator, which is the part that had to stop.
+ *
+ *   keep      the default, a tracked connection, what every rule already got
+ *   sloppy    a permissive TCP window check, which is what Linux connection
+ *             tracking does by default, so the rule already behaves this way
+ *   none      no tracking at all: the packets are excluded from connection
+ *             tracking in a raw chain, ahead of every other hook, and the
+ *             replies then need a rule of their own, exactly as before
+ *   modulate  sequence number modulation, which the Linux stack does not do
+ *   synproxy  answering the handshake on behalf of the host, which nftables
+ *             can do but not from a generic rule, not yet here
+ *
+ * The last two are reported as ignored rather than dropped in silence, so the
+ * rule check can tell the operator that a rule is loaded but not everything it
+ * carries was translated.
+ */
+function state_handling(SimpleXMLElement $rule, bool $legacy, string $stmt, string $tag)
+{
+    $type = strtolower(trim((string)($rule->statetype ?? '')));
+    $type = trim(str_replace('state', '', $type));
+
+    if ($type === '' || $type === 'keep' || $type === 'sloppy') {
+        return;
+    }
+
+    if ($type === 'none' || $type === 'no') {
+        $GLOBALS['muros_notrack'][] = '        ' . ($stmt === '' ? '' : $stmt . ' ')
+            . 'notrack comment "' . $tag . '"';
+        return;
+    }
+
+    degrade_rule($rule, 'statetype', $type);
+}
+
+/*
  * MurOS: quick, and what it takes to keep its meaning.
  *
  * pf evaluated every rule and let the last match decide, unless a rule was
@@ -618,6 +657,44 @@ function skip_rule($rule, string $reason, string $detail = '')
         return;
     }
     $GLOBALS['muros_skipped'][] = ['uuid' => $uuid, 'reason' => $reason, 'detail' => $detail];
+}
+
+/* An option carried by a rule that has no counterpart on this platform. The
+ * rule is loaded, the option is not, and saying so is the whole point: an
+ * option quietly dropped is how a configuration ends up meaning something
+ * other than what it says. */
+function degrade_rule($rule, string $option, string $detail = '')
+{
+    $uuid = trim((string)($rule['uuid'] ?? ''));
+    if ($uuid === '') {
+        return;
+    }
+    $GLOBALS['muros_degraded'][] = ['uuid' => $uuid, 'option' => $option, 'detail' => $detail];
+}
+
+/* Options read by the GUI and stored in the configuration that the generator
+ * has no way to express. Reported once per rule that carries one. */
+function report_ignored_options(SimpleXMLElement $rule)
+{
+    $known = [
+        'max' => 'a global limit on the connections of the rule',
+        'max-src-nodes' => 'a global limit on the sources of the rule',
+        'overload' => 'the table offenders are added to',
+        'allowopts' => 'accepting packets carrying IP options',
+        'tos' => 'matching the type of service field',
+        'set_prio' => 'setting the 802.1p priority',
+        'statetimeout' => 'a connection timeout of its own',
+        'adaptivestart' => 'adaptive connection timeouts',
+        'adaptiveend' => 'adaptive connection timeouts',
+        'state-policy' => 'binding the connections to the interface',
+    ];
+
+    foreach ($known as $field => $detail) {
+        $value = trim((string)($rule->{$field} ?? ''));
+        if ($value !== '' && $value !== '0') {
+            degrade_rule($rule, $field, $detail);
+        }
+    }
 }
 
 /*
@@ -1505,8 +1582,11 @@ function rule_line(
         $log = 'log prefix "muros,' . $type . ',' . $uuid . ' " ';
     }
 
+    $tag = rule_tag($rule, $descr === '' ? $type : $descr);
+    state_handling($rule, true, $stmt, $tag);
+    report_ignored_options($rule);
     $line = '        ' . ($stmt === '' ? '' : $stmt . ' ') . $log . "counter $verdict";
-    $line .= ' comment "' . rule_tag($rule, $descr === '' ? $type : $descr) . '"';
+    $line .= ' comment "' . $tag . '"';
 
     /* the per source limits guard the rule, so they are emitted just above it */
     if ($verdict === 'accept') {
@@ -1860,8 +1940,11 @@ function mvc_rule_line(
             $mangle[] = '        ' . ($mangleStmt === '' ? '' : $mangleStmt . ' ')
                 . "ct state new meta mark set $gwMark ct mark set $gwMark comment \"route-to $gwName\"";
         }
+        $tag = rule_tag($uuid, (string)($rule->description ?? ''));
+        state_handling($rule, false, $stmt, $tag);
+        report_ignored_options($rule);
         $line = '        ' . ($stmt === '' ? '' : $stmt . ' ') . $log . "counter $verdict";
-        $line .= ' comment "' . rule_tag($uuid, (string)($rule->description ?? '')) . '"';
+        $line .= ' comment "' . $tag . '"';
 
         /* the per source limits guard the rule, so they are emitted just above
          * it, and a rule covering both families gets one set per family */
@@ -1880,6 +1963,9 @@ function mvc_rule_line(
 /* ----------------------------------------------------------------- */
 
 $GLOBALS['muros_skipped'] = [];
+$GLOBALS['muros_degraded'] = [];
+/* match statements of the rules that asked for no connection tracking */
+$GLOBALS['muros_notrack'] = [];
 
 $path = null;
 $report = null;
@@ -2070,6 +2156,18 @@ foreach ($limitSets as $line) {
     $out[] = $line;
 }
 if (!empty($limitSets)) {
+    $out[] = '';
+}
+/* Rules that asked for no connection tracking. The exclusion has to happen
+ * before connection tracking runs, which is what the raw hook is for, so these
+ * live in a chain of their own rather than next to the rule they came from. */
+if (!empty($GLOBALS['muros_notrack'])) {
+    $out[] = '    chain raw_prerouting {';
+    $out[] = '        type filter hook prerouting priority raw; policy accept;';
+    foreach ($GLOBALS['muros_notrack'] as $line) {
+        $out[] = $line;
+    }
+    $out[] = '    }';
     $out[] = '';
 }
 $out[] = '    chain input {';
@@ -2314,5 +2412,8 @@ $out[] = '';
 echo implode("\n", $out);
 
 if ($report !== null) {
-    @file_put_contents($report, json_encode(['skipped' => $GLOBALS['muros_skipped']]));
+    @file_put_contents($report, json_encode([
+        'skipped' => $GLOBALS['muros_skipped'],
+        'degraded' => $GLOBALS['muros_degraded'],
+    ]));
 }
