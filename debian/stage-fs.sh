@@ -36,6 +36,30 @@ if [ -d "$ROOTDIR/contrib" ]; then
     ( cd "$ROOTDIR/contrib" && tar -cf - . ) | ( cd "$DEST/usr/local/opnsense/contrib" && tar -xf - )
 fi
 
+# MurOS: three tokens cannot be kept by hand in tokens.sed without drifting.
+# CORE_VERSION had been left behind at 0.9.14 while the package moved on, and
+# the commit and the hash stayed at "dev", so the firmware page of a running
+# box could not tell which build it was carrying. They are derived here: the
+# version follows the package version, the commit and the hash come from the
+# checkout when the build runs inside one.
+EFFECTIVE_TOKENS="$(mktemp)"
+trap 'rm -f "$EFFECTIVE_TOKENS"' EXIT
+
+PKGVERSION="$(sed -n 's|^s=%%CORE_PKGVERSION%%=\(.*\)=g$|\1|p' "$TOKENS")"
+COMMIT="dev"
+if [ -d "$ROOTDIR/.git" ] && command -v git > /dev/null 2>&1; then
+    COMMIT="$(git -C "$ROOTDIR" rev-parse --short=11 HEAD 2> /dev/null || echo dev)"
+fi
+
+grep -v -e '^s=%%CORE_VERSION%%=' -e '^s=%%CORE_COMMIT%%=' -e '^s=%%CORE_HASH%%=' \
+    "$TOKENS" > "$EFFECTIVE_TOKENS"
+{
+    printf 's=%%%%CORE_VERSION%%%%=%s=g\n' "${PKGVERSION:-0.0.0}"
+    printf 's=%%%%CORE_COMMIT%%%%=%s=g\n' "$COMMIT"
+    printf 's=%%%%CORE_HASH%%%%=%s=g\n' "$COMMIT"
+} >> "$EFFECTIVE_TOKENS"
+TOKENS="$EFFECTIVE_TOKENS"
+
 # Resolve .in (token substitution), .link (symlinks); keep .sample verbatim.
 find "$DEST" -type f -name '*.in' | while read -r f; do
     out="${f%.in}"
