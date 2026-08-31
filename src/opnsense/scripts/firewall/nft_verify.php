@@ -182,7 +182,7 @@ function running_ruleset(?string $file): ?string
     return implode("\n", $output);
 }
 
-function intended_ruleset(string $path, array &$skipped, array &$degraded): ?string
+function intended_ruleset(string $path, array &$skipped, array &$degraded, array &$emptyAliases): ?string
 {
     $output = [];
     $status = 0;
@@ -212,6 +212,11 @@ function intended_ruleset(string $path, array &$skipped, array &$degraded): ?str
             $degraded[$entry['uuid']][] = trim($entry['option'] . ' (' . $entry['detail'] . ')');
         }
     }
+    foreach ($report['aliases'] ?? [] as $entry) {
+        if (!empty($entry['name'])) {
+            $emptyAliases[] = $entry;
+        }
+    }
 
     if ($status !== 0) {
         return null;
@@ -224,7 +229,8 @@ $items = expected_items($cfg);
 $running = running_ruleset($rulesetFile);
 $skipped = [];
 $degraded = [];
-$intended = intended_ruleset($path, $skipped, $degraded);
+$emptyAliases = [];
+$intended = intended_ruleset($path, $skipped, $degraded, $emptyAliases);
 
 if ($intended === null) {
     fwrite(STDERR, "the ruleset generator failed, nothing can be verified\n");
@@ -288,6 +294,7 @@ if ($json) {
         'missing' => $report['missing'],
         'stale' => $report['stale'],
         'degraded' => $report['degraded'],
+        'empty_aliases' => $emptyAliases,
     ]) . "\n";
     exit($failed > 0 ? 1 : 0);
 }
@@ -326,7 +333,15 @@ print_group('pending, the filter has not been reloaded since these changed:', $r
 print_group('stale, loaded in the kernel but no longer configured:', $report['stale']);
 print_group('loaded, but an option they carry has no counterpart here:', $report['degraded']);
 
-if ($failed === 0 && count($report['stale']) === 0 && count($report['degraded']) === 0) {
+if (!empty($emptyAliases)) {
+    echo "aliases with no address at all, every rule referring to them matches nothing:\n";
+    foreach ($emptyAliases as $entry) {
+        printf("  %-16s %s\n", $entry['type'], $entry['name']);
+    }
+    echo "\n";
+}
+
+if ($failed === 0 && count($report['stale']) === 0 && count($report['degraded']) === 0 && empty($emptyAliases)) {
     echo "the configuration and the ruleset agree\n";
 }
 

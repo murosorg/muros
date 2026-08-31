@@ -126,6 +126,58 @@ function classify_alias_token(string $token, array &$al): void
     }
 }
 
+/* Directory holding the resolved content of the aliases the updater takes
+ * care of (hostnames, URL tables, GeoIP, ASN, MAC, authgroups, nested
+ * groups). Overridable so the generator can be exercised outside a running
+ * system. */
+function alias_cache_dir(): string
+{
+    $dir = (string)getenv('MUROS_ALIASTABLES');
+    return $dir !== '' ? rtrim($dir, '/') : '/var/db/aliastables';
+}
+
+/* Fold the resolved content of an alias into the elements collected from the
+ * configuration.
+ *
+ * The configuration only holds what the operator typed: a country code, a
+ * URL, a hostname, the name of another alias. Turning that into addresses is
+ * the job of update_tables.py, which writes the result to
+ * /var/db/aliastables/<name>.txt and pushes it into the named set.
+ *
+ * On pf that was enough, because `pfctl -f` kept the contents of the tables
+ * across a ruleset reload. nftables has no such thing: nft_apply.sh starts
+ * with `flush ruleset`, so every reload emptied every dynamic alias and the
+ * rules using them stopped matching until the next run of the updater, up to
+ * a minute later. Reading the cache here makes the generated ruleset carry
+ * the addresses itself, so a reload is seamless and a rule that references a
+ * GeoIP or URL table alias is armed the moment it is loaded. */
+function merge_alias_cache(array &$aliases): void
+{
+    $dir = alias_cache_dir();
+    foreach ($aliases as $name => &$al) {
+        $file = $dir . '/' . $name . '.txt';
+        if (!is_readable($file)) {
+            continue;
+        }
+        $handle = fopen($file, 'r');
+        if ($handle === false) {
+            continue;
+        }
+        $count = 0;
+        while (($line = fgets($handle)) !== false) {
+            $token = trim($line);
+            if ($token === '' || $token[0] === '#' || $token[0] === '!') {
+                continue;
+            }
+            classify_alias_token($token, $al);
+            $count++;
+        }
+        fclose($handle);
+        $al['cached'] = $count;
+    }
+    unset($al);
+}
+
 /* Read firewall aliases from both the modern (OPNsense/Firewall/Alias) and
  * the legacy (aliases) locations and turn each into address and/or port
  * element lists. Returns name => [v4, v6, port, type, hasaddr, hasport]. */
@@ -179,6 +231,8 @@ function build_aliases(SimpleXMLElement $cfg): array
         }
     }
 
+    merge_alias_cache($aliases);
+
     foreach ($aliases as &$al) {
         $isPort = ($al['type'] === 'port') || (!empty($al['port']) && empty($al['v4']) && empty($al['v6']));
         $al['hasport'] = $isPort;
@@ -226,6 +280,26 @@ function ep_negated(?SimpleXMLElement $ep): bool
 /* Emit the `set` definitions for every alias. Address aliases always get
  * both an IPv4 and an IPv6 set (possibly empty) so references in either
  * family resolve; port aliases get an inet_service set. */
+/* Render an element list, wrapped over several lines. A GeoIP or URL table
+ * alias routinely holds tens of thousands of prefixes and nft accepts new
+ * lines inside the braces, so there is no reason to emit one unreadable
+ * multi-megabyte line. */
+function element_lines(array $values, string $indent): array
+{
+    $values = array_values(array_unique($values));
+    if (count($values) <= 8) {
+        return [$indent . 'elements = { ' . implode(', ', $values) . ' }'];
+    }
+    $lines = [$indent . 'elements = {'];
+    foreach (array_chunk($values, 8) as $chunk) {
+        $lines[] = $indent . '    ' . implode(', ', $chunk) . ',';
+    }
+    $last = count($lines) - 1;
+    $lines[$last] = rtrim($lines[$last], ',');
+    $lines[] = $indent . '}';
+    return $lines;
+}
+
 function alias_set_lines(array $aliases): array
 {
     $lines = [];
@@ -244,6 +318,15 @@ function alias_set_lines(array $aliases): array
         if ($overload) {
             $expire = 3600;
             $setFlags = 'flags dynamic,timeout;';
+        }
+        if (($al['hasaddr'] ?? false) && !$overload && empty($al['v4']) && empty($al['v6'])) {
+            /* an address alias that ends up with no element matches nothing:
+               say so instead of loading a rule that can never fire */
+            $GLOBALS['muros_aliases'][] = [
+                'name' => $name,
+                'type' => ($al['type'] ?? '') !== '' ? (string)$al['type'] : 'host',
+                'cached' => (int)($al['cached'] ?? 0),
+            ];
         }
         if ($al['hasaddr'] ?? false) {
             foreach (['v4' => 'ipv4_addr', 'v6' => 'ipv6_addr'] as $fam => $atype) {
@@ -265,7 +348,9 @@ function alias_set_lines(array $aliases): array
                     $lines[] = '        size 65535;';
                 }
                 if (!empty($al[$fam])) {
-                    $lines[] = '        elements = { ' . implode(', ', array_unique($al[$fam])) . ' }';
+                    foreach (element_lines($al[$fam], '        ') as $line) {
+                        $lines[] = $line;
+                    }
                 }
                 $lines[] = '    }';
             }
@@ -275,7 +360,9 @@ function alias_set_lines(array $aliases): array
             $lines[] = '        type inet_service;';
             $lines[] = '        flags interval;';
             if (!empty($al['port'])) {
-                $lines[] = '        elements = { ' . implode(', ', array_unique($al['port'])) . ' }';
+                foreach (element_lines($al['port'], '        ') as $line) {
+                    $lines[] = $line;
+                }
             }
             $lines[] = '    }';
         }
@@ -2058,6 +2145,8 @@ function mvc_rule_line(
 
 $GLOBALS['muros_skipped'] = [];
 $GLOBALS['muros_degraded'] = [];
+/* address aliases that carry no element at all */
+$GLOBALS['muros_aliases'] = [];
 /* match statements of the rules that asked for no connection tracking */
 $GLOBALS['muros_notrack'] = [];
 
@@ -2510,5 +2599,6 @@ if ($report !== null) {
     @file_put_contents($report, json_encode([
         'skipped' => $GLOBALS['muros_skipped'],
         'degraded' => $GLOBALS['muros_degraded'],
+        'aliases' => $GLOBALS['muros_aliases'],
     ]));
 }
