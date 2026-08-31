@@ -1,3 +1,18 @@
+muros (0.9.73) trixie; urgency=medium
+
+  * Multi-WAN failover moves the connections that were already open. The
+    ruleset and the routing tables followed the surviving uplink, but every
+    established flow kept the mark of the gateway it was pinned to and stayed
+    steered into its table, so a failover only helped new connections. This is
+    what "pfctl -k gateway" did on FreeBSD, and connection tracking holds no
+    gateway to kill on, so the equivalent is to drop the tracked connections
+    carrying the mark of the gateway that changed state, and of the groups
+    holding it. The routing reconfiguration does it right after reloading the
+    ruleset, and the configd action that claimed the routing subsystem handled
+    it, while doing nothing at all, now runs the same script.
+
+ -- MurOS <jpzi@proton.me>  Mon, 31 Aug 2026 18:40:00 +0200
+
 muros (0.9.72) trixie; urgency=medium
 
   * Multi-WAN failover: a rule pinned to a gateway group now leaves through
