@@ -134,13 +134,20 @@
                 <Default>0</Default>
                 <Required>Y</Required>
             </enabled>
+            <!--
+                MurOS: the FreeBSD capture modes are gone, netmap and divert
+                sockets have no Linux equivalent. Detection captures with
+                af-packet and enforcement reads the netfilter queue. A
+                configuration imported from OPNsense keeps its value in
+                config.xml and is read as af-packet for pcap and as the queue
+                for netmap and divert, everywhere the mode is used.
+            -->
             <mode type="OptionField">
                 <Required>Y</Required>
-                <Default>pcap</Default>
+                <Default>afpacket</Default>
                 <OptionValues>
-                    <pcap>PCAP live mode (IDS)</pcap>
-                    <netmap>Netmap (IPS)</netmap>
-                    <divert>Divert (IPS)</divert>
+                    <afpacket>AF_PACKET live mode (IDS)</afpacket>
+                    <nfqueue>Netfilter queue (IPS)</nfqueue>
                 </OptionValues>
                 <ValidationMessage>Please select a valid mode.</ValidationMessage>
             </mode>

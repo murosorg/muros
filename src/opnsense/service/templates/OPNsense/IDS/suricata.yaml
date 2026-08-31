@@ -341,7 +341,8 @@ flow-timeouts:
 stream:
   memcap: 64mb
   checksum-validation: yes
-  inline: {% if OPNsense.IDS.general.mode|default("") in ["netmap", "divert"] %}true{% else %}auto{% endif +%}
+{# MurOS: inline when the packets come from the netfilter queue, the successor of netmap and the divert sockets #}
+  inline: {% if OPNsense.IDS.general.mode|default("") in ["nfqueue", "netmap", "divert"] %}true{% else %}auto{% endif +%}
 
   midstream-policy: ignore
   reassembly:
@@ -398,23 +399,41 @@ threading:
 luajit:
   states: 128
 
-netmap:
+{#
+    MurOS: netmap does not exist on Linux, and the pairs of host and hardware
+    rings it needed for inline mode do not either. Detection captures with
+    af-packet, one entry per selected interface, and enforcement reads the
+    netfilter queue the ruleset hands the packets to. The repeat mode marks a
+    packet it accepts so the ruleset does not queue it a second time, and
+    fail-open lets the traffic through when suricata is not reading, so stopping
+    the service does not stop the network.
+#}
+af-packet:
  - interface: default
    threads: auto
-   copy-mode: ips
+   cluster-type: cluster_flow
+   defrag: yes
+   use-mmap: yes
+   tpacket-v3: yes
+   ring-size: 4096
    disable-promisc: {% if helpers.empty('OPNsense.IDS.general.promisc') %}yes{% else %}no{% endif +%}
    checksum-checks: auto
 
-  {% if helpers.exists('OPNsense.IDS.general.interfaces') and OPNsense.IDS.general.mode|default("") == "netmap" %}
+  {% if helpers.exists('OPNsense.IDS.general.interfaces') and OPNsense.IDS.general.mode|default("afpacket") not in ["nfqueue", "netmap", "divert"] %}
     {% for intfName in OPNsense.IDS.general.interfaces.split(',') %}
 
  - interface: {{helpers.physical_interface(intfName)}}
-   copy-iface: {{helpers.physical_interface(intfName)}}^
-
- - interface: {{helpers.physical_interface(intfName)}}^
-   copy-iface: {{helpers.physical_interface(intfName)}}
     {% endfor %}
   {% endif %}
+
+nfq:
+  mode: repeat
+  repeat-mark: 1
+  repeat-mask: 1
+  bypass-mark: 2
+  bypass-mask: 2
+  fail-open: yes
+  batchcount: 20
 
 default-rule-path: /usr/local/etc/suricata/opnsense.rules
 

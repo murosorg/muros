@@ -1,0 +1,169 @@
+#!/bin/sh
+
+# Copyright (C) 2014 Deciso B.V.
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice,
+#    this list of conditions and the following disclaimer.
+#
+# 2. Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES,
+# INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
+# AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+# AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY,
+# OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+
+# MurOS: the intrusion detection had no control script at all: the configd start,
+# stop, restart and status actions pointed at an rc script that the port never
+# carried over, so the service could not be started by any means. The enable
+# flag, the capture mode and the daemon flags came from an rc.conf.d fragment
+# that rc.freebsd read; they come from the generated environment file now.
+#
+# The capture modes are the Linux ones. Detection listens with af-packet on the
+# selected interfaces, which replaces the FreeBSD pcap live mode. Enforcement
+# reads from the netfilter queue, which replaces netmap and the divert sockets:
+# the ruleset hands the packets over, suricata gives its verdict, and a queue
+# that no longer has a reader fails open.
+
+set -u
+
+ENVFILE="/usr/local/etc/muros/suricata.env"
+CONFIG="/usr/local/etc/suricata/suricata.yaml"
+PIDFILE="/var/run/suricata.pid"
+SETUP="/usr/local/opnsense/scripts/suricata/setup.sh"
+
+SURICATA_ENABLE="no"
+SURICATA_MODE="afpacket"
+SURICATA_QUEUES="0"
+SURICATA_INTERFACES=""
+SURICATA_VERBOSITY=""
+
+if [ -f "${ENVFILE}" ]; then
+	. "${ENVFILE}"
+fi
+
+suricata_pid()
+{
+	_pid=""
+	if [ -f "${PIDFILE}" ]; then
+		_pid=$(cat "${PIDFILE}" 2> /dev/null)
+	fi
+	case "${_pid}" in
+	''|*[!0-9]*)
+		return 1
+		;;
+	esac
+	[ -d "/proc/${_pid}" ] || return 1
+	echo "${_pid}"
+}
+
+suricata_flags()
+{
+	_flags="-c ${CONFIG} --pidfile ${PIDFILE} -D"
+
+	if [ -n "${SURICATA_VERBOSITY}" ]; then
+		_flags="${_flags} ${SURICATA_VERBOSITY}"
+	fi
+
+	if [ "${SURICATA_MODE}" = "nfqueue" ]; then
+		_queues=${SURICATA_QUEUES:-1}
+		if [ "${_queues}" -lt 1 ] 2> /dev/null; then
+			_queues=1
+		fi
+		_last=$((_queues - 1))
+		_flags="${_flags} -q 0"
+		_idx=1
+		while [ "${_idx}" -le "${_last}" ]; do
+			_flags="${_flags} -q ${_idx}"
+			_idx=$((_idx + 1))
+		done
+	else
+		for _dev in ${SURICATA_INTERFACES}; do
+			_flags="${_flags} --af-packet=${_dev}"
+		done
+	fi
+
+	echo "${_flags}"
+}
+
+suricata_start()
+{
+	if [ "${SURICATA_ENABLE}" != "yes" ]; then
+		echo "Intrusion detection is not enabled."
+		return 0
+	fi
+
+	if suricata_pid > /dev/null; then
+		echo "already running"
+		return 0
+	fi
+
+	if [ "${SURICATA_MODE}" != "nfqueue" ] && [ -z "${SURICATA_INTERFACES}" ]; then
+		echo "No interface selected for detection."
+		return 1
+	fi
+
+	[ -x "${SETUP}" ] && ${SETUP}
+
+	rm -f "${PIDFILE}"
+	echo "Starting suricata in ${SURICATA_MODE} mode."
+	/usr/bin/suricata $(suricata_flags)
+}
+
+suricata_stop()
+{
+	_pid=$(suricata_pid) || {
+		rm -f "${PIDFILE}"
+		return 0
+	}
+
+	echo "Stopping suricata."
+	kill -TERM "${_pid}" 2> /dev/null
+
+	_wait=0
+	while [ -d "/proc/${_pid}" ] && [ "${_wait}" -lt 30 ]; do
+		sleep 1
+		_wait=$((_wait + 1))
+	done
+
+	if [ -d "/proc/${_pid}" ]; then
+		kill -KILL "${_pid}" 2> /dev/null
+	fi
+
+	rm -f "${PIDFILE}"
+}
+
+case "${1:-}" in
+start|onestart|faststart|quietstart)
+	suricata_start
+	;;
+stop|onestop|faststop)
+	suricata_stop
+	;;
+restart|onerestart)
+	suricata_stop
+	suricata_start
+	;;
+status|onestatus)
+	if _pid=$(suricata_pid); then
+		echo "suricata is running as pid ${_pid}."
+	else
+		echo "suricata is not running."
+		exit 1
+	fi
+	;;
+*)
+	echo "usage: $0 {start|stop|restart|status}" >&2
+	exit 64
+	;;
+esac

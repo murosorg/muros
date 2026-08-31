@@ -19,22 +19,22 @@
         <id>ids.general.promisc</id>
         <label>Promiscuous mode</label>
         <type>checkbox</type>
-        <style>selectpicker ids_mode ids_mode_pcap ids_mode_netmap</style>
+        <style>selectpicker ids_mode ids_mode_afpacket ids_mode_nfqueue</style>
         <help>Enable promiscuous mode, for certain setups (like IPS with vlans), this is required to actually capture data on the physical interface.</help>
     </field>
     <field>
         <id>ids.general.interfaces</id>
         <label>Interfaces</label>
         <type>select_multiple</type>
-        <style>selectpicker ids_mode ids_mode_pcap ids_mode_netmap</style>
+        <style>selectpicker ids_mode ids_mode_afpacket ids_mode_nfqueue</style>
         <help>Select interface(s) to use. When enabling IPS, make sure the (virtual) driver supports this feature.</help>
     </field>
     <field>
         <id>ids.general.divert_listeners</id>
-        <label>Listeners</label>
-        <style>ids_mode ids_mode_divert</style>
+        <label>Queues</label>
+        <style>ids_mode ids_mode_nfqueue</style>
         <type>text</type>
-        <help>Specify the number of listeners to initiate, usually this equals the number of CPUs in your system.</help>
+        <help>Specify the number of netfilter queues to read from, usually this equals the number of CPUs in your system.</help>
     </field>
     <field>
         <type>header</type>
