@@ -191,7 +191,13 @@ function pf_syslog()
     $logfacilities = [];
 
     $logfacilities['firewall'] = ['facility' => ['firewall']];
-    $logfacilities['filter'] = ['facility' => ['filterlog']];
+    /*
+     * MurOS: the firewall lines are kernel messages, the nftables log statements
+     * of the generated ruleset, not the output of a filterlog daemon. A remote
+     * destination for the filter application therefore selects the kernel
+     * program.
+     */
+    $logfacilities['filter'] = ['facility' => ['kernel']];
 
     return $logfacilities;
 }

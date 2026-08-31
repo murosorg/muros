@@ -499,16 +499,15 @@ function filter_configure_sync($verbose = false, $load_aliases = true)
 
     service_log('.', $verbose);
 
-    /* bring up new instance of filterlog to load new rules */
-    killbypid('/var/run/filterlog.pid');
-    mwexecf('/usr/local/sbin/filterlog -i pflog0 -p %s', '/var/run/filterlog.pid');
-
     /*
-     * XXX: Flush table when not used, ideally this should be update_tables.py responsibility.
+     * MurOS: there is no log interface to attach a reader to. The nftables rules
+     * log through the kernel with a "muros,<action>,<uuid>" prefix, the journal
+     * collects them and read_log.py parses them for the log viewer and the
+     * widgets, so nothing has to be restarted when the ruleset is reloaded. The
+     * bogonsv6 flush went with pfctl as well: the bogon and private ranges are
+     * inline in the generated ruleset, so an unused list holds no state to
+     * flush.
      */
-    if (!is_bogonsv6_used()) {
-        mwexecf('/sbin/pfctl -t bogonsv6 -T flush');
-    }
 
     service_log('.', $verbose);
 
