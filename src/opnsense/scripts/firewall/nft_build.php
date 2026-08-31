@@ -490,6 +490,38 @@ function nft_comment(string $value): string
 }
 
 /*
+ * MurOS: quick, and what it takes to keep its meaning.
+ *
+ * pf evaluated every rule and let the last match decide, unless a rule was
+ * marked quick, which decided on the spot. nftables stops at the first match,
+ * so the port turned every rule into a quick one and a floating rule without
+ * quick, whose whole point is to be overridden by a later interface rule,
+ * started winning instead. The GUI offers the checkbox, the rule list shows
+ * it, and it did nothing.
+ *
+ * The two models agree once the list is rewritten. Under pf the winner is the
+ * first matching quick rule, since it stops evaluation there, and when no
+ * quick rule matches it is the last matching non quick rule. So the quick
+ * rules keep their order and are evaluated first, then the non quick ones in
+ * reverse order: a first match walk over that list picks exactly the rule pf
+ * would have picked. A non quick rule after the first matching quick rule is
+ * never reached in either model.
+ */
+function rule_is_quick(SimpleXMLElement $rule, bool $legacy): bool
+{
+    if (!$legacy) {
+        return trim((string)($rule->quick ?? '1')) !== '0';
+    }
+
+    /* only a floating rule can be non quick, an interface rule always is */
+    if (strtolower(trim((string)($rule->floating ?? ''))) !== 'yes') {
+        return true;
+    }
+
+    return isset($rule->quick) && trim((string)$rule->quick) !== '0';
+}
+
+/*
  * MurOS: the schedule of a rule.
  *
  * A rule can be limited to a time window, which is how an operator opens
@@ -1907,12 +1939,20 @@ $rules = [];
 $mangle = [];
 /* dynamic sets backing the per source limits of the rules that carry one */
 $srclimits = [];
+/* the quick rules keep their order, the non quick ones are reversed at the end
+ * so that a first match walk decides the way pf did */
+$quickRules = [];
+$lastMatchRules = [];
 /* legacy <filter><rule> entries */
 if (isset($cfg->filter)) {
     foreach ($cfg->filter->rule as $rule) {
         $line = rule_line($rule, $ifaces, $aliases, $mangle, $srclimits);
         if ($line !== null) {
-            $rules[] = $line;
+            if (rule_is_quick($rule, true)) {
+                $quickRules[] = [$line];
+            } else {
+                $lastMatchRules[] = [$line];
+            }
         }
     }
 }
@@ -1928,9 +1968,21 @@ if (isset($cfg->OPNsense->Firewall->Filter->rules->rule)) {
         return ((int)$a->sequence) <=> ((int)$b->sequence);
     });
     foreach ($mvcRules as $rule) {
-        foreach (mvc_rule_line($rule, $ifaces, $aliases, $mangle, $srclimits) as $line) {
-            $rules[] = $line;
+        $lines = mvc_rule_line($rule, $ifaces, $aliases, $mangle, $srclimits);
+        if (empty($lines)) {
+            continue;
         }
+        if (rule_is_quick($rule, false)) {
+            $quickRules[] = $lines;
+        } else {
+            $lastMatchRules[] = $lines;
+        }
+    }
+}
+
+foreach (array_merge($quickRules, array_reverse($lastMatchRules)) as $lines) {
+    foreach ($lines as $line) {
+        $rules[] = $line;
     }
 }
 
