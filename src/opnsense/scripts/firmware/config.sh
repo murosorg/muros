@@ -37,7 +37,6 @@ LICENSEDIR="/usr/local/share/licenses"
 PIPEFILE="/tmp/pkg_upgrade.pipe"
 FLOCK="/usr/bin/flock"
 SELF=$(basename ${0%.sh})
-PKG="/usr/local/sbin/pkg"
 TEE="/usr/bin/tee -a"
 PRODUCT="OPNsense"
 

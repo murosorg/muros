@@ -28,9 +28,19 @@
 """
 import datetime
 import glob
+import shutil
 import sqlite3
 import syslog
 import os
+
+
+def sqlite3_binary():
+    """ MurOS: the command line tool used to salvage a corrupted database.
+        FreeBSD had it in /usr/local/bin, Debian in /usr/bin, and it is not
+        installed everywhere, so the repair is skipped rather than run against
+        a path that does not exist and silently truncate the database.
+    """
+    return shutil.which('sqlite3')
 
 def check_and_repair(filename_mask, force_repair=False):
     """ check and repair sqlite databases
@@ -60,6 +70,10 @@ def check_and_repair(filename_mask, force_repair=False):
                 cur.execute('analyze')
             except sqlite3.DatabaseError as e:
                 if str(e).find('malformed') > -1 or force_repair:
+                    sqlite3_cmd = sqlite3_binary()
+                    if sqlite3_cmd is None:
+                        syslog.syslog(syslog.LOG_ERR, "sqlite3 repair %s skipped, no sqlite3 command" % filename)
+                        continue
                     syslog.syslog(syslog.LOG_ERR, "sqlite3 repair %s" % filename)
                     filename_tmp = '%s.fix'%filename
                     filename_sql = '%s.sql'%filename
@@ -68,7 +82,7 @@ def check_and_repair(filename_mask, force_repair=False):
                         if os.path.exists(tmp_filename):
                             os.remove(tmp_filename)
                     # export the usable parts from the file to an sql file
-                    os.system('echo ".dump" | /usr/local/bin/sqlite3 %s > %s ' % (filename, filename_sql))
+                    os.system('echo ".dump" | %s %s > %s ' % (sqlite3_cmd, filename, filename_sql))
                     # remove transaction and error blocks
                     with open(filename_sql, 'r') as f_in:
                         with open(filename_sql_clean, 'w') as f_out:
@@ -76,7 +90,7 @@ def check_and_repair(filename_mask, force_repair=False):
                                 if line.strip().split(';')[0] not in ('BEGIN TRANSACTION', 'ROLLBACK'):
                                     f_out.write(line)
                     # create a new sqlite3 database
-                    os.system('/usr/local/bin/sqlite3 %s < %s ' % (filename_tmp, filename_sql_clean))
+                    os.system('%s %s < %s ' % (sqlite3_cmd, filename_tmp, filename_sql_clean))
                     # cleanup / move new database into place
                     if os.path.exists(filename_tmp):
                         for tmp_filename in [filename, filename_sql, filename_sql_clean]:

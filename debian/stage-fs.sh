@@ -142,6 +142,15 @@ net.ipv4.ip_forward = 1
 net.ipv6.conf.all.forwarding = 1
 SCTL
 
+# apt: where the changelog of a MurOS package is published. Without this, apt
+# has no changelog source for a third party repository and the firmware page
+# can only show the history of the version already installed.
+install -d "$DEST/etc/apt/apt.conf.d"
+cat > "$DEST/etc/apt/apt.conf.d/60muros-changelogs" <<'APTCL'
+// Owned by the muros package.
+Acquire::Changelogs::URI::Origin::MurOS "https://download.muros.org/changelogs/@CHANGEPATH@";
+APTCL
+
 # PAM credential sync: MurOS keeps a single administrative credential shared by
 # the web UI (bcrypt hash in /conf/config.xml) and the console/SSH login (PAM,
 # /etc/shadow). The config.xml -> shadow direction is handled by the account

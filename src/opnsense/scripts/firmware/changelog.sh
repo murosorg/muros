@@ -31,11 +31,16 @@ set -e
 
 DESTDIR="/usr/local/opnsense/changelog"
 
+# The changelog of a Debian package travels with the package, so the history of
+# the running version is already on the box and apt can fetch the one of a
+# version not installed yet. Nothing is downloaded from a separate feed.
+SOURCE="muros"
+
 changelog_remove()
 {
 	mkdir -p ${DESTDIR}
 
-	for FILE in $(find ${DESTDIR} -mindepth 1 -maxdepth 1 \! -name 'changelog.txz*'); do
+	for FILE in $(find ${DESTDIR} -mindepth 1 -maxdepth 1); do
 		rm -rf ${FILE}
 	done
 
@@ -44,21 +49,43 @@ changelog_remove()
 
 changelog_url()
 {
-	# MurOS does not publish a signed changelog set yet
-	echo ""
+	echo "https://muros.org/docs/changelog.html"
 }
 
 changelog_fetch()
 {
-	# No remote changelog feed on Debian yet; keep an empty but valid index so
-	# the GUI renders cleanly instead of erroring on a missing file.
 	mkdir -p ${DESTDIR}
-	[ -f ${DESTDIR}/index.json ] || echo '[]' > ${DESTDIR}/index.json
+
+	RAW=$(mktemp)
+
+	# the version that would be installed next, when the repository publishes
+	# its changelog; a short timeout keeps the page responsive when it does not
+	INSTALLED=$(dpkg-query -W -f='${Version}' ${SOURCE} 2> /dev/null || echo)
+	CANDIDATE=$(apt-cache policy ${SOURCE} 2> /dev/null | awk '/Candidate:/ { print $2 }')
+	if [ -n "${CANDIDATE}" -a "${CANDIDATE}" != "(none)" -a "${CANDIDATE}" != "${INSTALLED}" ]; then
+		timeout 20 apt-get changelog ${SOURCE} 2> /dev/null >> ${RAW} || :
+	fi
+
+	# the history of the running version, shipped with the package itself
+	if [ -f /usr/share/doc/${SOURCE}/changelog.gz ]; then
+		zcat /usr/share/doc/${SOURCE}/changelog.gz >> ${RAW} 2> /dev/null || :
+	elif [ -f /usr/share/doc/${SOURCE}/changelog.Debian.gz ]; then
+		zcat /usr/share/doc/${SOURCE}/changelog.Debian.gz >> ${RAW} 2> /dev/null || :
+	elif [ -f /usr/share/doc/${SOURCE}/changelog ]; then
+		cat /usr/share/doc/${SOURCE}/changelog >> ${RAW} || :
+	fi
+
+	${BASEDIR}/changelog-parse.py ${RAW} ${DESTDIR} || echo '[]' > ${DESTDIR}/index.json
+	rm -f ${RAW}
 }
 
 changelog_show()
 {
 	FILE="${DESTDIR}/${1}"
+
+	if [ ! -f "${FILE}" ]; then
+		changelog_fetch
+	fi
 
 	if [ -f "${FILE}" ]; then
 		cat "${FILE}"
@@ -71,13 +98,17 @@ VERSION=${2}
 if [ "${COMMAND}" = "fetch" ]; then
 	changelog_fetch
 elif [ "${COMMAND}" = "cron" ]; then
-	# spread the (currently no-op) refresh over the next 12 hours
+	# spread the refresh over the next 12 hours
 	sleep $(shuf -i 600-43800 -n 1)
 	changelog_fetch
 elif [ "${COMMAND}" = "remove" ]; then
 	changelog_remove
 elif [ "${COMMAND}" = "list" ]; then
-	changelog_fetch
+	# the firmware page asks for this list on every visit, only rebuild it when
+	# it is missing or an hour old, so apt is not asked over the network for it
+	if [ ! -f ${DESTDIR}/index.json ] || [ -n "$(find ${DESTDIR}/index.json -mmin +60 2> /dev/null)" ]; then
+		changelog_fetch
+	fi
 	changelog_show index.json
 elif [ "${COMMAND}" = "url" ]; then
 	changelog_url

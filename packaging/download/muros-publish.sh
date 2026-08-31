@@ -124,6 +124,45 @@ fix_permissions() {
 	done
 }
 
+# apt has no changelog source for a third party repository unless the
+# repository publishes one and the client is told where. The client side ships
+# with the package, this is the other half: the changelog of the package is
+# written where apt expects it, so the firmware page of a box running an older
+# version can show what the pending update contains.
+publish_changelog() {
+	local src pkg version source dir prefix
+	src="$1"
+	pkg="$2"
+	version="$3"
+
+	source="$(dpkg-deb -f "${src}" Source | awk '{ print $1 }')"
+	[ -n "${source}" ] || source="${pkg}"
+
+	case "${source}" in
+	lib?*) prefix="$(echo "${source}" | cut -c1-4)" ;;
+	*) prefix="$(echo "${source}" | cut -c1)" ;;
+	esac
+
+	dir="${REPO}/changelogs/main/${prefix}/${source}"
+
+	if [ "${DRYRUN}" = yes ]; then
+		log "would publish the changelog to ${dir}/${source}_${version}"
+		return 0
+	fi
+
+	mkdir -p "${dir}"
+	if ! dpkg-deb --fsys-tarfile "${src}" 2> /dev/null |
+	    tar -xO ./usr/share/doc/"${pkg}"/changelog.gz 2> /dev/null |
+	    zcat > "${dir}/${source}_${version}" 2> /dev/null; then
+		rm -f "${dir}/${source}_${version}"
+		log "no changelog found in ${src}"
+		return 0
+	fi
+
+	chmod 644 "${dir}/${source}_${version}"
+	log "published the changelog of ${source} ${version}"
+}
+
 publish_deb() {
 	local src pkg version arch published
 	src="$(fetch "$1")"
@@ -149,6 +188,7 @@ publish_deb() {
 
 	run reprepro -b "${REPO}" includedeb "${DIST}" "${src}"
 	run reprepro -b "${REPO}" deleteunreferenced
+	publish_changelog "${src}" "${pkg}" "${version}"
 	fix_permissions
 
 	if [ "${DRYRUN}" = no ]; then

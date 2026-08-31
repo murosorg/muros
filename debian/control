@@ -21,7 +21,7 @@ Depends: ${misc:Depends},
  kea-dhcp4-server, kea-dhcp6-server, kea-ctrl-agent, kea-dhcp-ddns-server,
  radvd, syslog-ng-core, rrdtool
 Recommends: unbound, dnsmasq, softflowd, pptp-linux, xl2tpd, openssh-server, openvpn, wireguard-tools, strongswan, charon-systemd, strongswan-swanctl,
- keepalived, conntrackd, isc-dhcp-relay, monit, hostapd, wpasupplicant, wireless-regdb
+ keepalived, conntrackd, isc-dhcp-relay, monit, hostapd, wpasupplicant, wireless-regdb, sqlite3
 Suggests: suricata, beep
 Description: MurOS firewall and routing platform
  MurOS is an OPNsense fork ported to Debian. It provides a web-managed
