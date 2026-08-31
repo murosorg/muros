@@ -1,3 +1,20 @@
+muros (0.9.84) trixie; urgency=medium
+
+  * A pipe of the traffic shaper gets the queue it was configured with. The page
+    has always offered the scheduler, the controlled delay targets, explicit
+    congestion notification and the flow counts; the port read none of them and
+    gave every pipe the same default, so a pipe tuned against bufferbloat
+    behaved like one left alone. All of it is passed to the kernel now, and a
+    pipe that adds delay still gets a delay queue.
+  * What the kernel cannot express is named instead of ignored: the schedulers
+    with no counterpart, the dynamic pipe per source or destination, the hash
+    bucket count, and shaping what arrives on an interface, which needs an
+    intermediate device and is not done yet. Printed when the shaper is applied,
+    available as configctl shaper notes, and shown by the health audit.
+  * Changing the scheduler of a pipe used to leave the old one in place.
+
+ -- MurOS <jpzi@proton.me>  Mon, 31 Aug 2026 23:50:00 +0200
+
 muros (0.9.83) trixie; urgency=medium
 
   * The table offenders are added to is filled again. A rule carrying a per
