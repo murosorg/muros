@@ -40,10 +40,10 @@
       * chain acct_<zone> hooks the forward path and references the accounting
         sets so matched elements get counted; it never issues a verdict.
 
-    The table is recreated idempotently on demand. Because the main firewall
-    ruleset is rebuilt with "flush ruleset", a reload wipes this table; the
-    captive portal background process re-runs ensure_zone() and repopulates the
-    member sets on its next sync cycle.
+    The table is recreated idempotently on demand and is not touched by a
+    firewall reload: the main ruleset replaces its own table and nothing else,
+    so authenticated clients stay authenticated and their counters keep
+    running across a reload.
 """
 import ipaddress
 import json

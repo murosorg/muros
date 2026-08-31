@@ -3,7 +3,9 @@
 # MurOS firewall apply.
 #
 # Builds the nftables ruleset from the configuration, validates it in
-# check mode, then loads it atomically with `nft -f`. This is the Debian
+# check mode, then loads it atomically with `nft -f`. The generated file
+# replaces the `inet muros` table and only that one, so the tables owned by
+# other parts of the system keep their contents across a reload. This is the Debian
 # replacement for the FreeBSD `pfctl -f` reload performed by filter.inc.
 # Validating before committing guarantees a malformed ruleset can never
 # replace a working one.
@@ -21,11 +23,12 @@ nft -c -f "$RULES"
 nft -f "$RULES"
 
 # The captive portal keeps its enforcement (redirect, forward gate and portal
-# input rules) in a dedicated `inet captiveportal` table. The `flush ruleset`
-# performed by the rules above wipes it, so rebuild it from the configuration
-# once the main ruleset is committed. Best effort: a captive portal problem
-# must never fail the firewall reload, and the authenticated client sets are
-# repopulated by the captive portal background process on its next cycle.
+# input rules) in a dedicated `inet captiveportal` table. That table is left
+# untouched by the load above, which replaces `inet muros` alone, so the
+# authenticated clients and their traffic counters survive a firewall reload.
+# The rebuild below only reconciles the enforcement with the configuration,
+# picking up a zone whose interfaces or allowed addresses changed. Best
+# effort: a captive portal problem must never fail the firewall reload.
 CP_SETUP=/usr/local/opnsense/scripts/captiveportal/setup_fw.py
 if [ -x "$CP_SETUP" ] && grep -q '<captiveportal>' "$CONFIG" 2> /dev/null; then
     "$CP_SETUP" "$CONFIG" > /dev/null 2>&1 || true
