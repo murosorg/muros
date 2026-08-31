@@ -33,28 +33,6 @@
 
 require_once('filter.lib.inc');
 
-function is_bogonsv6_used()
-{
-    global $config;
-
-    /*
-     * Only use bogonsv6 table if IPv6 Allow is on, and at least
-     * one enabled interface also has "blockbogons" enabled.
-     */
-    $usebogonsv6 = false;
-
-    if (is_ipv6_allowed() && isset($config['interfaces'])) {
-        foreach ($config['interfaces'] as $ifacedata) {
-            if (isset($ifacedata['enable']) && isset($ifacedata['blockbogons'])) {
-                $usebogonsv6 = true;
-                break;
-            }
-        }
-    }
-
-    return $usebogonsv6;
-}
-
 /* sort by interface only, retain the original order of rules that apply to
    the same interface */
 function filter_rules_sort()
@@ -110,48 +88,45 @@ function filter_configure()
 
 /**
  * sync interface groups, but leave the ones not managed by us intact.
+ *
+ * MurOS: FreeBSD had interface groups in the kernel, ifconfig attached a device
+ * to as many of them as needed and pf matched the group name as if it were an
+ * interface. Linux has device groups too, but a netdev belongs to exactly one
+ * of them, which cannot express an interface being in several groups at once,
+ * and nothing in the netfilter matchers looks at them anyway. So the membership
+ * is kept as state, written here and read back by legacy_interfaces_details(),
+ * and the ruleset generator expands a group to the devices of its members when
+ * it emits the interface match.
  */
 function ifgroup_setup()
 {
     global $config;
 
-    $all_ifgroups = [];
     $all_ifs = [];
-
-    $interface_details = legacy_interfaces_details();
 
     if (isset($config['ifgroups']['ifgroupentry'])) {
         foreach ($config['ifgroups']['ifgroupentry'] as $group) {
-            $all_ifgroups[$group['ifname']] = [];
             foreach (preg_split('/[ |,]+/', $group['members']) as $member) {
                 if (!empty($config['interfaces'][$member])) {
                     foreach (get_real_interface($member, 'both') as $if) {
                         if (!isset($all_ifs[$if])) {
                             $all_ifs[$if] = [];
                         }
-                        $all_ifs[$if][] = $group['ifname'];
-                        $all_ifgroups[$group['ifname']][] = $if;
+                        if (!in_array($group['ifname'], $all_ifs[$if])) {
+                            $all_ifs[$if][] = $group['ifname'];
+                        }
                     }
                 }
             }
         }
     }
-    foreach ($interface_details as $intf => $details) {
-        $thisifgroups = !empty($details['groups']) ? $details['groups'] : [];
-        foreach ($thisifgroups as $ifgroup) {
-            if (isset($all_ifgroups[$ifgroup]) && !in_array($intf, $all_ifgroups[$ifgroup])) {
-                // detach
-                mwexecf('/sbin/ifconfig %s -group %s', [$intf, $ifgroup]);
-            }
-        }
-        if (!empty($all_ifs[$intf])) {
-            foreach ($all_ifs[$intf] as $ifgroup) {
-                if (!in_array($ifgroup, $thisifgroups)) {
-                    // attach
-                    mwexecf('/sbin/ifconfig %s group %s', [$intf, $ifgroup]);
-                }
-            }
-        }
+
+    ksort($all_ifs);
+
+    /* the state is advisory, a stale file only mislabels a device in a status
+     * page, so a failed write is logged and ignored rather than fatal */
+    if (@file_put_contents(IFGROUP_STATE_FILE, json_encode($all_ifs)) === false) {
+        log_error('unable to write the interface group state to ' . IFGROUP_STATE_FILE);
     }
 }
 
@@ -178,8 +153,10 @@ function filter_configure_sync($verbose = false, $load_aliases = true)
      * delegate ruleset generation and loading to the same nft pipeline used
      * by the GUI "Apply" action (nft_build.php -> nft -c -> nft -f). This
      * keeps a single source of truth for the ruleset and avoids the missing
-     * FreeBSD pfctl/pflog tooling. The legacy pf body below is retained for
-     * reference during the migration but is intentionally unreachable here.
+     * FreeBSD pfctl and pflog tooling. Nothing here writes a pf ruleset
+     * anymore, and there is no reader to restart: the log statements of the
+     * generated ruleset go to the kernel and read_log.py picks them up from the
+     * journal.
      */
     if (isset($config['system']['disablefilter'])) {
         /* firewall disabled: drop the MurOS ruleset entirely. */
@@ -206,501 +183,6 @@ function filter_configure_sync($verbose = false, $load_aliases = true)
     if ($load_aliases) {
         configd_run('template reload OPNsense/Filter');
     }
-
-    return;
-
-    /*
-     * Kickstart dnctl and ipfw (no-op if shaper not configured)
-     * to ensure consistent pipe/queue config for pf and service
-     * start during bootup.
-     */
-    mwexecf('/usr/local/opnsense/scripts/shaper/start.sh');
-
-    ifgroup_setup();
-
-    service_log('.', $verbose);
-
-    // initialize fw plugin object
-    $fw = filter_core_get_initialized_plugin_system();
-    filter_core_bootstrap($fw);
-    $cnfint = iterator_to_array($fw->getInterfaceMapping());
-    plugins_firewall($fw);
-    // register legacy user rules
-    filter_core_rules_user($fw);
-
-    // manual outbound nat rules
-    if (
-        !empty($config['nat']['outbound']['mode']) &&
-          in_array($config['nat']['outbound']['mode'], array("advanced", "hybrid"))
-    ) {
-        if (!empty($config['nat']['outbound']['rule'])) {
-            foreach ($config['nat']['outbound']['rule'] as $rule) {
-                if (is_array($rule)) {
-                    $fw->registerSNatRule(100, $rule);
-                }
-            }
-        }
-    }
-
-    if (
-        empty($config['nat']['outbound']['mode']) ||
-          in_array($config['nat']['outbound']['mode'], array("automatic", "hybrid"))
-    ) {
-        // generate standard outbound rules when mode is automatic or hybrid
-        $intfv4 = array();
-        foreach ($fw->getInterfaceMapping() as $intf => $intfcf) {
-            if (!empty($intfcf['ifconfig']['ipv4']) && empty($intfcf['gateway'])) {
-                $intfv4[] = $intf;
-            }
-        }
-        // add VPN and local networks
-        $intfv4 = array_merge($intfv4, filter_core_get_default_nat_outbound_networks());
-        foreach ($fw->getInterfaceMapping() as $intf => $ifcfg) {
-            /* XXX VPN is allowed but not OpenVPN dropping /tmp/ovpnxy_router(v6) file */
-            if (substr($ifcfg['if'], 0, 4) != 'ovpn' && !empty($ifcfg['gateway'])) {
-                foreach (array(500, null) as $dstport) {
-                    $rule = array(
-                        'descr' => 'Automatic outbound rule',
-                        'destination' => array('any' => true),
-                        'dstport' => $dstport,
-                        'interface' => $intf,
-                        'ipprotocol' => 'inet',
-                        'log' => !empty($config['syslog']['logoutboundnat']),
-                        'staticnatport' => !empty($dstport),
-                    );
-                    foreach ($intfv4 as $network) {
-                        $rule['source'] = array("network" => $network);
-                        $fw->registerSNatRule(200, $rule);
-                    }
-                }
-            }
-        }
-    }
-
-    // prevent redirection on ports with "lock out" protection
-    foreach (filter_core_get_antilockout() as $lockoutif => $lockoutprts) {
-        foreach ($lockoutprts as $port) {
-            $rule = array(
-                'interface' => $lockoutif,
-                "nordr" => true,
-                "protocol" => "tcp",
-                'destination' => array('network' => "{$lockoutif}ip", 'port' => $port),
-                "descr" => "Anti lockout, prevent redirects for protected ports to this interface ip"
-            );
-            $fw->registerForwardRule(300, $rule);
-        }
-    }
-
-    foreach ((new OPNsense\Firewall\DNat())->rule->sortedBy(['sequence']) as $key => $rule) {
-        $fw->registerForwardRule(600, $rule->getNodeContent());
-    }
-    /**
-     * XXX: Apply schedules on all installed rules so we can use both legacy and MVC ones.
-     * Eventually this needs to be replaced, but as this requires legacy code, we cannot do that easily now
-     * without increasing impact.
-     */
-    $sched_kill_states = [];
-    foreach ($fw->iterateFilterRules() as $rule) {
-        $rrule = $rule->getRawRule();
-        if (!empty($rrule['sched'])) {
-            $descr = $rrule['descr'] ?? '';
-            $descr .= " ({$rrule['sched']})";
-            $rule->updateDescription($descr);
-            foreach ($config['schedules']['schedule'] as $sched) {
-                if ($sched['name'] == $rrule['sched']) {
-                    if (!filter_get_time_based_rule_status($sched)) {
-                        if (!isset($config['system']['schedule_states'])) {
-                            $sched_kill_states[] = $rrule['label'];
-                        }
-                        /* disable rule, suffix label to mark end of schedule */
-                        $rule->disable();
-                        $rule->updateDescription("[FIN] " . $descr);
-                    }
-                    break;
-                }
-            }
-        }
-    }
-
-    openlog("firewall", LOG_DAEMON, LOG_LOCAL4);
-
-    $aliases = filter_generate_aliases();
-    $aliases .= "\n# Plugins tables\n";
-    $aliases .= $fw->tablesToText();
-
-    service_log('.', $verbose);
-
-    $natrules = "\n# NAT Redirects\n";
-    $natrules .= "no nat proto carp all\n";
-    $natrules .= "no rdr proto carp all\n";
-    $natrules .= $fw->outputNatRules();
-
-    service_log('.', $verbose);
-
-    /* enable pf if we need to, otherwise disable */
-    if (!isset($config['system']['disablefilter'])) {
-        mwexecfm('/sbin/pfctl -e');
-    } else {
-        mwexecfm('/sbin/pfctl -d');
-
-        unset($fobj);
-
-        reopenlog();
-
-        service_log("done.\n", $verbose);
-
-        return;
-    }
-
-    service_log('.', $verbose);
-
-    $limitrules = '';
-
-    if (!empty($config['system']['maximumtableentries'])) {
-        $limitrules .= "set limit table-entries {$config['system']['maximumtableentries']}\n";
-        set_single_sysctl('net.pf.request_maxcount', $config['system']['maximumtableentries']);
-    } else {
-        $max_table_entries = filter_current_table_entries();
-        $req_table_entries = filter_default_table_entries();
-        if ($max_table_entries <= $req_table_entries) {
-            $limitrules .= "set limit table-entries {$req_table_entries}\n";
-            set_single_sysctl('net.pf.request_maxcount', $req_table_entries);
-        } else {
-            set_single_sysctl('net.pf.request_maxcount', $max_table_entries);
-        }
-    }
-
-    if ($config['system']['optimization'] != '') {
-        $limitrules .= "set optimization {$config['system']['optimization']}\n";
-        if ($config['system']['optimization'] == "conservative") {
-            $limitrules .= "set timeout { udp.first 300, udp.single 150, udp.multiple 900 }\n";
-        }
-    } else {
-        $limitrules .= "set optimization normal\n";
-    }
-
-    if (!empty($config['system']['adaptivestart']) && !empty($config['system']['adaptiveend'])) {
-        $limitrules .= "set timeout { adaptive.start {$config['system']['adaptivestart']}, adaptive.end {$config['system']['adaptiveend']} }\n";
-    } else {
-        $limitrules .= "set timeout { adaptive.start 0, adaptive.end 0 }\n";
-    }
-    if (!empty($config['system']['state-policy'])) {
-        $limitrules .= "set state-policy if-bound\n";
-    }
-
-    if (!empty($config['system']['maximumstates'])) {
-        $limitrules .= "set limit states {$config['system']['maximumstates']}\n";
-        $limitrules .= "set limit src-nodes {$config['system']['maximumstates']}\n";
-    } else {
-        $max_states = filter_default_state_size();
-        $limitrules .= "set limit states {$max_states}\n";
-        $limitrules .= "set limit src-nodes {$max_states}\n";
-    }
-    if (!empty($config['system']['maximumfrags'])) {
-        $limitrules .= "set limit frags {$config['system']['maximumfrags']}\n";
-    }
-
-    if (isset($config['system']['lb_use_sticky']) && is_numeric($config['system']['srctrack'] ?? null) && ($config['system']['srctrack'] > 0)) {
-        $limitrules .= "set timeout src.track {$config['system']['srctrack']}\n";
-    }
-
-    if (!empty($config['system']['syncookies'])) {
-        $arange = "";
-        if ($config['system']['syncookies'] == "adaptive") {
-            $arange = "(start {$config['system']['syncookies_adaptstart']}%, end {$config['system']['syncookies_adaptend']}%)";
-        }
-        $limitrules .= "set syncookies {$config['system']['syncookies']} {$arange}\n";
-    }
-
-    /* if pf already generated a hostid, reuse it */
-    $current_hostid = filter_current_hostid();
-    if (!empty($current_hostid)) {
-        $limitrules .= "set hostid {$current_hostid}\n";
-    }
-
-    if (!empty($config['system']['pfdebug'])) {
-        $limitrules .= "set debug {$config['system']['pfdebug']}\n";
-    }
-
-    if (!empty($config['system']['keepcounters'])) {
-        $limitrules .= "set keepcounters\n";
-    }
-
-    $rules = "{$limitrules}\n";
-    $rules .= "{$aliases} \n";
-    $rules .= "\n";
-    $rules .= "set skip on lo0\n";
-    $rules .= "set skip on pfsync0\n";
-    foreach ((new \OPNsense\IPsec\Swanctl(true))->VTIs->VTI->iterateItems() as $vti) {
-        if (!$vti->skip_fw->isEmpty()) {
-            $rules .= sprintf("set skip on ipsec%s\n", $vti->reqid);
-        }
-    }
-    $rules .= "\n";
-    $rules .= filter_generate_scrubbing($cnfint);
-    $rules .= "\n";
-    $rules .= $fw->anchorToText('nat,binat,rdr', 'head');
-    $rules .= "{$natrules}\n";
-    $rules .= $fw->anchorToText('nat,binat,rdr', 'tail');
-    $rules .= $fw->anchorToText('fw', 'head');
-    $rules .= filter_rules_legacy($cnfint);
-    $rules .= $fw->outputFilterRules();
-    $rules .= $fw->anchorToText('fw', 'tail');
-
-    @copy('/tmp/rules.debug', '/tmp/rules.debug.old');
-    @copy('/tmp/ifconfig.debug', '/tmp/ifconfig.debug.old');
-
-    mwexecf('ifconfig > %s', '/tmp/ifconfig.debug');
-    $fobj->truncate(0)->write($rules);
-    @file_put_contents('/tmp/rules.limits', $limitrules);
-
-    mwexecf('/sbin/pfctl -Of %s', '/tmp/rules.limits');
-    $load_failed = mwexecfm('/sbin/pfctl -f %s > %s', ['/tmp/rules.debug', '/tmp/rules.debug.error']);
-    foreach ($sched_kill_states as $label) {
-        mwexecf('/sbin/pfctl -k label -k %s', $label);
-    }
-
-    /*
-     * check for a error while loading the rules file.  if an error has occurred
-     * then output the contents of the error to the caller
-     */
-    if ($load_failed) {
-        $rules_error = explode("\n", file_get_contents('/tmp/rules.debug.error'));
-        $config_line = '';
-
-        /* only report issues with line numbers */
-        $line_error = explode(':', $rules_error[0]);
-        if (isset($line_error[1]) && (string)((int)$line_error[1]) == $line_error[1] && $line_error[1] > 0) {
-            $line_number = $line_error[1];
-            $line_split = file('/tmp/rules.debug');
-            if (is_array($line_split)) {
-                $config_line = sprintf(' - ' . gettext('The line in question reads [%s]: %s'), $line_number, $line_split[$line_number - 1]);
-            }
-        }
-
-        mwexecf('/sbin/pfctl -f %s', '/tmp/rules.debug.old');
-
-        syslog(LOG_ERR, trim(sprintf('There were error(s) loading the rules: %s%s', $rules_error[0], $config_line)));
-        file_put_contents(
-            '/tmp/rules.error',
-            sprintf(gettext('There were error(s) loading the rules: %s%s'), $rules_error[0], $config_line)
-        );
-
-        unset($fobj);
-
-        reopenlog();
-
-        service_log("failed.\n", $verbose);
-
-        return;
-    }
-
-    unlink('/tmp/rules.debug.error');
-
-    service_log('.', $verbose);
-
-    /*
-     * MurOS: there is no log interface to attach a reader to. The nftables rules
-     * log through the kernel with a "muros,<action>,<uuid>" prefix, the journal
-     * collects them and read_log.py parses them for the log viewer and the
-     * widgets, so nothing has to be restarted when the ruleset is reloaded. The
-     * bogonsv6 flush went with pfctl as well: the bogon and private ranges are
-     * inline in the generated ruleset, so an unused list holds no state to
-     * flush.
-     */
-
-    service_log('.', $verbose);
-
-    if ($load_aliases) {
-        configd_run('template reload OPNsense/Filter');
-        configd_run('filter refresh_aliases', true);
-    }
-
-    unset($fobj);
-
-    reopenlog();
-
-    service_log("done.\n", $verbose);
-}
-
-function filter_generate_scrubbing(&$FilterIflist)
-{
-    global $config;
-
-    $scrubrules = '';
-
-    /* custom rules must be first */
-    if (!empty($config['filter']['scrub']['rule'])) {
-        foreach ($config['filter']['scrub']['rule'] as $scrub_rule) {
-            if (!isset($scrub_rule['disabled'])) {
-                $scrub_rule_out = !empty($scrub_rule['noscrub']) ? "no " : "";
-                $scrub_rule_out .= "scrub";
-                $scrub_rule_out .= !empty($scrub_rule['direction']) ? " " . $scrub_rule['direction'] : "";
-                $scrub_rule_out .= " on ";
-                $interfaces = array();
-                foreach (explode(',', $scrub_rule['interface']) as $interface) {
-                    if (!empty($FilterIflist[$interface]['if'])) {
-                        $interfaces[] = $FilterIflist[$interface]['if'];
-                    }
-                }
-                $scrub_rule_out .= count($interfaces) > 1 ? "{ " . implode(' ', $interfaces) . " } " : $interfaces[0];
-                switch ($scrub_rule['proto']) {
-                    case 'any':
-                        break;
-                    case 'tcp/udp':
-                        $scrub_rule_out .= " proto {tcp udp}";
-                        break;
-                    default:
-                        $scrub_rule_out .= " proto " . $scrub_rule['proto'];
-                        break;
-                }
-                $scrub_rule_out .= " from ";
-                if (is_alias($scrub_rule['src'])) {
-                    $scrub_rule_out .= !empty($scrub_rule['srcnot']) ? "!" : "";
-                    $scrub_rule_out .= '$' . $scrub_rule['src'];
-                } elseif (is_ipaddr($scrub_rule['src'])) {
-                    $scrub_rule_out .= !empty($scrub_rule['srcnot']) ? "!" : "";
-                    $scrub_rule_out .= $scrub_rule['src'] . "/" . $scrub_rule['srcmask'];
-                } else {
-                    $scrub_rule_out .= "any";
-                }
-                if (!empty($scrub_rule['srcport']) && is_alias($scrub_rule['srcport'])) {
-                    $scrub_rule_out .= " port $" . $scrub_rule['srcport'];
-                } else {
-                    $scrub_rule_out .= !empty($scrub_rule['srcport']) ?  " port " . $scrub_rule['srcport'] : "";
-                }
-                $scrub_rule_out .= " to ";
-                if (is_alias($scrub_rule['dst'])) {
-                    $scrub_rule_out .= !empty($scrub_rule['dstnot']) ? "!" : "";
-                    $scrub_rule_out .= '$' . $scrub_rule['dst'];
-                } elseif (is_ipaddr($scrub_rule['dst'])) {
-                    $scrub_rule_out .= !empty($scrub_rule['dstnot']) ? "!" : "";
-                    $scrub_rule_out .= $scrub_rule['dst'] . "/" . $scrub_rule['dstmask'];
-                } else {
-                    $scrub_rule_out .= "any";
-                }
-                if (!empty($scrub_rule['dstport']) && is_alias($scrub_rule['dstport'])) {
-                    $scrub_rule_out .= " port $" . $scrub_rule['dstport'];
-                } else {
-                    $scrub_rule_out .= !empty($scrub_rule['dstport']) ?  " port " . $scrub_rule['dstport'] : "";
-                }
-                if (empty($scrub_rule['noscrub'])) {
-                    $scrub_rule_out .= !empty($scrub_rule['no-df']) ? " no-df " : "";
-                    $scrub_rule_out .= !empty($scrub_rule['random-id']) ? " random-id " : "";
-                    $scrub_rule_out .= !empty($scrub_rule['max-mss']) ? " max-mss " . $scrub_rule['max-mss'] .  " " : "";
-                    $scrub_rule_out .= !empty($scrub_rule['min-ttl']) ? " min-ttl " . $scrub_rule['min-ttl'] .  " " : "";
-                    $scrub_rule_out .= !empty($scrub_rule['set-tos']) ? " set-tos " . $scrub_rule['set-tos'] .  " " : "";
-                }
-                $scrub_rule_out .= "\n";
-                if (count($interfaces) == 0) {
-                    # unknown interface, skip rule
-                    $scrubrules .= "#";
-                }
-                $scrubrules .= $scrub_rule_out;
-            }
-        }
-    }
-
-    /* scrub per interface options */
-    if (empty($config['system']['scrub_interface_disable'])) {
-        /* scrub generic options, appended to all default rules */
-        $scrub_gen_opts = !empty($config['system']['scrubnodf']) ? ' no-df ' : '';
-        $scrub_gen_opts .= (!empty($config['system']['scrubrnid']) ? ' random-id ' : '');
-        foreach ($FilterIflist as $scrubcfg) {
-            if (is_numeric($scrubcfg['mss'] ?? '')) {
-                /**
-                 * Legacy MSS clamping on interface expects outbound packets to be scrubbed in order to work.
-                 * https://github.com/pfsense/pfsense/commit/7c382a8
-                 *
-                 * In a future release we might want to consider to move the MSS option from the interface into a
-                 * manual scrubbing rule, this is a bit intransparant.
-                 */
-                $mssclampv4 = 'max-mss ' . (intval($scrubcfg['mss'] - 40));
-                $mssclampv6 = 'max-mss ' . (intval($scrubcfg['mss'] - 60));
-                $scrubrules .= "scrub on {$scrubcfg['if']} inet all {$scrub_gen_opts} {$mssclampv4}\n";
-                $scrubrules .= "scrub on {$scrubcfg['if']} inet6 all {$scrub_gen_opts} {$mssclampv6}\n";
-            }
-        }
-        $scrubrules .= "scrub in all {$scrub_gen_opts}\n";
-    }
-
-    return $scrubrules;
-}
-
-function filter_generate_aliases()
-{
-    $aliases = "# User Aliases\n";
-    $aliasObject = new \OPNsense\Firewall\Alias(true);
-    // list of registered aliases for faster is_alias() lookup
-    $all_aliases = [];
-    foreach ($aliasObject->aliasIterator() as $aliased) {
-        $all_aliases[] = $aliased['name'];
-    }
-    foreach ($aliasObject->aliasIterator() as $aliased) {
-        switch ($aliased['type']) {
-            case "urltable_ports":
-            case "url_ports":
-                # a bit of a hack, but prevents the ruleset from not being able to load if these types are in
-                # the configuration.
-                $aliases .= "{$aliased['name']} = \"{ 0 <> 65535 }\"\n";
-                syslog(LOG_ERR, sprintf('URL port aliases types not supported [%s]', $aliased['name']));
-                file_put_contents(
-                    '/tmp/rules.error',
-                    sprintf(gettext('URL port aliases types not supported [%s]'), $aliased['name'])
-                );
-                break;
-            case "port":
-                $tmp_ports = implode(" ", filter_core_get_port_alias($aliased['name'], [], $aliasObject, $all_aliases));
-                if (empty($tmp_ports)) {
-                    // we can't create empty port tables, so when it's empty we should make sure it can't match
-                    $tmp_ports = "0 <> 65535";
-                }
-                $aliases .= "{$aliased['name']} = \"{ {$tmp_ports} }\"\n";
-                break;
-            default:
-                /* XXX: should move to update_tables.py */
-                switch ($aliased['name']) {
-                    case 'bogons':
-                        $aliases .= "table <bogons> persist file \"/usr/local/etc/bogons\"\n";
-                        break;
-                    case 'bogonsv6':
-                        if (is_bogonsv6_used()) {
-                            $aliases .= "table <bogonsv6> persist file \"/usr/local/etc/bogonsv6\"\n";
-                        } else {
-                            $aliases .= "table <bogonsv6> persist\n";
-                        }
-                        break;
-                    default:
-                        $tblopt = (!empty($aliased['counters']) ? 'counters' : '') . " persist ";
-                        $aliases .= "table <{$aliased['name']}> {$tblopt} \n";
-                }
-                $aliases .= "{$aliased['name']} = \"<{$aliased['name']}>\"\n";
-                break;
-        }
-    }
-
-    return $aliases;
-}
-
-function filter_rules_legacy(&$FilterIflist)
-{
-    global $config;
-
-    $log = !isset($config['syslog']['nologdefaultblock']) ? 'log' : '';
-    $bridge_interfaces = [];
-    $ipfrules = '';
-
-    foreach (config_read_array('bridges', 'bridged', false) as $bridge) {
-        $bridge_interfaces = array_merge(explode(',', $bridge['members'] ?? ''), $bridge_interfaces);
-    }
-
-    foreach ($FilterIflist as $on => $oc) {
-        if (!in_array($on, $bridge_interfaces) && !isset($oc['internal_dynamic']) && $oc['if'] != 'lo0') {
-            $ipfrules .= "antispoof {$log} for {$oc['if']} \n";
-        }
-    }
-
-    return $ipfrules;
 }
 
 /****f* filter/filter_get_time_based_rule_status
@@ -785,16 +267,6 @@ function filter_physmem_bytes()
     return 0;
 }
 
-function filter_current_table_entries()
-{
-    /*
-     * nftables has no global "table-entries" limit equivalent to pf; named
-     * sets are sized individually. Report the intended default so the GUI has
-     * a meaningful value to display and compare against.
-     */
-    return filter_default_table_entries();
-}
-
 function filter_default_table_entries()
 {
     /*
@@ -809,14 +281,6 @@ function filter_default_state_size()
 {
     /* be cautious and only allocate 10% of system memory to the state table */
     return (int)(filter_physmem_bytes() / 1048576) * 100;
-}
-
-function filter_current_hostid()
-{
-    /* On Linux the host identifier is provided by the hostid(1) utility. */
-    $hostid = trim(shell_safe('/usr/bin/hostid'));
-
-    return $hostid !== '' ? $hostid : null;
 }
 
 function get_protocols()

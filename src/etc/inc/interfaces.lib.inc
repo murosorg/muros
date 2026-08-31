@@ -26,6 +26,35 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+/*
+ * MurOS: interface group membership has no kernel representation to read back
+ * on Linux, ifgroup_setup() writes it here and the interface details report it.
+ */
+if (!defined('IFGROUP_STATE_FILE')) {
+    define('IFGROUP_STATE_FILE', '/var/run/ifgroups.json');
+}
+
+function ifgroup_membership($device = null)
+{
+    static $state = null;
+
+    if ($state === null) {
+        $state = [];
+        if (file_exists(IFGROUP_STATE_FILE)) {
+            $parsed = json_decode((string)@file_get_contents(IFGROUP_STATE_FILE), true);
+            if (is_array($parsed)) {
+                $state = $parsed;
+            }
+        }
+    }
+
+    if ($device === null) {
+        return $state;
+    }
+
+    return isset($state[$device]) && is_array($state[$device]) ? $state[$device] : [];
+}
+
 function legacy_interface_error($cmd, $opt = null)
 {
     $msg = 'The command `' . $cmd . '\' failed to execute';
@@ -419,6 +448,7 @@ function _legacy_interfaces_details_iproute2($intf = null)
             'is_physical' => !count(array_intersect(preg_split('/\d+/', $dev), $vfaces)),
             'device' => $dev,
             'mtu' => (string)($entry['mtu'] ?? ''),
+            'groups' => ifgroup_membership($dev),
         ];
 
         /*
