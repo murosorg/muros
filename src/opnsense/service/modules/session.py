@@ -28,7 +28,7 @@
     package : configd
     function: session handling and authorisation
 """
-import platform
+import os
 import struct
 import socket
 import pwd
@@ -36,28 +36,50 @@ import grp
 
 
 class xucred:
+    """ MurOS: FreeBSD passed the whole credential of the peer, user and up to
+        sixteen groups, in one xucred structure read with LOCAL_PEERCRED. Linux
+        has SO_PEERCRED, which carries the pid, the uid and the primary gid of
+        the peer and nothing else, so the supplementary groups are resolved from
+        the password database afterwards. The class keeps its name and its two
+        accessors: it is what the actions check their allowed_groups against.
+
+        Without this the credential stayed empty on Debian and every action
+        carrying an allowed_groups constraint was refused, whoever called it.
+    """
     def __init__(self, connection):
         self._user = None
         self._groups = set()
-        if platform.system() == 'FreeBSD':
-            # xucred structure defined in : https://man.freebsd.org/cgi/man.cgi?query=unix&sektion=4
-            # XU_NGROUPS is 16
-            xucred_fmt = '2ih16iP'
-            tmp = connection.getsockopt(0, socket.LOCAL_PEERCRED, struct.calcsize(xucred_fmt))
-            tmp = tuple(struct.unpack(xucred_fmt, tmp))
-            self.cr_version = tmp[0]
-            self.cr_uid = tmp[1]
-            self.cr_ngroups = tmp[2]
-            self.cr_groups = tmp[3:18]
-            self.cr_pid = tmp[19]
-            tmp = pwd.getpwuid(self.cr_uid)
-            if tmp:
-                self._user = tmp.pw_name
-            for idx, item in enumerate(self.cr_groups):
-                if idx < self.cr_ngroups:
-                    tmp = grp.getgrgid(item)
-                    if tmp:
-                        self._groups.add(tmp.gr_name)
+        self.cr_version = 0
+        self.cr_pid = None
+        self.cr_uid = None
+        self.cr_ngroups = 0
+        self.cr_groups = tuple()
+        try:
+            ucred_fmt = '3i'
+            tmp = connection.getsockopt(
+                socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize(ucred_fmt)
+            )
+            self.cr_pid, self.cr_uid, cr_gid = struct.unpack(ucred_fmt, tmp)
+        except (OSError, struct.error):
+            return
+
+        try:
+            self._user = pwd.getpwuid(self.cr_uid).pw_name
+        except KeyError:
+            self._user = None
+
+        gids = {cr_gid}
+        if self._user is not None:
+            gids.update(os.getgrouplist(self._user, cr_gid))
+
+        for item in gids:
+            try:
+                self._groups.add(grp.getgrgid(item).gr_name)
+            except KeyError:
+                continue
+
+        self.cr_groups = tuple(sorted(gids))
+        self.cr_ngroups = len(self.cr_groups)
 
     def get_groups(self):
         return self._groups

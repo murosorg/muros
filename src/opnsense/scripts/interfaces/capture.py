@@ -235,8 +235,10 @@ if __name__ == '__main__':
                 zfh.write(filename, os.path.basename(filename))
         zfh.close()
 
-        # always set file ownership for strict security mode
-        os.chown(result['filename'], pwd.getpwnam("wwwonly").pw_uid, grp.getgrnam("wheel").gr_gid)
+        # MurOS: the web user is www-data and the administrative group is root,
+        # FreeBSD had wwwonly and wheel, so the chown raised a KeyError and the
+        # download of a capture ended in a traceback instead of a file.
+        os.chown(result['filename'], pwd.getpwnam("www-data").pw_uid, grp.getgrnam("root").gr_gid)
         os.chmod(result['filename'], 0o640)
 
     print (ujson.dumps(result))

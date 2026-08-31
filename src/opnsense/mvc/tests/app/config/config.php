@@ -44,7 +44,7 @@ return new OPNsense\Core\AppConfig([
     ],
     'globals' => [
         'debug'          => false,
-        'owner'          => 'wwwonly:wheel',
+        'owner'          => 'www-data:www-data',
         'simulate_mode'  => false,
     ],
 ]);
