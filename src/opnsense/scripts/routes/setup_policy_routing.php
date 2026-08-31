@@ -240,8 +240,11 @@ foreach ($desired as $fam => $gateways) {
          * the family of the gateway: an "ip rule" without a family selector is
          * IPv4 only, so an IPv6 gateway got a table no packet ever reached. */
         run(sprintf('/usr/sbin/ip %s rule del priority %d', $fam, $mark));
+        /* Match the gateway number only. The intrusion detection writes its
+         * own flags in the high bits of the same mark, and an unmasked rule
+         * stopped matching as soon as a packet had been through the queue. */
         run(sprintf(
-            '/usr/sbin/ip %s rule add priority %d fwmark %d lookup %d',
+            '/usr/sbin/ip %s rule add priority %d fwmark %d/0xffff lookup %d',
             $fam,
             $mark,
             $mark,

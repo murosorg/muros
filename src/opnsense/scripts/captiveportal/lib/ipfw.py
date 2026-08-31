@@ -102,11 +102,20 @@ class IPFW(object):
         for ip_address, acc in counters.items():
             total_bytes = int(acc['in_bytes']) + int(acc['out_bytes'])
             prev_entry = prev.get(ip_address)
+            prev_bytes = int(prev_entry.get('bytes', 0)) if prev_entry else 0
             if prev_entry is None:
                 # first observation, only stamp when traffic was already seen
                 last_accessed = now if total_bytes > 0 else 0
-            elif total_bytes > int(prev_entry.get('bytes', 0)):
+            elif total_bytes > prev_bytes:
                 last_accessed = now
+            elif total_bytes < prev_bytes:
+                # the counters went backwards, so they were reset under us: the
+                # portal was restarted or its table rebuilt. The cached total is
+                # meaningless from here on. Comparing against it would keep the
+                # stamp frozen until the client had transferred more than it had
+                # before the reset, and an idle timeout would then disconnect a
+                # client that never stopped using the network. Rebase instead.
+                last_accessed = now if total_bytes > 0 else int(prev_entry.get('last_accessed', 0))
             else:
                 last_accessed = int(prev_entry.get('last_accessed', 0))
             new_state[ip_address] = {'bytes': total_bytes, 'last_accessed': last_accessed}

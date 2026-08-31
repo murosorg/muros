@@ -428,10 +428,10 @@ af-packet:
 
 nfq:
   mode: repeat
-  repeat-mark: 1
-  repeat-mask: 1
-  bypass-mark: 2
-  bypass-mask: 2
+  repeat-mark: 65536
+  repeat-mask: 65536
+  bypass-mark: 131072
+  bypass-mask: 131072
   fail-open: yes
   batchcount: 20
 

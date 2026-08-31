@@ -2827,6 +2827,15 @@ $out[] = '#!/usr/sbin/nft -f';
  * lets a marked packet skip the queue instead of looping on it. The bypass flag
  * means a queue with no reader accepts, so stopping the service does not stop
  * the network.
+ *
+ * The mark suricata writes has to stay out of the way of the marks policy
+ * based routing writes. Those are the gateway numbers, which fit in the low
+ * sixteen bits, so the two flags of the intrusion detection live above them,
+ * and the routing rules match their own bits only. Sharing bit zero, as it
+ * used to, meant a packet routed through a gateway whose number happened to
+ * be odd was taken for an already inspected packet and skipped the queue,
+ * while a packet that had been inspected came back with a mark the routing
+ * rules no longer recognised and left through the default gateway.
  */
 function ids_lines($cfg, array $ifaces): array
 {
@@ -2862,7 +2871,7 @@ function ids_lines($cfg, array $ifaces): array
     foreach (['input' => 'iifname', 'forward' => 'iifname', 'output' => 'oifname'] as $hook => $match) {
         $lines[] = sprintf('    chain ids_%s {', $hook);
         $lines[] = sprintf('        type filter hook %s priority -150; policy accept;', $hook);
-        $lines[] = '        meta mark and 0x1 == 0x1 accept comment "inspected"';
+        $lines[] = '        meta mark and 0x30000 != 0x0 accept comment "already inspected"';
         $lines[] = sprintf('        %s %s %s', $match, $ifexpr, $handover);
         if ($hook === 'forward') {
             $lines[] = sprintf('        oifname %s %s', $ifexpr, $handover);
