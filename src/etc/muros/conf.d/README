@@ -1,5 +1,5 @@
-This directory allows the user to enable and configure additional lighttpd modules for the OPNsense webgui, or
-specify additional configurations for modules that are enabled already in /usr/local/etc/inc/plugins.d/webgui.inc
+This directory allows the user to enable and configure additional lighttpd modules for the MurOS web interface, or
+specify additional configurations for modules that are enabled already in /usr/local/etc/inc/plugins.inc.d/webgui.inc
 
 Relevant lighttpd modules available: https://redmine.lighttpd.net/projects/lighttpd/wiki/Docs#Modules
 

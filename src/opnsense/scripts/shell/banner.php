@@ -123,7 +123,7 @@ if ($config['system']['webgui']['protocol'] == 'https') {
         'openssl x509 -in %s -noout -fingerprint -sha256 | ' .
         'sed "s/Fingerprint=//" | tr ":" " " | tr "[:lower:]" "[:upper:]" | ' .
         'sed -E "s/(^.{54})./\1,               /" | tr "," "\n"',
-        '/usr/local/etc/lighttpd_webgui/cert.pem'
+        '/usr/local/etc/muros/cert.pem'
     );
 }
 

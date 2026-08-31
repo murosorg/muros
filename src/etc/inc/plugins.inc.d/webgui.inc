@@ -41,7 +41,12 @@ function webgui_configure()
 function webgui_services()
 {
     return [[
-        'pidfile' => '/var/run/lighty-webConfigurator.pid',
+        /*
+         * MurOS: the front end is the packaged lighttpd, started by its own unit
+         * with the MurOS configuration through a drop-in. There is no pid file to
+         * look at, the unit is the source of truth.
+         */
+        'systemd' => 'lighttpd',
         'description' => gettext('Web GUI'),
         'php' => ['restart' => ['webgui_configure_defer']],
         'name' => 'webgui',
@@ -142,7 +147,15 @@ function webgui_configure_do($verbose = false, $interface_map = null)
         $ca = ca_chain($cert);
     }
 
-    $confdir = '/usr/local/etc/lighttpd_webgui';
+    /*
+     * MurOS: the generated configuration goes where the lighttpd unit drop-in
+     * points, so applying the administration page reconfigures the front end
+     * that is actually serving. The package ships a static version of the same
+     * file for the first boot, and a package upgrade puts it back; the boot
+     * chain regenerates it right after, from the configuration.
+     */
+    $confdir = '/usr/local/etc/muros';
+    @mkdir($confdir . '/conf.d', 0755, true);
     $conftxt = webgui_generate_config($portarg, $crt, $key, $ca, $listeners, $confdir);
 
     $fp = fopen("{$confdir}/lighttpd.conf", 'a+e');
@@ -169,11 +182,16 @@ function webgui_configure_do($verbose = false, $interface_map = null)
         @touch('/var/run/development');
     }
 
-    /* stop the frontend when the generation was completed */
-    killbypid('/var/run/lighty-webConfigurator.pid', 'INT');
+    /*
+     * MurOS: lighttpd is a unit, so hand the restart to systemd instead of
+     * killing a pid file and spawning a daemon that systemd does not know
+     * about, which would leave two front ends fighting over the same port.
+     * php-fpm serves the PHP of the interface and reads the settings written
+     * by the template above, so it is restarted first.
+     */
+    mwexecf('/usr/bin/systemctl restart %s', ['php8.4-fpm'], true);
 
-    /* start lighttpd (the flock may be overkill but this has always been fragile so keep it) */
-    if (mwexecf('/usr/bin/flock -ne /var/run/lighty-webConfigurator.pid /usr/sbin/lighttpd -f %s/lighttpd.conf', [$confdir])) {
+    if (mwexecf('/usr/bin/systemctl restart %s', ['lighttpd'])) {
         service_log("failed.\n", $verbose);
     } else {
         service_log("done.\n", $verbose);
@@ -266,19 +284,19 @@ EOD;
         touch('/var/run/www_non_root'); /* create file as root, lock going back to root */
     }
 
+    /*
+     * MurOS: PHP runs in the php-fpm pool shipped by the package, on its own
+     * socket, instead of php-cgi children spawned by lighttpd. Debian has no
+     * php-cgi in the dependency set, the pool is a unit of its own and it keeps
+     * the opcode cache warm between requests.
+     */
     $fastcgi_config = <<<EOD
 #### fastcgi module
-## read fastcgi.txt for more info
 fastcgi.server = ( ".php" =>
   ( "localhost" =>
     (
-      "socket" => "/var/lib/php/tmp/php-fastcgi.socket",
-      "max-procs" => 8,
-      "bin-environment" => (
-        "PHP_FCGI_CHILDREN" => "5",
-        "PHP_FCGI_MAX_REQUESTS" => "100"
-      ),
-      "bin-path" => "/usr/local/bin/php-cgi"
+      "socket" => "/run/php/php8.4-fpm.sock",
+      "broken-scriptfilename" => "enable"
     )
   )
 )
@@ -312,7 +330,7 @@ server.max-keep-alive-idle = 30
 ## a static document-root, for virtual-hosting take look at the
 ## server.virtual-* options
 server.document-root        = "/usr/local/www/"
-server.tag = "OPNsense"
+server.tag = "MurOS"
 
 {$http_rewrite_rules}
 
@@ -325,7 +343,9 @@ server.feature-flags = ( "server.graceful-shutdown-timeout" => 2 )
 {$lighty_use_syslog}
 
 # files to check for if .../ is requested
-server.indexfiles           = ( "index.php", "index.html",
+# MurOS: server.indexfiles is the pre 1.4 name, dropped by the lighttpd Debian
+# ships; the directive is index-file.names
+index-file.names            = ( "index.php", "index.html",
                                 "index.htm", "default.htm" )
 
 # mimetype mapping
@@ -392,7 +412,7 @@ mimetype.assign             = (
 # .core is for core dumps that may be created during PHP execution
 # .inc  is often used for code includes which should in general not be part
 #       of the document-root
-url.access-deny             = ( "~", , ".core", ".inc" )
+url.access-deny             = ( "~", ".core", ".inc" )
 
 
 ######### Options that are good to be but not necessary to be changed #######
@@ -485,9 +505,6 @@ EOD;
 ## error-handler for status 404
 #server.error-handler-404   = "/error-handler.html"
 server.error-handler-404   = "/ui/404"
-
-## to help the rc.scripts
-server.pid-file            = "/var/run/lighty-webConfigurator.pid"
 
 ## enable debugging
 debug.log-request-header   = "disable"
