@@ -1,3 +1,20 @@
+muros (0.9.94) trixie; urgency=medium
+
+  * The address of the peer to replicate connection states to was read by the
+    interface and ignored: the two nodes always looked for each other on a
+    multicast group. On a sync link that is routed, or behind a switch that
+    prunes multicast, they replicated into the void, which nothing reports and
+    which is only discovered at the failover that drops every connection. When
+    the peer is named, the states are now sent to it directly, in either
+    address family.
+  * Dropping the connections pinned to a gateway matched the mark exactly,
+    which the flags the intrusion detection writes in the same mark could
+    defeat. It matches the gateway number only.
+  * Removed a setting the state replication daemon has deprecated and warned
+    about on every start.
+
+ -- MurOS <dev@muros.org>  Mon, 31 Aug 2026 22:42:27 +0200
+
 muros (0.9.93) trixie; urgency=medium
 
   * Inline intrusion detection and policy based routing were writing in the
