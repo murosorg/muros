@@ -469,8 +469,59 @@ function network_of(string $ip, int $prefix): string
     return long2ip($long & $mask) . '/' . $prefix;
 }
 
+/* Whether a <source>/<destination> block means "anything". Telling that apart
+ * from a block the generator failed to resolve matters: an unresolved endpoint
+ * dropped in silence turns a narrow rule into one that matches everything. */
+function endpoint_is_any(?SimpleXMLElement $ep): bool
+{
+    if ($ep === null || isset($ep->any)) {
+        return true;
+    }
+    $addr = trim((string)($ep->address ?? ''));
+    $net = trim((string)($ep->network ?? ''));
+    if ($addr === '' && ($net === '' || strtolower($net) === 'any')) {
+        return true;
+    }
+
+    return false;
+}
+
+function endpoint_text(?SimpleXMLElement $ep): string
+{
+    if ($ep === null) {
+        return '';
+    }
+    $addr = trim((string)($ep->address ?? ''));
+
+    return $addr !== '' ? $addr : trim((string)($ep->network ?? ''));
+}
+
 /* Resolve a <source>/<destination> block to an nft address token, or null
  * when it cannot be expressed yet (dynamic address, alias, etc.). */
+/* Whether a token is something nft can read as an address of that family. A
+ * name that is neither a set reference nor an address is a hostname to nft,
+ * which either resolves it behind our back or rejects the whole ruleset. */
+function addr_token(?string $token, string $family): ?string
+{
+    $token = trim((string)$token);
+    if ($token === '') {
+        return null;
+    }
+    if ($token[0] === '@' || $token[0] === '{') {
+        return $token;
+    }
+    $head = $token;
+    if (strpos($token, '/') !== false) {
+        list($head, $bits) = explode('/', $token, 2);
+        if (!ctype_digit(trim($bits))) {
+            return null;
+        }
+    }
+    $flag = $family === 'ip6' ? FILTER_FLAG_IPV6 : FILTER_FLAG_IPV4;
+
+    return filter_var(trim($head), FILTER_VALIDATE_IP, $flag) !== false ? $token : null;
+}
+
 function resolve_endpoint(?SimpleXMLElement $ep, string $family, array $ifaces, array $aliases = []): ?string
 {
     if ($ep === null || isset($ep->any)) {
@@ -480,7 +531,7 @@ function resolve_endpoint(?SimpleXMLElement $ep, string $family, array $ifaces, 
     if ($addr !== '') {
         /* address may be a literal IP/CIDR or the name of an address alias. */
         $ref = alias_addr_ref($addr, $family, $aliases);
-        return $ref !== null ? $ref : $addr;
+        return $ref !== null ? $ref : addr_token($addr, $family);
     }
     $net = trim((string)$ep->network);
     if ($net === '') {
@@ -499,7 +550,7 @@ function resolve_endpoint(?SimpleXMLElement $ep, string $family, array $ifaces, 
     }
     /* literal CIDR stored directly in network. */
     if (strpos($net, '/') !== false) {
-        return $net;
+        return addr_token($net, $family);
     }
     /* network may also carry an alias name in some configurations. */
     return alias_addr_ref($net, $family, $aliases);
@@ -815,9 +866,23 @@ function schedule_active(string $name): bool
 
 /* Rules the generator leaves out on purpose, so a check can tell them from the
  * ones it simply does not know how to translate. */
+function item_uuid($rule): string
+{
+    if (!($rule instanceof SimpleXMLElement)) {
+        return '';
+    }
+    $uuid = trim((string)($rule['uuid'] ?? ''));
+    if ($uuid === '') {
+        /* legacy items carry the identifier as a child element */
+        $uuid = trim((string)($rule->uuid ?? ''));
+    }
+
+    return preg_replace('/[^A-Za-z0-9-]/', '', $uuid);
+}
+
 function skip_rule($rule, string $reason, string $detail = '')
 {
-    $uuid = trim((string)($rule['uuid'] ?? ''));
+    $uuid = item_uuid($rule);
     if ($uuid === '') {
         return;
     }
@@ -830,7 +895,7 @@ function skip_rule($rule, string $reason, string $detail = '')
  * other than what it says. */
 function degrade_rule($rule, string $option, string $detail = '')
 {
-    $uuid = trim((string)($rule['uuid'] ?? ''));
+    $uuid = item_uuid($rule);
     if ($uuid === '') {
         return;
     }
@@ -1255,25 +1320,51 @@ function build_nat(SimpleXMLElement $cfg, array $ifaces, array $wanDevs, array $
             }
             $devs = iface_devices($ifaces, (string)$r->interface);
             if (empty($devs)) {
+                skip_rule($r, 'unknown interface', trim((string)$r->interface));
                 continue;
             }
+
+            $family = trim((string)($r->ipprotocol ?? '')) === 'inet6' ? 'ip6' : 'ip';
             $parts = ['oifname ' . ifname_expr($devs)];
-            $src = resolve_endpoint($r->source ?? null, 'ip', $ifaces, $aliases);
-            if ($src !== null) {
-                $parts[] = "ip saddr $src";
-            }
-            $dst = resolve_endpoint($r->destination ?? null, 'ip', $ifaces, $aliases);
-            if ($dst !== null) {
-                $parts[] = "ip daddr $dst";
-            }
-            $proto = strtolower(trim((string)$r->protocol));
-            $hasL4 = false;
-            if ($proto === 'tcp' || $proto === 'udp') {
-                $dport = resolve_port((string)($r->destination->port ?? ''), $aliases);
-                if ($dport !== null) {
-                    $parts[] = "$proto dport $dport";
-                    $hasL4 = true;
+
+            $ok = true;
+            foreach (['source' => 'saddr', 'destination' => 'daddr'] as $side => $keyword) {
+                $ep = $r->{$side} ?? null;
+                $value = resolve_endpoint($ep, $family, $ifaces, $aliases);
+                if ($value !== null) {
+                    $neg = isset($ep->not) && trim((string)$ep->not) !== '0' ? '!= ' : '';
+                    $parts[] = "$family $keyword $neg$value";
+                } elseif (!endpoint_is_any($ep)) {
+                    skip_rule($r, $side . ' not translatable', endpoint_text($ep));
+                    $ok = false;
+                    break;
                 }
+            }
+            if (!$ok) {
+                continue;
+            }
+
+            $proto = strtolower(trim((string)($r->protocol ?? '')));
+            $protocols = ($proto === '' || $proto === 'any') ? [] : ($proto === 'tcp/udp' ? ['tcp', 'udp'] : [$proto]);
+            $ported = !empty($protocols)
+                && count(array_diff($protocols, ['tcp', 'udp', 'sctp'])) === 0;
+            if (count($protocols) === 1) {
+                $parts[] = 'meta l4proto ' . $protocols[0];
+            } elseif (count($protocols) > 1) {
+                $parts[] = 'meta l4proto { ' . implode(', ', $protocols) . ' }';
+            }
+
+            $sport = resolve_port((string)($r->sourceport ?? ''), $aliases);
+            $dport = resolve_port((string)($r->dstport ?? ''), $aliases);
+            if ($ported) {
+                if ($sport !== null) {
+                    $parts[] = "th sport $sport";
+                }
+                if ($dport !== null) {
+                    $parts[] = "th dport $dport";
+                }
+            } elseif ($sport !== null || $dport !== null) {
+                degrade_rule($r, 'port', 'a port match on a protocol that carries none');
             }
 
             if (!empty((string)($r->nonat ?? ''))) {
@@ -1282,27 +1373,111 @@ function build_nat(SimpleXMLElement $cfg, array $ifaces, array $wanDevs, array $
                 continue;
             }
 
-            $target = trim((string)$r->target);
-            if (filter_var($target, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
-                /* A natport translates the source port to a fixed value; with
-                 * static-port (or no natport) we leave it to conntrack, which
-                 * preserves the original source port whenever it can. */
-                $natport = trim((string)$r->natport);
-                if ($natport !== '' && ($proto === 'tcp' || $proto === 'udp')) {
-                    /* nft only accepts a port in the snat target after a
-                     * transport protocol match, so add one when the rule does
-                     * not already carry a dport clause. */
-                    if (!$hasL4) {
-                        $parts[] = "meta l4proto $proto";
+            /* The translation address. An empty target means the address of
+             * the outgoing interface, "other-subnet" a pool given as a
+             * network, and anything else an interface key, an alias or a
+             * literal address. */
+            $target = trim((string)($r->target ?? ''));
+            $pool = null;
+            $masquerade = false;
+            $ifaceKey = null;
+            if ($target === '') {
+                $masquerade = true;
+            } elseif ($target === 'other-subnet') {
+                $ip = trim((string)($r->targetip ?? ''));
+                $bits = trim((string)($r->targetip_subnet ?? ''));
+                $cidr = ($bits === '' || (int)$bits === 0) ? $ip : $ip . '/' . (int)$bits;
+                $pool = $ip === '' ? null : prefix_pool($cidr);
+                if ($pool === null) {
+                    skip_rule($r, 'translation address not usable', $cidr);
+                    continue;
+                }
+            } elseif (isset($ifaces[$target])) {
+                $ifaceKey = $target;
+            } elseif (substr($target, -2) === 'ip' && isset($ifaces[substr($target, 0, -2)])) {
+                $ifaceKey = substr($target, 0, -2);
+            } elseif (isset($aliases[$target]) && !empty($aliases[$target]['hasaddr'])) {
+                $hosts = array_values(array_filter(
+                    $family === 'ip6' ? $aliases[$target]['v6'] : $aliases[$target]['v4'],
+                    function ($entry) {
+                        return strpos($entry, '/') === false;
                     }
-                    $verb = "snat to $target:$natport";
-                } else {
-                    $verb = "snat to $target";
+                ));
+                if (empty($hosts)) {
+                    skip_rule($r, 'translation alias has no address', $target);
+                    continue;
+                }
+                $pool = $hosts[0];
+                if (count($hosts) > 1) {
+                    /* pf could translate to a table; a nftables translation
+                       target is a single address or one contiguous range */
+                    degrade_rule(
+                        $r,
+                        'target',
+                        'a pool of ' . count($hosts) . ' addresses, only ' . $pool . ' is used'
+                    );
                 }
             } else {
-                $verb = 'masquerade';
+                $pool = prefix_pool($target);
+                $head = strpos($target, '/') !== false ? substr($target, 0, strpos($target, '/')) : $target;
+                $flag = $family === 'ip6' ? FILTER_FLAG_IPV6 : FILTER_FLAG_IPV4;
+                if ($pool === null || filter_var($head, FILTER_VALIDATE_IP, $flag) === false) {
+                    skip_rule($r, 'translation address not usable', $target);
+                    continue;
+                }
             }
-            $post[] = '        ' . implode(' ', $parts) . " counter $verb comment \""
+            if ($ifaceKey !== null) {
+                $addr = $family === 'ip6' ? $ifaces[$ifaceKey]['ip6'] : $ifaces[$ifaceKey]['ip4'];
+                if ($addr === null) {
+                    /* a dynamic interface has no address to name here, and
+                       masquerade picks the one in use at that moment */
+                    $masquerade = true;
+                } else {
+                    $pool = $addr;
+                }
+            }
+
+            $flags = [];
+            $poolopts = strtolower(trim((string)($r->poolopts ?? '')));
+            if (strpos($poolopts, 'sticky-address') !== false || $poolopts === 'source-hash') {
+                $flags[] = 'persistent';
+            }
+            if (strpos($poolopts, 'random') !== false) {
+                $flags[] = 'random';
+            }
+            if ($poolopts === 'source-hash') {
+                degrade_rule($r, 'poolopts', 'source-hash, translated as a sticky mapping');
+            } elseif ($poolopts === 'bitmask') {
+                degrade_rule($r, 'poolopts', 'bitmask translation');
+            }
+
+            $static = trim((string)($r->staticnatport ?? ''));
+            $static = $static !== '' && $static !== '0';
+            $natport = fmt_ports(trim((string)($r->natport ?? '')));
+            $verb = $masquerade ? 'masquerade' : "snat to $pool";
+            if ($natport !== null && $ported && !$static) {
+                $verb .= ($masquerade ? ' to' : '') . ":$natport";
+            } elseif ($natport !== null && !$ported) {
+                degrade_rule($r, 'natport', 'a translation port on a protocol that carries none');
+            }
+            if (!empty($flags)) {
+                $verb .= ' ' . implode(',', $flags);
+            }
+            if ($static) {
+                degrade_rule($r, 'staticnatport', 'the source port is kept whenever it is free, not always');
+            }
+            foreach (['tag' => 'setting a firewall tag', 'tagged' => 'matching a firewall tag'] as $field => $detail) {
+                if (trim((string)($r->{$field} ?? '')) !== '') {
+                    degrade_rule($r, $field, $detail);
+                }
+            }
+
+            $log = '';
+            if (!empty((string)($r->log ?? '')) && item_uuid($r) !== '') {
+                $log = 'log prefix "muros,nat,' . item_uuid($r) . ' " ';
+            }
+
+            $post[] = '        ' . implode(' ', $parts) . ' ' . $log . "counter $verb comment \""
                 . rule_tag($r, 'outbound nat') . '"';
         }
     }
@@ -1315,8 +1490,12 @@ function build_nat(SimpleXMLElement $cfg, array $ifaces, array $wanDevs, array $
                 continue;
             }
             $devs = iface_devices($ifaces, (string)$r->interface);
+            $family = trim((string)($r->ipprotocol ?? '')) === 'inet6' ? 'ip6' : 'ip';
             $proto = strtolower(trim((string)$r->protocol)) ?: 'tcp';
             if (!in_array($proto, ['tcp', 'udp'], true)) {
+                /* a redirection of anything else has no port to rewrite and
+                   nothing here builds it yet */
+                skip_rule($r, 'protocol not translatable', $proto);
                 continue;
             }
             $extPort = resolve_port((string)($r->{'destination'}->port ?? ''), $aliases);
@@ -1325,17 +1504,27 @@ function build_nat(SimpleXMLElement $cfg, array $ifaces, array $wanDevs, array $
              * when set, the allowed source. Without the destination match the
              * forward would hijack traffic aimed at any address reachable on
              * the ingress interface, not just the one it is published on. */
-            $dst = resolve_endpoint($r->destination ?? null, 'ip', $ifaces, $aliases);
-            $src = resolve_endpoint($r->source ?? null, 'ip', $ifaces, $aliases);
             $parts = [];
             if (!empty($devs)) {
                 $parts[] = 'iifname ' . ifname_expr($devs);
             }
-            if ($src !== null) {
-                $parts[] = "ip saddr $src";
+            $ok = true;
+            foreach (['source' => 'saddr', 'destination' => 'daddr'] as $side => $keyword) {
+                $ep = $r->{$side} ?? null;
+                $value = resolve_endpoint($ep, $family, $ifaces, $aliases);
+                if ($value !== null) {
+                    $neg = isset($ep->not) && trim((string)$ep->not) !== '0' ? '!= ' : '';
+                    $parts[] = "$family $keyword $neg$value";
+                } elseif (!endpoint_is_any($ep)) {
+                    /* an unresolved destination would publish the forward on
+                       every address the interface answers for */
+                    skip_rule($r, $side . ' not translatable', endpoint_text($ep));
+                    $ok = false;
+                    break;
+                }
             }
-            if ($dst !== null) {
-                $parts[] = "ip daddr $dst";
+            if (!$ok) {
+                continue;
             }
             $parts[] = "$proto";
             if ($extPort !== null) {
@@ -1354,15 +1543,56 @@ function build_nat(SimpleXMLElement $cfg, array $ifaces, array $wanDevs, array $
             }
 
             $target = trim((string)$r->target);
-            if (!filter_var($target, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+            $flag = $family === 'ip6' ? FILTER_FLAG_IPV6 : FILTER_FLAG_IPV4;
+            if (isset($aliases[$target]) && !empty($aliases[$target]['hasaddr'])) {
+                $hosts = array_values(array_filter(
+                    $family === 'ip6' ? $aliases[$target]['v6'] : $aliases[$target]['v4'],
+                    function ($entry) {
+                        return strpos($entry, '/') === false;
+                    }
+                ));
+                if (empty($hosts)) {
+                    skip_rule($r, 'redirection alias has no address', $target);
+                    continue;
+                }
+                if (count($hosts) > 1) {
+                    degrade_rule(
+                        $r,
+                        'target',
+                        'a pool of ' . count($hosts) . ' addresses, only ' . $hosts[0] . ' is used'
+                    );
+                }
+                $target = $hosts[0];
+            }
+            if (filter_var($target, FILTER_VALIDATE_IP, $flag) === false) {
+                skip_rule($r, 'redirection address not usable', $target);
                 continue;
             }
+            foreach ([
+                'natreflection' => 'reflecting the forward back onto the inside networks',
+                'tag' => 'setting a firewall tag',
+                'tagged' => 'matching a firewall tag',
+            ] as $field => $detail) {
+                $value = strtolower(trim((string)($r->{$field} ?? '')));
+                if ($value !== '' && $value !== '0' && $value !== 'disable') {
+                    degrade_rule($r, $field, $detail);
+                }
+            }
+            $log = '';
+            if (!empty((string)($r->log ?? '')) && item_uuid($r) !== '') {
+                $log = 'log prefix "muros,nat,' . item_uuid($r) . ' " ';
+            }
+
             $to = $localPort !== '' ? "$target:$localPort" : $target;
-            $pre[] = '        ' . implode(' ', $parts) . " dnat to $to comment \""
+            if ($family === 'ip6' && $localPort !== '') {
+                /* nft needs the address in brackets to tell it from the port */
+                $to = "[$target]:$localPort";
+            }
+            $pre[] = '        ' . implode(' ', $parts) . ' ' . $log . "dnat to $to comment \""
                 . rule_tag($r, 'port forward') . '"';
 
             /* let the rewritten flow through the (drop-policy) forward hook. */
-            $fp = ["ip daddr $target", $proto];
+            $fp = ["$family daddr $target", $proto];
             if ($localPort !== '') {
                 $fp[] = "dport " . fmt_ports($localPort);
             } elseif ($extPort !== null) {
@@ -1376,9 +1606,9 @@ function build_nat(SimpleXMLElement $cfg, array $ifaces, array $wanDevs, array $
     /* 1:1 NAT (binat): bidirectional mapping between an external address and
      * an internal one. Inbound rewrites destination (external -> internal),
      * outbound rewrites source (internal -> external), plus a forward pass so
-     * the rewritten inbound flow crosses the drop-policy forward hook. Only
-     * single IPv4 hosts are handled for now (subnet netmap and IPv6 NPt are
-     * left on the roadmap). */
+     * the rewritten inbound flow crosses the drop-policy forward hook. Single
+     * hosts only, in either family; a whole subnet mapped host by host
+     * (netmap) is left on the roadmap and reported rather than dropped. */
     if (isset($cfg->nat->onetoone)) {
         foreach ($cfg->nat->onetoone as $r) {
             if (isset($r->disabled)) {
@@ -1386,33 +1616,47 @@ function build_nat(SimpleXMLElement $cfg, array $ifaces, array $wanDevs, array $
             }
             $devs = iface_devices($ifaces, (string)$r->interface);
             if (empty($devs)) {
+                skip_rule($r, 'unknown interface', trim((string)$r->interface));
                 continue;
             }
+            $family = trim((string)($r->ipprotocol ?? '')) === 'inet6' ? 'ip6' : 'ip';
+            $flag = $family === 'ip6' ? FILTER_FLAG_IPV6 : FILTER_FLAG_IPV4;
             $external = trim((string)$r->external);
-            $internal = resolve_endpoint($r->source ?? null, 'ip', $ifaces, $aliases);
-            if (!filter_var($external, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+            $internal = resolve_endpoint($r->source ?? null, $family, $ifaces, $aliases);
+            $bits = trim((string)($r->{'external-subnet'} ?? ''));
+            if ($bits !== '' && (int)$bits > 0 && (int)$bits < ($family === 'ip6' ? 128 : 32)) {
+                skip_rule($r, 'subnet mapping not translatable', $external . '/' . (int)$bits);
                 continue;
             }
-            if ($internal === null || !filter_var($internal, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+            if (!filter_var($external, FILTER_VALIDATE_IP, $flag)) {
+                skip_rule($r, 'external address not usable', $external);
                 continue;
             }
-            $peer = resolve_endpoint($r->destination ?? null, 'ip', $ifaces, $aliases);
+            if ($internal === null || !filter_var($internal, FILTER_VALIDATE_IP, $flag)) {
+                skip_rule($r, 'internal address not usable', endpoint_text($r->source ?? null));
+                continue;
+            }
+            $peer = resolve_endpoint($r->destination ?? null, $family, $ifaces, $aliases);
+            if ($peer === null && !endpoint_is_any($r->destination ?? null)) {
+                skip_rule($r, 'destination not translatable', endpoint_text($r->destination ?? null));
+                continue;
+            }
 
-            $preParts = ['iifname ' . ifname_expr($devs), "ip daddr $external"];
+            $preParts = ['iifname ' . ifname_expr($devs), "$family daddr $external"];
             if ($peer !== null) {
-                $preParts[] = "ip saddr $peer";
+                $preParts[] = "$family saddr $peer";
             }
             $pre[] = '        ' . implode(' ', $preParts) . " dnat to $internal comment \""
                 . rule_tag($r, '1:1 nat inbound') . '"';
 
-            $postParts = ['oifname ' . ifname_expr($devs), "ip saddr $internal"];
+            $postParts = ['oifname ' . ifname_expr($devs), "$family saddr $internal"];
             if ($peer !== null) {
-                $postParts[] = "ip daddr $peer";
+                $postParts[] = "$family daddr $peer";
             }
             $post[] = '        ' . implode(' ', $postParts) . " snat to $external comment \""
                 . rule_tag($r, '1:1 nat outbound') . '"';
 
-            $passes[] = "        ip daddr $internal ct status dnat counter accept comment \""
+            $passes[] = "        $family daddr $internal ct status dnat counter accept comment \""
                 . rule_tag($r, '1:1 nat pass') . '"';
         }
     }
@@ -1639,11 +1883,19 @@ function rule_line(
     if ($saddr !== null) {
         $parts[] = "$family saddr " . (ep_negated($rule->source ?? null) ? '!= ' : '') . $saddr;
         $hasL3 = true;
+    } elseif (!endpoint_is_any($rule->source ?? null) && !isset($rule->source->network)) {
+        /* a named source that resolved to nothing would widen the rule to
+           every address instead of the one the operator wrote */
+        skip_rule($rule, 'source not translatable', endpoint_text($rule->source ?? null));
+        return null;
     }
     $daddr = resolve_endpoint($rule->destination ?? null, $family, $ifaces, $aliases);
     if ($daddr !== null) {
         $parts[] = "$family daddr " . (ep_negated($rule->destination ?? null) ? '!= ' : '') . $daddr;
         $hasL3 = true;
+    } elseif (!endpoint_is_any($rule->destination ?? null) && !isset($rule->destination->network)) {
+        skip_rule($rule, 'destination not translatable', endpoint_text($rule->destination ?? null));
+        return null;
     }
 
     /* Keep the rule scoped to its address family even when no L3 address
