@@ -1,3 +1,17 @@
+muros (0.9.87) trixie; urgency=medium
+
+  * Aliases whose content is not a list of addresses (GeoIP countries, URL
+    tables, host names, MAC addresses, autonomous system numbers, nested
+    groups) were emptied by every firewall reload. pf kept the contents of its
+    tables across a reload, nftables starts from a flushed ruleset, so the
+    rules using those aliases matched nothing until the updater ran again, up
+    to a minute later. The generated ruleset now carries the resolved
+    addresses itself, so an alias is armed the moment the ruleset is loaded.
+  * The rule check reports an alias that ends up with no address at all,
+    instead of leaving a rule loaded that can never match.
+
+ -- MurOS <dev@muros.org>  Mon, 31 Aug 2026 21:18:41 +0200
+
 muros (0.9.86) trixie; urgency=medium
 
   * Exporting an OpenVPN client configuration produced an empty file: the
