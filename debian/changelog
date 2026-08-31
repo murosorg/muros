@@ -1,3 +1,19 @@
+muros (0.9.96) trixie; urgency=medium
+
+  * Four settings of the advanced firewall page had no effect at all.
+    The maximum number of firewall states is applied to the connection
+    tracking table, so a firewall sized for a large number of connections no
+    longer keeps the kernel default and starts refusing connections with only
+    a kernel message to show for it. The maximum number of entries per alias
+    bounds the sets, so a downloaded list that grows without limit no longer
+    takes the memory it wants. Traffic claiming port zero is dropped, as it
+    always should have been, and the setting that turns that off works.
+  * Packets dropped because they came from a private or unroutable source
+    vanished without a trace, and the two settings meant to control that
+    logging did nothing. They are logged, unless the operator says otherwise.
+
+ -- MurOS <dev@muros.org>  Mon, 31 Aug 2026 23:03:44 +0200
+
 muros (0.9.95) trixie; urgency=medium
 
   * The anti-lockout rule accepted ports 22, 80 and 443 on every interface,
