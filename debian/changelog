@@ -1,3 +1,21 @@
+muros (0.9.76) trixie; urgency=medium
+
+  * Source NAT rules are applied again. The Source NAT page writes into the
+    model tree while the older Outbound page keeps writing the legacy section,
+    and the ruleset builder only read the legacy one: a rule created on the
+    current page was accepted, listed and counted in the GUI, and the traffic
+    still left the box with whatever source address the automatic masquerade
+    picked. Such a rule is rendered now, one line per transport protocol it
+    covers. An interface or interface address target becomes a masquerade, so a
+    dynamic uplink keeps working across an address change, a fixed address
+    becomes an snat and a prefix an snat to the pool it spans. A target port is
+    only emitted with a known transport protocol, static-port leaves the target
+    without one and lets connection tracking preserve the original port, and
+    the No-NAT rules are placed ahead of every translating rule. A target that
+    resolves to an alias is still skipped, nftables cannot translate to a set.
+
+ -- MurOS <jpzi@proton.me>  Mon, 31 Aug 2026 19:30:00 +0200
+
 muros (0.9.75) trixie; urgency=medium
 
   * One-to-one NAT and IPv6 prefix translation exist again. Both moved from the
