@@ -1428,6 +1428,7 @@
 /usr/local/opnsense/scripts/system/ha_xmlrpc_exec.php
 /usr/local/opnsense/scripts/system/list_shells.py
 /usr/local/opnsense/scripts/system/nameservers.php
+/usr/local/opnsense/scripts/system/powerd.py
 /usr/local/opnsense/scripts/system/query_dns.py
 /usr/local/opnsense/scripts/system/remote_backup.php
 /usr/local/opnsense/scripts/system/rfc5246_cipher_suites.csv

@@ -297,8 +297,8 @@ include("head.inc");
                 <td>
                   <input name="powerd_enable" type="checkbox" id="powerd_enable" value="yes" <?=!empty($pconfig['powerd_enable']) ? "checked=\"checked\"" : "";?> />
                   <div class="hidden" data-for="help_for_powerd_enable">
-                    <?=gettext("The powerd utility monitors the system state and sets various power control " .
-                                        "options accordingly. It offers four modes (maximum, minimum, adaptive " .
+                    <?=gettext("The power daemon monitors the power source and sets the CPU frequency policy " .
+                                        "accordingly. It offers four modes (maximum, minimum, adaptive " .
                                         "and hiadaptive) that can be individually selected while on AC power or batteries. " .
                                         "The modes maximum, minimum, adaptive and hiadaptive may be abbreviated max, " .
                                         "min, adp, hadp. Maximum mode chooses the highest performance values. Minimum " .
@@ -308,8 +308,8 @@ include("head.inc");
                                         "offers a good balance between a small performance loss for greatly " .
                                         "increased power savings. Hiadaptive mode is alike adaptive mode, but " .
                                         "tuned for systems where performance and interactivity are more important " .
-                                        "than power consumption. It raises frequency faster, drops slower and " .
-                                        "keeps twice lower CPU load."); ?>
+                                        "than power consumption. Each mode is applied as the closest governor the " .
+                                        "CPU frequency driver of this machine provides."); ?>
                   </div>
                 </td>
               </tr>

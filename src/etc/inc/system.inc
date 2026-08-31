@@ -28,11 +28,23 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+/*
+ * MurOS: powerd(8) is a FreeBSD daemon and the binary does not exist on Debian,
+ * so the Power Savings setting silently did nothing. The frequency scaling
+ * itself belongs to the kernel here, the policy is the cpufreq governor, and
+ * our powerd.py translates the four modes into a governor and follows the AC
+ * line. It is a plain foreground process kept under a pidfile by muros-daemon,
+ * which is also how it gets stopped, killbyname() would never match a Python
+ * interpreter.
+ */
 function system_powerd_configure($verbose = false)
 {
     global $config;
 
-    killbyname('powerd');
+    $pidfile = '/var/run/powerd.pid';
+
+    killbypid($pidfile);
+    @unlink($pidfile);
 
     if (!isset($config['system']['powerd_enable'])) {
         return;
@@ -55,9 +67,10 @@ function system_powerd_configure($verbose = false)
         $normal_mode = $config['system']['powerd_normal_mode'];
     }
 
-    mwexecf(
-        '/usr/sbin/powerd -b %s -a %s -n %s',
-        [$battery_mode, $ac_mode, $normal_mode]
+    mwexecfb(
+        '/usr/local/opnsense/scripts/system/powerd.py --battery %s --ac %s --normal %s',
+        [$battery_mode, $ac_mode, $normal_mode],
+        ['pidfile' => $pidfile]
     );
 
     service_log("done.\n", $verbose);
