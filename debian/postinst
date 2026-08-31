@@ -150,6 +150,13 @@ STRONGSWAN
     systemctl disable --now keepalived 2>/dev/null || true
     systemctl disable --now conntrackd 2>/dev/null || true
 
+    # Monit is driven by MurOS as well: configd renders /usr/local/etc/monitrc
+    # from the Services/Monit settings and starts the daemon with that control
+    # file. The packaged unit would run a second instance on /etc/monit/monitrc,
+    # which fights over /var/run/monit.pid and monitors nothing the operator
+    # configured, so keep it from starting at boot.
+    systemctl disable --now monit 2>/dev/null || true
+
     # Console login: remove the legacy autologin drop-ins shipped by earlier
     # installers, which logged root straight into the operator menu without any
     # authentication. The console must present a standard login prompt and
