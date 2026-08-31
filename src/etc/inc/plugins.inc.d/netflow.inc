@@ -60,6 +60,16 @@ function netflow_services()
 
     if (netflow_local_enabled()) {
         $services[] = array(
+            'description' => gettext('NetFlow Collector'),
+            'configd' => array(
+                'restart' => array('netflow collect restart'),
+                'start' => array('netflow collect start'),
+                'stop' => array('netflow collect stop'),
+            ),
+            'pidfile' => '/var/run/flowd.pid',
+            'name' => 'netflow_collector',
+        );
+        $services[] = array(
             'description' => gettext('Insight Aggregator'),
             'configd' => array(
                 'restart' => array('netflow aggregate restart'),
@@ -84,6 +94,6 @@ function netflow_xmlrpc_sync()
         'description' => gettext('Netflow / Insight'),
         'id' => 'syslog', /* historic yet tolerated typo */
         'section' => 'OPNsense.Netflow',
-        'services' => ['softflowd', 'flowd_aggregate'],
+        'services' => ['softflowd', 'netflow_collector', 'flowd_aggregate'],
     ]];
 }

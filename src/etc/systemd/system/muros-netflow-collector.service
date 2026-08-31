@@ -1,0 +1,16 @@
+# Local NetFlow collection. flowd has no Debian package, but only the daemon was
+# missing: the collector writes the same on disk format the Insight aggregator
+# reads, so it receives the datagrams the exporters send to the loopback.
+[Unit]
+Description=MurOS NetFlow collector
+Documentation=https://github.com/ecritel/muros
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /usr/local/opnsense/scripts/netflow/collector.py 127.0.0.1 2056
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,16 @@
+# Insight aggregator, which folds the collected flows into the reporting
+# databases. It daemonises itself and owns its pid file.
+[Unit]
+Description=MurOS NetFlow aggregator
+Documentation=https://github.com/ecritel/muros
+After=muros-netflow-collector.service
+
+[Service]
+Type=forking
+PIDFile=/var/run/flowd_aggregate.pid
+ExecStart=/usr/bin/python3 /usr/local/opnsense/scripts/netflow/flowd_aggregate.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
