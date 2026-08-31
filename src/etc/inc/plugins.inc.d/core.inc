@@ -374,7 +374,7 @@ function core_xmlrpc_sync()
 function core_configure()
 {
     return [
-        'bootup' => ['system_locale_configure', 'system_powerd_configure'],
+        'bootup' => ['system_locale_configure', 'system_powerd_configure', 'core_bootup_services'],
         'crl' => ['core_trust_crl'],
         /* XXX these are all specialized and try to avoid extra script use */
         'cache_flush' => ['system_cache_flush'],
@@ -430,6 +430,57 @@ function core_user_changed_groups($unused, $username)
  * If at some point in time it turns out this event is too slow, we should split system_trust_configure() and possibly
  * certctl.py to only process CRL's on demand.
  */
+/**
+ * Start the services the configuration asks for and that are not running yet.
+ *
+ * MurOS: FreeBSD started the optional services at boot from the rc.conf.d
+ * fragments the configuration generated, one enable flag per service:
+ * kea_enable, captiveportal_enable, suricata_enable, monit_enable,
+ * hostwatch_enable, netflow_enable. rc.freebsd is gone, and the stock Debian
+ * units of those daemons are deliberately kept disabled because MurOS owns their
+ * configuration, so nothing brought them up after a reboot: the DHCP server, the
+ * captive portal, the intrusion detection, the monitoring, the host discovery,
+ * the netflow exporter and the traffic shaper all stayed down until an operator
+ * applied their page by hand.
+ *
+ * The service list of the plugins is the same information the enable flags
+ * carried, since a plugin only declares a service when the configuration enables
+ * it. So the last step of the boot chain walks that list and starts what is not
+ * already running, through the same configd actions the Services page uses. The
+ * services with a hook of their own earlier in the chain are running by now and
+ * are skipped, and services sharing one start action, the four Kea daemons for
+ * instance, are started once.
+ */
+function core_bootup_services($verbose = false)
+{
+    $started = [];
+
+    foreach (plugins_services() as $service) {
+        if (empty($service['configd']['start'])) {
+            continue;
+        }
+
+        $key = implode(' ', $service['configd']['start']);
+        if (isset($started[$key])) {
+            continue;
+        }
+
+        /* a service that cannot be probed, the shaper, is applied again: the
+         * reload rebuilds its tree from scratch */
+        if (empty($service['nocheck']) && service_status($service)) {
+            continue;
+        }
+
+        $started[$key] = true;
+
+        service_log(sprintf('Starting %s...', service_name($service)), $verbose);
+        foreach ($service['configd']['start'] as $cmd) {
+            configd_run($cmd);
+        }
+        service_log("done.\n", $verbose);
+    }
+}
+
 function core_trust_crl()
 {
     $trust = new \OPNsense\Trust\General();
