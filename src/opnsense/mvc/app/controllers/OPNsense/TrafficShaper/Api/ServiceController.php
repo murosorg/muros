@@ -41,24 +41,24 @@ use OPNsense\TrafficShaper\TrafficShaper;
 class ServiceController extends ApiControllerBase
 {
     /**
-     * reconfigure shaper/ipfw, generate config and reload
+     * reconfigure the shaper, generate config and reload
+     *
+     * MurOS: the classification lived in ipfw rules generated from a template of
+     * their own; it is part of the firewall ruleset now, so applying the shaper
+     * reloads the queueing disciplines and then the ruleset that feeds them.
      */
     public function reconfigureAction()
     {
         if ($this->request->isPost()) {
             $backend = new Backend();
             $backend->configdRun('template reload OPNsense/Shaper');
-            $backend->configdRun('template reload OPNsense/IPFW');
 
             $result = trim($backend->configdRun("shaper reload"));
-            if ($result != "OK") {
+            if (strpos($result, "applied") === false) {
                 return ["status" => "error reloading shaper (" . $result . ")"];
             }
 
-            $result = trim($backend->configdRun("ipfw reload"));
-            if ($result != "OK") {
-                return ["status" => "error reloading ipfw (" . $result . ")"];
-            }
+            $backend->configdRun("filter reload");
 
             return ["status" => "ok"];
         }
@@ -67,15 +67,15 @@ class ServiceController extends ApiControllerBase
     }
 
     /**
-     * flush all ipfw rules
+     * drop every queueing discipline and build them again
      */
     public function flushreloadAction()
     {
         if ($this->request->isPost()) {
             $backend = new Backend();
-            $status = trim($backend->configdRun("ipfw flush"));
+            $backend->configdRun("shaper flush");
             $status = trim($backend->configdRun("shaper reload"));
-            $status = trim($backend->configdRun("ipfw reload"));
+            $backend->configdRun("filter reload");
             return ["status" => $status];
         } else {
             return ["status" => "failed"];

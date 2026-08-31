@@ -102,6 +102,7 @@ def load_model():
         if text(node, 'enabled', '1') != '1':
             continue
         model['rules'].append({
+            'uuid': node.get('uuid'),
             'target': text(node, 'target'),
             'interfaces': [text(node, 'interface'), text(node, 'interface2')],
         })
@@ -192,23 +193,39 @@ def apply_model():
     return len(devices)
 
 
-def statistics():
-    """ per class counters, keyed like the dnctl output the GUI used to read
+def nft_rule_counters():
+    """ packet and byte counters of the classification rules, keyed by the rule
+        uuid the ruleset carries in the comment ("shaper,<uuid>")
     """
-    model = load_model()
-    devices_for_pipe = pipe_devices(model)
-    names = {}
+    counters = {}
 
-    for uuid, pipe in model['pipes'].items():
-        names[pipe['number']] = {'type': 'pipe', 'description': pipe['description']}
-    for uuid, queue in model['queues'].items():
-        names[queue['number']] = {'type': 'queue', 'description': queue['description']}
+    sp = subprocess.run(['/usr/sbin/nft', '-j', 'list', 'chain', 'inet', 'muros', 'mangle_postrouting'],
+                        capture_output=True, text=True)
+    try:
+        parsed = ujson.loads(sp.stdout)
+    except ValueError:
+        return counters
 
-    devices = set()
-    for pipes in devices_for_pipe.values():
-        devices |= pipes
+    for item in parsed.get('nftables', []):
+        rule = item.get('rule')
+        if rule is None or not str(rule.get('comment', '')).startswith('shaper,'):
+            continue
+        uuid = str(rule['comment']).split(',', 1)[1]
+        for expression in rule.get('expr', []):
+            if 'counter' in expression:
+                counters[uuid] = {
+                    'pkts': expression['counter'].get('packets', 0),
+                    'bytes': expression['counter'].get('bytes', 0),
+                }
 
-    result = {}
+    return counters
+
+
+def class_counters(devices):
+    """ counters of every class, summed over the interfaces a pipe lives on
+    """
+    counters = {}
+
     for device in sorted(devices):
         sp = subprocess.run([TC, '-s', '-j', 'class', 'show', 'dev', device],
                             capture_output=True, text=True)
@@ -220,19 +237,84 @@ def statistics():
             handle = item.get('handle', '')
             if ':' not in handle:
                 continue
-            number = int(handle.split(':')[1] or '0', 16)
-            if number not in names:
+            try:
+                number = int(handle.split(':')[1] or '0', 16)
+            except ValueError:
                 continue
-            result['%s_%d' % (device, number)] = {
-                'device': device,
-                'number': number,
-                'type': names[number]['type'],
-                'description': names[number]['description'],
-                'bytes': item.get('stats', {}).get('bytes', 0),
-                'packets': item.get('stats', {}).get('packets', 0),
-                'drops': item.get('stats', {}).get('drops', 0),
-                'backlog': item.get('stats', {}).get('backlog', 0),
-            }
+            stats = item.get('stats', {})
+            entry = counters.setdefault(number, {'pkts': 0, 'bytes': 0, 'drops': 0, 'backlog': 0})
+            entry['pkts'] += stats.get('packets', 0)
+            entry['bytes'] += stats.get('bytes', 0)
+            entry['drops'] += stats.get('drops', 0)
+            entry['backlog'] += stats.get('backlog', 0)
+
+    return counters
+
+
+def statistics():
+    """ statistics in the shape the shaper page reads, which is the one dnctl
+        used to produce: pipes and queues keyed by their number, the queues
+        pointing at their pipe through sched_nr, and the classification rules
+        attached to the object they target.
+    """
+    model = load_model()
+    devices_for_pipe = pipe_devices(model)
+
+    devices = set()
+    for pipes in devices_for_pipe.values():
+        devices |= pipes
+
+    counters = class_counters(devices)
+    rule_counters = nft_rule_counters()
+
+    result = {'pipes': {}, 'queues': {}, 'rules': {'pipes': [], 'queues': []}}
+
+    for uuid, pipe in model['pipes'].items():
+        number = pipe['number']
+        stats = counters.get(number, {})
+        result['pipes'][str(number)] = {
+            'pipe': number,
+            'bandwidth': pipe['rate'],
+            'delay': pipe['delay'],
+            'interfaces': sorted(devices_for_pipe.get(uuid, [])),
+            'pkts': stats.get('pkts', 0),
+            'bytes': stats.get('bytes', 0),
+            'drops': stats.get('drops', 0),
+            'backlog_bytes': stats.get('backlog', 0),
+            'flows': [],
+        }
+
+    for uuid, queue in model['queues'].items():
+        number = queue['number']
+        stats = counters.get(number, {})
+        result['queues'][str(number)] = {
+            'flow_set_nr': number,
+            'sched_nr': model['pipes'][queue['pipe']]['number'],
+            'weight': queue['weight'],
+            'pkts': stats.get('pkts', 0),
+            'bytes': stats.get('bytes', 0),
+            'drops': stats.get('drops', 0),
+            'backlog_bytes': stats.get('backlog', 0),
+            'flows': [],
+        }
+
+    for rule in model['rules']:
+        target = rule['target']
+        if target in model['queues']:
+            section = 'queues'
+            number = model['queues'][target]['number']
+        elif target in model['pipes']:
+            section = 'pipes'
+            number = model['pipes'][target]['number']
+        else:
+            continue
+        stats = rule_counters.get(rule['uuid'], {})
+        result['rules'][section].append({
+            'attached_to': number,
+            'rule_uuid': rule['uuid'],
+            'pkts': stats.get('pkts', 0),
+            'bytes': stats.get('bytes', 0),
+        })
 
     return result
 

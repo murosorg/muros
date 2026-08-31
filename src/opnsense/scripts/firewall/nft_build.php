@@ -1388,12 +1388,14 @@ function shaper_lines(SimpleXMLElement $cfg, array $ifaces, array $aliases): arr
             $parts[] = $l4[$proto] . ' ' . $spec[1] . ' ' . $ports;
         }
 
-        $descr = preg_replace('/[^\x20-\x7E]/', '', (string)$rule->description);
-        $descr = str_replace('"', "'", $descr);
+        /* the uuid in the comment is what lets the shaper statistics attach the
+         * counter of this rule to the model entry, the same contract the
+         * firewall log uses */
+        $uuid = preg_replace('/[^A-Za-z0-9-]/', '', (string)$rule['uuid']);
 
         $lines[] = '        ' . implode(' ', $parts)
             . sprintf(' counter meta priority set 1:%x', $numbers[$target])
-            . ($descr === '' ? '' : " comment \"shaper $descr\"");
+            . " comment \"shaper,$uuid\"";
     }
 
     return $lines;
