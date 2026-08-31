@@ -20,7 +20,7 @@ Depends: ${misc:Depends},
  iputils-ping, traceroute,
  kea-dhcp4-server, kea-dhcp6-server, kea-ctrl-agent, kea-dhcp-ddns-server,
  radvd, syslog-ng-core, rrdtool
-Recommends: unbound, dnsmasq, softflowd, openssh-server, openvpn, wireguard-tools, strongswan, charon-systemd, strongswan-swanctl,
+Recommends: unbound, dnsmasq, softflowd, pptp-linux, openssh-server, openvpn, wireguard-tools, strongswan, charon-systemd, strongswan-swanctl,
  keepalived, conntrackd, isc-dhcp-relay
 Suggests: suricata
 Description: MurOS firewall and routing platform

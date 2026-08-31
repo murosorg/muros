@@ -968,8 +968,9 @@ function interface_reset($interface, $ifacecfg = false, $suspend = false)
             mwexecfm('/usr/bin/networkctl reconfigure %s', $device);
             break;
         case 'pppoe':
+        case 'pptp':
             /* MurOS: the session is a pppd instance owned by systemd */
-            mwexecfm('/usr/bin/systemctl stop muros-pppoe@%s.service', $interface);
+            mwexecfm('/usr/bin/systemctl stop muros-ppp@%s.service', $interface);
             break;
         default:
             break;
@@ -1113,31 +1114,54 @@ function interface_ppps_reset($interface, $suspend, $ifcfg, $ppps)
 }
 
 /*
- * MurOS: PPPoE session. mpd5 and netgraph do not exist on Debian, so the
- * session is run by pppd with its rp-pppoe plugin, supervised by the
- * muros-pppoe@<interface>.service template. pppd names the interface itself
+ * MurOS: PPP session (PPPoE and PPTP). mpd5 and netgraph do not exist on
+ * Debian, so the session is run by pppd, with its rp-pppoe plugin for PPPoE and
+ * with the pptp helper as its terminal for PPTP, supervised by the
+ * muros-ppp@<interface>.service template. pppd names the interface itself
  * (ifname), so the device stays the one recorded in the configuration and every
  * consumer (gateways, ruleset, monitoring) is unaffected. The link scripts are
  * reached through the pppd hook directories, see pppd-hook.sh.
  */
-function interface_pppoe_configure($interface, $ifcfg, $ppp, $ports, $mtus, $ipv6 = false)
+function interface_pppd_configure($interface, $ifcfg, $ppp, $ports, $mtus, $ipv6 = false, $peers = [])
 {
     global $config;
 
     $device = $ifcfg['if'];
     $port = $ports[0];
+    $type = $ppp['type'];
 
     if (count($ports) > 1) {
-        log_msg("PPPoE on {$device}: multilink is not supported, only {$port} is used.", LOG_WARNING);
+        log_msg("PPP on {$device}: multilink is not supported, only {$port} is used.", LOG_WARNING);
     }
 
-    /* the payload of a PPPoE session is 8 bytes smaller than the parent link */
-    $mtu = !empty($mtus[0]) ? (int)$mtus[0] : 1492;
+    /* the payload of a PPPoE session is 8 bytes smaller than the parent link,
+     * a PPTP one loses the GRE and IP headers on top of that */
+    $mtu = !empty($mtus[0]) ? (int)$mtus[0] : ($type == 'pppoe' ? 1492 : 1400);
     $mru = !empty($ppp['mru']) ? (int)$ppp['mru'] : $mtu;
 
-    $conf = [
-        'plugin rp-pppoe.so',
-        sprintf('nic-%s', $port),
+    $conf = [];
+
+    if ($type == 'pppoe') {
+        $conf[] = 'plugin rp-pppoe.so';
+        $conf[] = sprintf('nic-%s', $port);
+    } else {
+        /*
+         * PPTP: the control connection is set up by the pptp helper, which
+         * hands pppd the GRE tunnel as a terminal. EAP is refused because a
+         * PPTP server offering it cannot be authenticated against, MSCHAPv2 is
+         * what such a server actually expects.
+         */
+        $peer = $peers[0] ?? '';
+        if (!is_ipaddr($peer) && !is_hostname($peer)) {
+            log_msg("PPTP on {$device}: no server configured", LOG_ERR);
+            return;
+        }
+        $conf[] = sprintf('pty "/usr/sbin/pptp %s --nolaunchpppd --loglevel 0"', $peer);
+        $conf[] = 'refuse-eap';
+        $conf[] = 'lock';
+    }
+
+    $conf = array_merge($conf, [
         sprintf('ifname %s', $device),
         sprintf('linkname %s', $interface),
         sprintf('mtu %d', $mtu),
@@ -1153,7 +1177,7 @@ function interface_pppoe_configure($interface, $ifcfg, $ppp, $ports, $mtus, $ipv
         'holdoff 5',
         'lcp-echo-interval 10',
         'lcp-echo-failure 6',
-    ];
+    ]);
 
     if (!empty($ppp['username'])) {
         $conf[] = sprintf('user "%s"', str_replace('"', '', $ppp['username']));
@@ -1161,10 +1185,10 @@ function interface_pppoe_configure($interface, $ifcfg, $ppp, $ports, $mtus, $ipv
     if (!empty($ppp['password'])) {
         $conf[] = sprintf('password "%s"', str_replace('"', '', base64_decode($ppp['password'])));
     }
-    if (!empty($ppp['provider'])) {
+    if ($type == 'pppoe' && !empty($ppp['provider'])) {
         $conf[] = sprintf('rp_pppoe_service "%s"', str_replace('"', '', $ppp['provider']));
     }
-    if (!empty($ppp['hostuniq'])) {
+    if ($type == 'pppoe' && !empty($ppp['hostuniq'])) {
         $conf[] = sprintf('host-uniq "%s"', str_replace('"', '', $ppp['hostuniq']));
     }
     if (isset($ppp['vjcomp'])) {
@@ -1198,7 +1222,7 @@ function interface_pppoe_configure($interface, $ifcfg, $ppp, $ports, $mtus, $ipv
     file_put_contents($conffile, implode(PHP_EOL, $conf) . PHP_EOL);
     chmod($conffile, 0600);
 
-    $unit = sprintf('muros-pppoe@%s.service', $interface);
+    $unit = sprintf('muros-ppp@%s.service', $interface);
     mwexecfm('/usr/bin/systemctl stop %s', $unit);
     mwexecf('/usr/bin/systemctl start %s', $unit);
 
@@ -1320,8 +1344,16 @@ function interface_ppps_configure($interface)
         }
     }
 
-    if ($ppp['type'] == 'pppoe') {
-        interface_pppoe_configure($interface, $ifcfg, $ppp, $ports, $mtus, $ipv6_mode == 'enable');
+    if (in_array($ppp['type'], ['pppoe', 'pptp'])) {
+        interface_pppd_configure(
+            $interface,
+            $ifcfg,
+            $ppp,
+            $ports,
+            $mtus,
+            $ipv6_mode == 'enable',
+            $gateways
+        );
         return;
     }
 

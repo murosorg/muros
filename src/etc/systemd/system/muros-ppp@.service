@@ -1,8 +1,8 @@
 [Unit]
 # Instance name is the MurOS interface the session belongs to (wan, opt1, ...),
 # which is also the name of the generated pppd options file. The interface name
-# of the session itself (pppoe0, ...) is set by pppd through "ifname".
-Description=MurOS PPPoE session on %i
+# of the session itself (pppoe0, pptp0, ...) is set by pppd through "ifname".
+Description=MurOS PPP session on %i
 Documentation=https://github.com/ecritel/muros
 After=network.target
 ConditionPathExists=/var/etc/ppp/%i.conf
