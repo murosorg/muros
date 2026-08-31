@@ -19,6 +19,7 @@
     --------------------------------------------------------------------------------------
     report temperature sensors (Linux, read from /sys/class/thermal and hwmon)
 """
+import argparse
 import glob
 import json
 import os
@@ -92,7 +93,20 @@ def collect():
 
 
 if __name__ == '__main__':
+    # MurOS: the sensor inventory used to come from "sysctl -aF", listing the
+    # OIDs the FreeBSD drivers registered as temperatures. Nothing answers that
+    # on Debian, so the same collector lists the devices it found instead.
+    parser = argparse.ArgumentParser(description='Report the temperature sensors of this system')
+    parser.add_argument('--list', action='store_true', help='list the sensor devices, one per line')
+    args = parser.parse_args()
+
     try:
-        print(json.dumps(collect()))
+        sensors = collect()
     except Exception:
-        print(json.dumps([]))
+        sensors = []
+
+    if args.list:
+        for device in sorted({sensor['device'] for sensor in sensors}):
+            print(device)
+    else:
+        print(json.dumps(sensors))
