@@ -341,16 +341,43 @@ function store_track6_idassoc6(&$new_config, &$pconfig)
     }
 }
 
+/*
+ * MurOS: the three helpers below asked ifconfig what the radio could do
+ * ("list caps", "list chan", "list txpower"). None of those exist on Debian,
+ * where the radio answers to nl80211, so they read the JSON the wireless
+ * script builds from iw. The web server runs unprivileged, hence configd.
+ */
+function wireless_radio_info($interface)
+{
+    static $cache = [];
+
+    $device = get_real_interface($interface);
+    if (empty($device)) {
+        return null;
+    }
+    if (!isset($cache[$device])) {
+        $cache[$device] = json_decode(configd_run(sprintf('interface wireless info %s', $device)), true);
+    }
+
+    return is_array($cache[$device]) ? $cache[$device] : null;
+}
+
 function test_wireless_capability($if, $cap)
 {
-    $caps = ['hostap' => 'HOSTAP', 'adhoc' => 'IBSS'];
+    /* the interface types of nl80211, as the GUI names them */
+    $caps = ['hostap' => 'AP', 'adhoc' => 'IBSS'];
 
     if (!isset($caps[$cap])) {
         return false;
     }
 
-    foreach (shell_safe('/sbin/ifconfig %s list caps', $if, true) as $line) {
-        if (preg_match("/^drivercaps=.*<.*{$caps[$cap]}.*>$/", $line)) {
+    $info = wireless_radio_info($if);
+    if ($info === null) {
+        return false;
+    }
+
+    foreach ($info['modes'] ?? [] as $mode) {
+        if (strcasecmp($mode, $caps[$cap]) == 0) {
             return true;
         }
     }
@@ -363,40 +390,40 @@ function get_wireless_modes($interface)
 {
     $wireless_modes = [];
 
-    $device = get_real_interface($interface);
-    if ($device) {
-        $chan_list = shell_safe('/sbin/ifconfig -v %s list chan', $device);
-        $matches = [];
-
-        preg_match_all('/Channel\s+([^\s]+)\s+:\s+[^\s]+\s+[^\s]+\s+([^\s]+(?:\sht(?:\/[^\s]+)?)?)/', $chan_list, $matches);
-
-        $interface_channels = [];
-
-        foreach (array_keys($matches[0]) as $i) {
-            $interface_channels[] = [$matches[1][$i], $matches[2][$i]];
-        }
-
-        array_multisort($interface_channels);
-
-        foreach ($interface_channels as $wireless_info) {
-            /* XXX discard possible channel width for now */
-            $wireless_mode = explode('/', $wireless_info[1])[0];
-            $wireless_channel = (string)$wireless_info[0];
-            switch ($wireless_mode) {
-                case '11g ht':
-                    $wireless_mode = '11ng';
-                    break;
-                case '11a ht':
-                    $wireless_mode = '11na';
-                    break;
-                default:
-                    break;
-            }
-            $wireless_modes[$wireless_mode][] = $wireless_channel;
-        }
-
-        ksort($wireless_modes);
+    $info = wireless_radio_info($interface);
+    if ($info === null) {
+        return $wireless_modes;
     }
+
+    /*
+     * A Linux radio publishes frequencies and capabilities, not the FreeBSD
+     * mode names the form is written around. The band a frequency belongs to
+     * gives the plain mode, the capabilities of the radio add the high
+     * throughput ones on top of it, and a channel the regulatory domain
+     * disables is not offered at all.
+     */
+    foreach ($info['channels'] ?? [] as $channel) {
+        if (!empty($channel['disabled'])) {
+            continue;
+        }
+        $band = $channel['band'];
+        $number = (string)$channel['channel'];
+        $wireless_modes[$band][] = $number;
+        if (!empty($info['ht'])) {
+            $wireless_modes[$band == '11a' ? '11na' : '11ng'][] = $number;
+        }
+        if (!empty($info['vht']) && $band == '11a') {
+            $wireless_modes['11ac'][] = $number;
+        }
+    }
+
+    foreach ($wireless_modes as $mode => $channels) {
+        $channels = array_values(array_unique($channels));
+        sort($channels, SORT_NUMERIC);
+        $wireless_modes[$mode] = $channels;
+    }
+
+    ksort($wireless_modes);
 
     return $wireless_modes;
 }
@@ -406,19 +433,21 @@ function get_wireless_channel_info($interface)
 {
     $wireless_channels = [];
 
-    $device = get_real_interface($interface);
-    if ($device) {
-        $chan_list = shell_safe('/sbin/ifconfig %s list txpower', $device);
-        $matches = [];
-
-        preg_match_all('/Channel\s+([^\s]+)\s+:\s+([^\s]+)\s+([^\s]+)\s+([^\s]+)\s+[^\s]+\s+([^\s]+)/', $chan_list, $matches);
-
-        foreach (array_keys($matches[0]) as $i) {
-            $wireless_channels[$matches[1][$i]] = "{$matches[2][$i]} {$matches[3][$i]}@{$matches[4][$i]}/{$matches[5][$i]}";
-        }
-
-        ksort($wireless_channels);
+    $info = wireless_radio_info($interface);
+    if ($info === null) {
+        return $wireless_channels;
     }
+
+    foreach ($info['channels'] ?? [] as $channel) {
+        if (!empty($channel['disabled'])) {
+            continue;
+        }
+        /* the regulatory limit is the only power figure nl80211 reports */
+        $power = $channel['txpower'] === null ? gettext('n/a') : sprintf('%.1f dBm', $channel['txpower']);
+        $wireless_channels[$channel['channel']] = sprintf('%s %d MHz %s', $channel['band'], $channel['freq'], $power);
+    }
+
+    ksort($wireless_channels);
 
     return $wireless_channels;
 }

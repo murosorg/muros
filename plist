@@ -1322,6 +1322,7 @@
 /usr/local/opnsense/scripts/interfaces/traceroute.py
 /usr/local/opnsense/scripts/interfaces/traffic_stats.php
 /usr/local/opnsense/scripts/interfaces/traffic_top.py
+/usr/local/opnsense/scripts/interfaces/wireless.py
 /usr/local/opnsense/scripts/ipsec/connect.py
 /usr/local/opnsense/scripts/ipsec/disconnect.py
 /usr/local/opnsense/scripts/ipsec/get_legacy_vti.php

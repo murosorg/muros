@@ -1847,156 +1847,15 @@ function interface_wireless_configure($if, &$wancfg)
 
     $wlcfg = &$wancfg['wireless'];
 
-   /*
-    * Open up a shell script that will be used to output the commands.
-    * since wireless is changing a lot, these series of commands are fragile
-    * and will sometimes need to be verified by a operator by executing the command
-    * and returning the output of the command to the developers for inspection.  Please
-    * do not change this routine from a shell script to individual exec commands.  -sullrich
-    */
-
-    $fd_set = fopen("/tmp/{$if}_setup.sh", "w");
-    fwrite($fd_set, "#!/bin/sh\n");
-    fwrite($fd_set, "# wireless configuration script.\n\n");
-
-    /* Set all wireless ifconfig variables (split up to get rid of needed checking) */
-    $wl_sysctl = [];
-    $wlcmd = [];
-
-    /* Make sure it's up */
-    $wlcmd[] = "up";
-
-    if (isset($wlcfg['standard'])) {
-        /* Set a/b/g standard */
-        $standard = str_replace(" Turbo", "", $wlcfg['standard']);
-        $wlcmd[] = "mode " . escapeshellarg($standard);
-
-        /*
-         * XXX: Disable ampdu for now on mwl when running in 11n mode
-         * to prevent massive packet loss under certain conditions.
-         */
-        if (preg_match("/^mwl/i", $if) && ($standard == "11ng" || $standard == "11na")) {
-            $wlcmd[] = "-ampdu";
-        }
-    }
-
-    if (isset($wlcfg['ssid'])) {
-        /* Set ssid */
-        $wlcmd[] = "ssid " . escapeshellarg($wlcfg['ssid']);
-    }
-
-    if (isset($wlcfg['protmode'])) {
-        /* Set 802.11g protection mode */
-        $wlcmd[] = "protmode " . escapeshellarg($wlcfg['protmode']);
-    }
-
-    /* set wireless channel value */
-    if (isset($wlcfg['channel'])) {
-        if ($wlcfg['channel'] == "0") {
-            $wlcmd[] = "channel any";
-        } else {
-            $wlcmd[] = "channel " . escapeshellarg($wlcfg['channel']);
-        }
-    }
-
-    /* Set antenna diversity value */
-    if (isset($wlcfg['diversity'])) {
-        $wl_sysctl[] = "diversity=" . escapeshellarg($wlcfg['diversity']);
-    }
-
-    /* Set txantenna value */
-    if (isset($wlcfg['txantenna'])) {
-        $wl_sysctl[] = "txantenna=" . escapeshellarg($wlcfg['txantenna']);
-    }
-
-    /* Set rxantenna value */
-    if (isset($wlcfg['rxantenna'])) {
-        $wl_sysctl[] = "rxantenna=" . escapeshellarg($wlcfg['rxantenna']);
-    }
-
-    /* Set wireless hostap mode */
-    if (isset($wlcfg['mode']) && $wlcfg['mode'] == 'hostap') {
-        $wlcmd[] = "mediaopt hostap";
-    } else {
-        $wlcmd[] = "-mediaopt hostap";
-    }
-
-    /* Set wireless adhoc mode */
-    if (isset($wlcfg['mode']) && $wlcfg['mode'] == 'adhoc') {
-        $wlcmd[] = "mediaopt adhoc";
-    } else {
-        $wlcmd[] = "-mediaopt adhoc";
-    }
-
-    /* Not necessary to set BSS mode as this is default if adhoc and/or hostap is NOT set */
-
-    /* handle hide ssid option */
-    if (isset($wlcfg['hidessid']['enable'])) {
-        $wlcmd[] = "hidessid";
-    } else {
-        $wlcmd[] = "-hidessid";
-    }
-
-    /* handle pureg (802.11g) only option */
-    if (isset($wlcfg['pureg']['enable'])) {
-        $wlcmd[] = "mode 11g pureg";
-    } else {
-        $wlcmd[] = "-pureg";
-    }
-
-    /* handle puren (802.11n) only option */
-    if (isset($wlcfg['puren']['enable'])) {
-        $wlcmd[] = "puren";
-    } else {
-        $wlcmd[] = "-puren";
-    }
-
-    /* enable apbridge option */
-    if (isset($wlcfg['apbridge']['enable'])) {
-        $wlcmd[] = "apbridge";
-    } else {
-        $wlcmd[] = "-apbridge";
-    }
-
-    /* handle turbo option */
-    if (isset($wlcfg['turbo']['enable'])) {
-        $wlcmd[] = "mediaopt turbo";
-    } else {
-        $wlcmd[] = "-mediaopt turbo";
-    }
-
-    /* handle wme option */
-    if (isset($wlcfg['wme']['enable'])) {
-        $wlcmd[] = "wme";
-    } else {
-        $wlcmd[] = "-wme";
-    }
-
-    /* set up wep if enabled */
-    if (isset($wlcfg['wep']['enable']) && is_array($wlcfg['wep']['key'])) {
-        $wepset = '';
-        switch ($wlcfg['wpa']['auth_algs']) {
-            case "1":
-                $wepset .= "authmode open wepmode on ";
-                break;
-            case "2":
-                $wepset .= "authmode shared wepmode on ";
-                break;
-            case "3":
-                $wepset .= "authmode mixed wepmode on ";
-        }
-        $i = 1;
-        foreach ($wlcfg['wep']['key'] as $wepkey) {
-            $wepset .= "wepkey " . escapeshellarg("{$i}:{$wepkey['value']}") . " ";
-            if (isset($wepkey['txkey'])) {
-                $wlcmd[] = "weptxkey {$i} ";
-            }
-            $i++;
-        }
-        $wlcmd[] = $wepset;
-    } else {
-        $wlcmd[] = 'authmode open wepmode off';
-    }
+    /*
+     * MurOS: FreeBSD wrote a shell script full of ifconfig arguments here and
+     * ran it against the wlan clone. Nothing of that survives the move to
+     * nl80211: the radio is configured by the two daemons and by iw, from the
+     * settings collected below. Antenna diversity, antenna selection, turbo
+     * mode, 802.11g protection mode and the pure 11g / pure 11n toggles have
+     * no counterpart on this platform and are ignored; the hidden network,
+     * quality of service and station isolation toggles are passed to hostapd.
+     */
 
     kill_wpasupplicant($if);
     kill_hostapd($if);
@@ -2073,6 +1932,31 @@ group={$wlcfg['wpa']['wpa_pairwise']}
 EOD;
 
                 @file_put_contents("/var/etc/wpa_supplicant_{$if}.conf", $wpa);
+                @chmod("/var/etc/wpa_supplicant_{$if}.conf", 0600);
+                unset($wpa);
+            } elseif (!empty($wlcfg['ssid'])) {
+                /*
+                 * MurOS: an open network still has to be joined. FreeBSD did
+                 * that with "ifconfig ssid", which is gone, and nl80211 has no
+                 * association of its own for a managed interface: the station
+                 * is driven by wpa_supplicant in every case, here with no key
+                 * management at all.
+                 */
+                $wpa = <<<EOD
+ctrl_interface=/var/run/wpa_supplicant
+ctrl_interface_group=0
+ap_scan=1
+network={
+ssid="{$wlcfg['ssid']}"
+scan_ssid=1
+priority=5
+key_mgmt=NONE
+}
+
+EOD;
+
+                @file_put_contents("/var/etc/wpa_supplicant_{$if}.conf", $wpa);
+                @chmod("/var/etc/wpa_supplicant_{$if}.conf", 0600);
                 unset($wpa);
             }
             break;
@@ -2082,12 +1966,16 @@ EOD;
             } else {
                 $wpa_passphrase = "";
             }
-            if (isset($wlcfg['wpa']['enable'])) {
+            if (!empty($wlcfg['ssid'])) {
                 /*
                  * MurOS: nl80211 is the Linux driver interface, and the radio
                  * settings FreeBSD applied with ifconfig on the clone device
-                 * (band and channel) are part of the hostapd configuration
-                 * here. Channel 0 means "let hostapd pick one" (ACS).
+                 * (band, channel, hidden network, quality of service, traffic
+                 * between stations) are part of the hostapd configuration
+                 * here. Channel 0 means "let hostapd pick one" (ACS). An open
+                 * access point is configured the same way, only without the
+                 * key management block, because hostapd owns the beacon in
+                 * every case and nothing else can bring the cell up.
                  */
                 $hw_mode = 'g';
                 if (!empty($wlcfg['standard']) && preg_match('/11a/', $wlcfg['standard'])) {
@@ -2105,6 +1993,10 @@ EOD;
                     $radio .= 'country_code=' . $wlcfg['regcountry'] . PHP_EOL;
                     $radio .= 'ieee80211d=1' . PHP_EOL;
                 }
+                $radio .= 'ignore_broadcast_ssid=' . (isset($wlcfg['hidessid']['enable']) ? '1' : '0') . PHP_EOL;
+                $radio .= 'wmm_enabled=' . (isset($wlcfg['wme']['enable']) ? '1' : '0') . PHP_EOL;
+                /* the FreeBSD apbridge let stations talk to each other */
+                $radio .= 'ap_isolate=' . (isset($wlcfg['apbridge']['enable']) ? '0' : '1') . PHP_EOL;
 
                 $wpa = <<<EOD
 interface={$if}
@@ -2119,8 +2011,13 @@ ctrl_interface=/var/run/hostapd
 ctrl_interface_group=root
 #accept_mac_file=/tmp/hostapd_{$if}.accept
 #deny_mac_file=/tmp/hostapd_{$if}.deny
-#macaddr_acl={$wlcfg['wpa']['macaddr_acl']}
 ssid={$wlcfg['ssid']}
+
+EOD;
+
+                if (isset($wlcfg['wpa']['enable'])) {
+                    $wpa .= <<<EOD
+#macaddr_acl={$wlcfg['wpa']['macaddr_acl']}
 debug={$wlcfg['wpa']['debug_mode']}
 auth_algs={$wlcfg['wpa']['auth_algs']}
 wpa={$wlcfg['wpa']['wpa_mode']}
@@ -2132,8 +2029,9 @@ wpa_strict_rekey={$wlcfg['wpa']['wpa_strict_rekey']}
 {$wpa_passphrase}
 
 EOD;
+                }
 
-                if (isset($wlcfg['wpa']['rsn_preauth'])) {
+                if (isset($wlcfg['wpa']['enable']) && isset($wlcfg['wpa']['rsn_preauth'])) {
                     $wpa .= <<<EOD
 # Enable the next lines for preauth when roaming. Interface = wired or wireless interface talking to the AP you want to roam from/to
 rsn_preauth=1
@@ -2141,7 +2039,10 @@ rsn_preauth_interfaces={$if}
 
 EOD;
                 }
-                if (is_array($wlcfg['wpa']['ieee8021x']) && isset($wlcfg['wpa']['ieee8021x']['enable'])) {
+                if (
+                    isset($wlcfg['wpa']['enable']) && is_array($wlcfg['wpa']['ieee8021x'] ?? null) &&
+                    isset($wlcfg['wpa']['ieee8021x']['enable'])
+                ) {
                     $wpa .= "ieee8021x=1\n";
 
                     if (!empty($wlcfg['auth_server_addr']) && !empty($wlcfg['auth_server_shared_secret'])) {
@@ -2173,24 +2074,18 @@ EOD;
                 }
 
                 @file_put_contents("/var/etc/hostapd_{$if}.conf", $wpa);
+                @chmod("/var/etc/hostapd_{$if}.conf", 0600);
                 unset($wpa);
             }
             break;
     }
 
     /*
-     * MurOS: everything below this point was ifconfig on a wlan clone device,
-     * netgraph and dev.<driver>.<unit> sysctls. On Linux the radio is driven by
-     * the regulatory database and by the two daemons: hostapd owns the channel
-     * and the band in access point mode, wpa_supplicant follows the access
-     * point in station mode. Only the settings that exist on this platform are
-     * applied here (regulatory domain, transmit power, channel outside access
-     * point mode); diversity, antenna selection, turbo, protection mode and
-     * apbridge have no Linux equivalent and are ignored.
+     * The radio itself: the regulatory database and the two daemons drive it,
+     * hostapd owns the channel and the band in access point mode while
+     * wpa_supplicant follows the access point in station mode. Only what
+     * exists on this platform is applied here.
      */
-    fclose($fd_set);
-    @unlink("/tmp/{$if}_setup.sh");
-
     if (!empty($wlcfg['regcountry'])) {
         mwexecf('/usr/sbin/iw reg set %s', [$wlcfg['regcountry']]);
     }
@@ -2208,19 +2103,25 @@ EOD;
         mwexecfm('/usr/sbin/iw dev %s set txpower fixed %s', [$if, (int)$wlcfg['txpower'] * 100]);
     }
 
-    if (isset($wlcfg['wpa']['enable'])) {
-        if ($mode == 'bss') {
-            mwexecf(
-                '/usr/sbin/wpa_supplicant -B -D nl80211 -i %s -c %s',
-                [$if, "/var/etc/wpa_supplicant_{$if}.conf"]
-            );
-        } elseif ($mode == 'hostap') {
-            mwexecf(
-                '/usr/sbin/hostapd -B -P %s %s',
-                ["/var/run/hostapd_{$if}.pid", "/var/etc/hostapd_{$if}.conf"]
-            );
-        }
-    } elseif (isset($wlcfg['wep']['enable'])) {
+    /*
+     * MurOS: the two daemons own the cell, protected or not, so they are
+     * started as soon as a network name is configured. WEP is the exception:
+     * neither wpa_supplicant nor hostapd will carry it here, and the driver
+     * has no interface of its own for it.
+     */
+    if (!empty($wlcfg['ssid']) && $mode == 'bss' && is_file("/var/etc/wpa_supplicant_{$if}.conf")) {
+        mwexecf(
+            '/usr/sbin/wpa_supplicant -B -D nl80211 -i %s -c %s',
+            [$if, "/var/etc/wpa_supplicant_{$if}.conf"]
+        );
+    } elseif (!empty($wlcfg['ssid']) && $mode == 'hostap' && is_file("/var/etc/hostapd_{$if}.conf")) {
+        mwexecf(
+            '/usr/sbin/hostapd -B -P %s %s',
+            ["/var/run/hostapd_{$if}.pid", "/var/etc/hostapd_{$if}.conf"]
+        );
+    }
+
+    if (!isset($wlcfg['wpa']['enable']) && isset($wlcfg['wep']['enable'])) {
         log_msg("Wireless {$if}: WEP is not supported on this platform.", LOG_ERR);
     }
 

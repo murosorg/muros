@@ -30,8 +30,19 @@
 require_once("guiconfig.inc");
 require_once("interfaces.inc");
 
+/*
+ * MurOS: the page used to run "ifconfig <if> scan" and parse "list scan" and
+ * "list sta". Neither exists on Debian and the web server runs unprivileged,
+ * so the radio is questioned through configd, which returns the output of iw
+ * as JSON. The columns follow what nl80211 reports: a Linux station has no
+ * association id and no transmit sequence numbers, it has signal strength,
+ * negotiated rates and traffic counters.
+ */
+$scan = [];
+$peers = [];
+
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
-    if(!empty($_GET['if'])) {
+    if (!empty($_GET['if'])) {
         $if = $_GET['if'];
     } else {
         /* if no interface is provided this invoke is invalid */
@@ -39,12 +50,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         exit;
     }
     $rwlif = get_real_interface($if);
-    if(!empty($_GET['rescanwifi'])) {
-        mwexecf('/sbin/ifconfig %s %s', [$rwlif, 'scan']);
-        sleep(1); /* XXX a historic couriosity */
+    if (!empty($_GET['rescanwifi'])) {
+        configd_run(sprintf('interface wireless scan %s', $rwlif));
         header(url_safe('Location: /status_wireless.php?if=%s', [$if]));
         exit;
     }
+    $scan = json_decode(configd_run(sprintf('interface wireless scan %s', $rwlif)), true) ?: [];
+    $peers = json_decode(configd_run(sprintf('interface wireless stations %s', $rwlif)), true) ?: [];
+}
+
+function wireless_bytes($bytes)
+{
+    $units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+    $index = 0;
+    while ($bytes >= 1024 && $index < count($units) - 1) {
+        $bytes /= 1024;
+        $index++;
+    }
+
+    return sprintf('%.1f %s', $bytes, $units[$index]);
+}
+
+function wireless_age($seconds)
+{
+    if ($seconds < 60) {
+        return sprintf(gettext('%d s'), $seconds);
+    }
+
+    return sprintf(gettext('%d min'), (int)($seconds / 60));
 }
 
 include("head.inc");
@@ -62,116 +95,96 @@ include("head.inc");
             <input type="hidden" name="if" id="if" value="<?= html_safe($if) ?>">
             <header class="content-box-head container-fluid">
               <h3>
-	        <?= gettext('Nearby access points or ad-hoc peers') ?>
+                <?= gettext('Nearby access points or ad-hoc peers') ?>
                 <a href="<?= 'status_wireless.php?if=' . html_safe($if) . '&rescanwifi=1' ?>" class="btn btn-xs btn-primary pull-right"><i class="fa fa-plus-circle fa-fw"></i> <?= gettext('Rescan') ?></a>
-	      </h3>
+              </h3>
             </header>
               <table class="table table-striped">
                 <thead>
                   <tr>
-                    <th><?=gettext("SSID");?></th>
-                    <th><?=gettext("BSSID");?></th>
-                    <th><?=gettext("CHAN");?></th>
-                    <th><?=gettext("RATE");?></th>
-                    <th><?=gettext("RSSI");?></th>
-                    <th><?=gettext("INT");?></th>
-                    <th><?=gettext("CAPS");?></th>
+                    <th><?= gettext('SSID') ?></th>
+                    <th><?= gettext('BSSID') ?></th>
+                    <th><?= gettext('CHAN') ?></th>
+                    <th><?= gettext('FREQ') ?></th>
+                    <th><?= gettext('RATE') ?></th>
+                    <th><?= gettext('SIGNAL') ?></th>
+                    <th><?= gettext('INT') ?></th>
+                    <th><?= gettext('MODE') ?></th>
+                    <th><?= gettext('SECURITY') ?></th>
                   </tr>
                 </thead>
                 <tbody>
-<?php
-                $states = shell_safe('/sbin/ifconfig %s %s %s 2>&1', [$rwlif, 'list', 'scan'], true);
-
-                /* Skip Header */
-                array_shift($states);
-
-                $counter = 0;
-                foreach ($states as $state):
-                  /* Split by Mac address for the SSID Field */
-                  $split = preg_split('/([0-9a-f][[0-9a-f]\:[0-9a-f][[0-9a-f]\:[0-9a-f][[0-9a-f]\:[0-9a-f][[0-9a-f]\:[0-9a-f][[0-9a-f]\:[0-9a-f][[0-9a-f])/i', $state, 2);
-                  preg_match('/([0-9a-f][[0-9a-f]\:[0-9a-f][[0-9a-f]\:[0-9a-f][[0-9a-f]\:[0-9a-f][[0-9a-f]\:[0-9a-f][[0-9a-f]\:[0-9a-f][[0-9a-f])/i', $state, $bssid);
-                  $ssid = $split[0];
-                  $bssid = $bssid[0];
-                  /* Split the rest by using spaces for this line using the 2nd part */
-                  $split = preg_split("/[ ]+/i", $split[1], 6);
-                  $channel = $split[1];
-                  $rate = $split[2];
-                  $rssi = $split[3];
-                  $int = $split[4];
-                  $caps = $split[5];
-?>
+<?php foreach ($scan as $cell): ?>
                   <tr>
-                    <td><?= html_safe($ssid) ?></td>
-                    <td><?= html_safe($bssid) ?></td>
-                    <td><?= html_safe($channel) ?></td>
-                    <td><?= html_safe($rate) ?></td>
-                    <td><?= html_safe($rssi) ?></td>
-                    <td><?= html_safe($int) ?></td>
-                    <td><?= html_safe($caps) ?></td>
+                    <td><?= html_safe($cell['ssid'] === '' ? gettext('hidden') : $cell['ssid']) ?></td>
+                    <td><?= html_safe($cell['bssid']) ?></td>
+                    <td><?= html_safe($cell['channel']) ?></td>
+                    <td><?= html_safe(sprintf('%d MHz', $cell['freq'])) ?></td>
+                    <td><?= html_safe(sprintf('%g Mbit/s', $cell['rate'])) ?></td>
+                    <td><?= html_safe($cell['rssi'] === null ? '' : sprintf('%.0f dBm', $cell['rssi'])) ?></td>
+                    <td><?= html_safe($cell['interval']) ?></td>
+                    <td><?= html_safe($cell['mode']) ?></td>
+                    <td><?= html_safe($cell['security']) ?></td>
                   </tr>
-<?php
-                  endforeach;?>
+<?php endforeach ?>
+<?php if (empty($scan)): ?>
+                  <tr>
+                    <td colspan="9"><?= gettext('No networks found. A radio serving an access point cannot scan, and a station reports what it last heard.') ?></td>
+                  </tr>
+<?php endif ?>
                 </tbody>
               </table>
             </div>
             <div class="content-box table-responsive">
               <header class="content-box-head container-fluid">
-                <h3><?=gettext("Associated or ad-hoc peers"); ?></h3>
+                <h3><?= gettext('Associated or ad-hoc peers') ?></h3>
               </header>
               <table class="table table-striped">
                 <thead>
                   <tr>
-                    <th><?=gettext("ADDR");?></th>
-                    <th><?=gettext("AID");?></th>
-                    <th><?=gettext("CHAN");?></th>
-                    <th><?=gettext("RATE");?></th>
-                    <th><?=gettext("RSSI");?></th>
-                    <th><?=gettext("IDLE");?></th>
-                    <th><?=gettext("TXSEQ");?></th>
-                    <th><?=gettext("RXSEQ");?></th>
-                    <th><?=gettext("CAPS");?></th>
-                    <th><?=gettext("ERP");?></th>
+                    <th><?= gettext('ADDR') ?></th>
+                    <th><?= gettext('SIGNAL') ?></th>
+                    <th><?= gettext('TX RATE') ?></th>
+                    <th><?= gettext('RX RATE') ?></th>
+                    <th><?= gettext('TX') ?></th>
+                    <th><?= gettext('RX') ?></th>
+                    <th><?= gettext('IDLE') ?></th>
+                    <th><?= gettext('UPTIME') ?></th>
+                    <th><?= gettext('FLAGS') ?></th>
                   </tr>
                 </thead>
                 <tbody>
-<?php
-                $states = shell_safe('/sbin/ifconfig %s %s %s 2>&1', [$rwlif, 'list', 'sta'], true);
-
-                /* Skip Header */
-                array_shift($states);
-
-                $counter = 0;
-                foreach ($states as $state):
-                  $split = preg_split("/[ ]+/i", $state);?>
+<?php foreach ($peers as $peer): ?>
                   <tr>
-                    <td><?=$split[0];?></td>
-                    <td><?=$split[1];?></td>
-                    <td><?=$split[2];?></td>
-                    <td><?=$split[3];?></td>
-                    <td><?=$split[4];?></td>
-                    <td><?=$split[5];?></td>
-                    <td><?=$split[6];?></td>
-                    <td><?=$split[7];?></td>
-                    <td><?=$split[8];?></td>
-                    <td><?=$split[9];?></td>
+                    <td><?= html_safe($peer['mac']) ?></td>
+                    <td><?= html_safe($peer['signal'] === null ? '' : sprintf('%.0f dBm', $peer['signal'])) ?></td>
+                    <td><?= html_safe($peer['tx_rate']) ?></td>
+                    <td><?= html_safe($peer['rx_rate']) ?></td>
+                    <td><?= html_safe(wireless_bytes($peer['tx_bytes'])) ?></td>
+                    <td><?= html_safe(wireless_bytes($peer['rx_bytes'])) ?></td>
+                    <td><?= html_safe(wireless_age((int)($peer['inactive'] / 1000))) ?></td>
+                    <td><?= html_safe(wireless_age($peer['connected'])) ?></td>
+                    <td><?= html_safe(implode(', ', $peer['flags'])) ?></td>
                   </tr>
-<?php
-                endforeach;?>
+<?php endforeach ?>
+<?php if (empty($peers)): ?>
+                  <tr>
+                    <td colspan="9"><?= gettext('No peer is associated with this radio.') ?></td>
+                  </tr>
+<?php endif ?>
                 </tbody>
                 <tfoot>
                   <tr>
-                    <td colspan="10">
-                      <b><?=gettext('Flags:') ?></b> <?=gettext('A = authorized, E = Extended Rate (802.11g), P = Power save mode') ?><br />
-                      <b><?=gettext('Capabilities:') ?></b> <?=gettext('E = ESS (infrastructure mode), I = IBSS (ad-hoc mode), P = privacy (WEP/TKIP/AES), S = Short preamble, s = Short slot time') ?>
+                    <td colspan="9">
+                      <b><?= gettext('Flags:') ?></b> <?= gettext('authorized = the peer may send data, authenticated = the peer completed the handshake, wmm/wme = quality of service is negotiated, preamble = short preamble in use') ?>
                     </td>
                   </tr>
                 </tfoot>
               </table>
             </div>
           </form>
-        </div>
-      </section>
+        </section>
+      </div>
     </div>
-  </div>
-</section>
-<?php include("foot.inc"); ?>
+  </section>
+<?php include("foot.inc") ?>
