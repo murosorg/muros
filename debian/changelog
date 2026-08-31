@@ -1,3 +1,20 @@
+muros (0.9.93) trixie; urgency=medium
+
+  * Inline intrusion detection and policy based routing were writing in the
+    same bits of the packet mark. A gateway is identified by its number, and
+    the handover to suricata recognised an already inspected packet by the
+    lowest bit of the mark, so any gateway with an odd number made the traffic
+    routed through it skip inspection entirely, and any packet that came back
+    from the inspection queue carried a mark the routing rules no longer
+    recognised and left through the default gateway. The two flags of the
+    intrusion detection now live above the sixteen bits the gateway numbers
+    use, and the routing rules match their own bits only.
+  * The captive portal froze the last activity of a client whose counters had
+    been reset under it, which an idle timeout would eventually read as an
+    idle client and disconnect.
+
+ -- MurOS <dev@muros.org>  Mon, 31 Aug 2026 22:33:31 +0200
+
 muros (0.9.92) trixie; urgency=medium
 
   * The captive portal redirected every encrypted connection of an
