@@ -81,6 +81,17 @@ def load_model():
             'delay': text(node, 'delay', '0'),
             'queue': text(node, 'queue', ''),
             'description': text(node, 'description'),
+            'scheduler': text(node, 'scheduler'),
+            'codel_enable': text(node, 'codel_enable'),
+            'codel_target': text(node, 'codel_target'),
+            'codel_interval': text(node, 'codel_interval'),
+            'codel_ecn_enable': text(node, 'codel_ecn_enable'),
+            'pie_enable': text(node, 'pie_enable'),
+            'fqcodel_quantum': text(node, 'fqcodel_quantum'),
+            'fqcodel_limit': text(node, 'fqcodel_limit'),
+            'fqcodel_flows': text(node, 'fqcodel_flows'),
+            'mask': text(node, 'mask'),
+            'buckets': text(node, 'buckets'),
         }
 
     for node in shaper.findall('./queues/queue'):
@@ -96,6 +107,14 @@ def load_model():
             'pipe': pipe,
             'weight': int(weight) if weight.isdigit() else 1,
             'description': text(node, 'description'),
+            'delay': '0',
+            'codel_enable': text(node, 'codel_enable'),
+            'codel_target': text(node, 'codel_target'),
+            'codel_interval': text(node, 'codel_interval'),
+            'codel_ecn_enable': text(node, 'codel_ecn_enable'),
+            'pie_enable': text(node, 'pie_enable'),
+            'mask': text(node, 'mask'),
+            'buckets': text(node, 'buckets'),
         }
 
     for node in shaper.findall('./rules/rule'):
@@ -104,10 +123,112 @@ def load_model():
         model['rules'].append({
             'uuid': node.get('uuid'),
             'target': text(node, 'target'),
+            'direction': text(node, 'direction'),
             'interfaces': [text(node, 'interface'), text(node, 'interface2')],
         })
 
     return model
+
+
+# What a pipe or a queue asks of its queueing discipline. The shaper page has
+# always offered these knobs, the port read none of them and gave every pipe
+# the same default discipline, so a pipe configured to fight bufferbloat with
+# tighter targets, or to use a different scheduler, behaved like one that had
+# been left alone. Everything the kernel here can express is passed on, and
+# what it cannot is named rather than dropped in silence.
+UNTRANSLATED = {
+    'wf2q+': 'the weighted fair queueing scheduler',
+    'rr': 'the round robin scheduler',
+    'qfq': 'the quick fair queueing scheduler',
+    'prio': 'the strict priority scheduler',
+}
+
+
+def notes(model):
+    """ the settings of the model that have no counterpart on this platform
+    """
+    found = []
+
+    for kind in ('pipes', 'queues'):
+        for entry in model[kind].values():
+            label = '%s %d' % (kind[:-1], entry['number'])
+            scheduler = entry.get('scheduler', '')
+            if scheduler in UNTRANSLATED:
+                found.append('%s: %s has no equivalent, fq_codel is used instead'
+                             % (label, UNTRANSLATED[scheduler]))
+            if entry.get('mask', '') not in ('', 'none'):
+                found.append('%s: a dynamic pipe per %s is not translated, the discipline shares '
+                             'the bandwidth between flows instead' % (label, entry['mask']))
+            if entry.get('buckets', ''):
+                found.append('%s: the hash bucket count is not translated' % label)
+
+    for rule in model['rules']:
+        if rule.get('direction') == 'in':
+            found.append('rule %s: shaping what arrives on an interface needs an intermediate '
+                         'device and is not done yet, the rule classifies nothing'
+                         % rule['uuid'])
+
+    return found
+
+
+def leaf_qdisc(entry):
+    """ the queueing discipline at the bottom of a pipe or a queue, built from
+        what the model asks for
+    """
+    delay = entry.get('delay', '0')
+    if delay.isdigit() and int(delay) > 0:
+        # a pipe that adds delay is asking for netem, and nothing else fits
+        return ['netem', 'delay', '%sms' % delay]
+
+    scheduler = entry.get('scheduler', '')
+    codel = entry.get('codel_enable') == '1'
+    ecn = entry.get('codel_ecn_enable') == '1'
+    target = entry.get('codel_target', '')
+    interval = entry.get('codel_interval', '')
+
+    if entry.get('pie_enable') == '1' or scheduler == 'fq_pie':
+        qdisc = ['fq_pie']
+        if entry.get('fqcodel_limit', '').isdigit():
+            qdisc += ['limit', entry['fqcodel_limit']]
+        if entry.get('fqcodel_flows', '').isdigit():
+            qdisc += ['flows', entry['fqcodel_flows']]
+        if entry.get('fqcodel_quantum', '').isdigit():
+            qdisc += ['quantum', entry['fqcodel_quantum']]
+        if target.isdigit():
+            qdisc += ['target', '%sms' % target]
+        if ecn:
+            qdisc += ['ecn']
+        return qdisc
+
+    if codel and scheduler not in ('fq_codel', 'fq_pie'):
+        # a single queue with the controlled delay algorithm on it
+        qdisc = ['codel']
+        if target.isdigit():
+            qdisc += ['target', '%sms' % target]
+        if interval.isdigit():
+            qdisc += ['interval', '%sms' % interval]
+        if ecn:
+            qdisc += ['ecn']
+        return qdisc
+
+    qdisc = ['fq_codel']
+    if entry.get('fqcodel_limit', '').isdigit():
+        qdisc += ['limit', entry['fqcodel_limit']]
+    elif entry.get('queue', '').isdigit():
+        qdisc += ['limit', entry['queue']]
+    if entry.get('fqcodel_flows', '').isdigit():
+        qdisc += ['flows', entry['fqcodel_flows']]
+    if entry.get('fqcodel_quantum', '').isdigit():
+        qdisc += ['quantum', entry['fqcodel_quantum']]
+    if codel:
+        if target.isdigit():
+            qdisc += ['target', '%sms' % target]
+        if interval.isdigit():
+            qdisc += ['interval', '%sms' % interval]
+        if ecn:
+            qdisc += ['ecn']
+
+    return qdisc
 
 
 def pipe_devices(model):
@@ -162,17 +283,17 @@ def apply_model():
             run(['class', 'replace', 'dev', device, 'parent', ROOT_HANDLE,
                  'classid', classid, 'htb', 'rate', rate, 'ceil', rate], quiet=False)
 
-            # the leaf discipline of a pipe without queues: fq_codel keeps the
-            # latency down, netem is used instead when the pipe adds delay
+            # the discipline at the bottom of the pipe, as the model asks.
+            # tc cannot swap one discipline for another under the same handle,
+            # so whatever sits there goes first
+            run(['qdisc', 'del', 'dev', device, 'parent', classid])
             leaf = ['qdisc', 'replace', 'dev', device, 'parent', classid,
-                    'handle', '%x:' % pipe['number']]
-            if pipe['delay'].isdigit() and int(pipe['delay']) > 0:
-                leaf += ['netem', 'delay', '%sms' % pipe['delay']]
-            else:
-                leaf += ['fq_codel']
-                if pipe['queue'].isdigit():
-                    leaf += ['limit', pipe['queue']]
-            run(leaf)
+                    'handle', '%x:' % pipe['number']] + leaf_qdisc(pipe)
+            if run(leaf) != 0:
+                # a kernel without the discipline the model asks for should not
+                # cost the pipe its shaping
+                run(['qdisc', 'replace', 'dev', device, 'parent', classid,
+                     'handle', '%x:' % pipe['number'], 'fq_codel'], quiet=False)
 
     # queues share the bandwidth of their pipe proportionally to their weight
     for pipe_uuid, pipe in model['pipes'].items():
@@ -186,9 +307,15 @@ def apply_model():
                      'classid', '%s%x' % (ROOT_HANDLE, queue['number']),
                      'htb', 'rate', '%dbit' % share,
                      'ceil', '%dbit' % (pipe['rate'] or share)], quiet=False)
-                run(['qdisc', 'replace', 'dev', device,
-                     'parent', '%s%x' % (ROOT_HANDLE, queue['number']),
-                     'handle', '%x:' % queue['number'], 'fq_codel'])
+                run(['qdisc', 'del', 'dev', device,
+                     'parent', '%s%x' % (ROOT_HANDLE, queue['number'])])
+                leaf = ['qdisc', 'replace', 'dev', device,
+                        'parent', '%s%x' % (ROOT_HANDLE, queue['number']),
+                        'handle', '%x:' % queue['number']] + leaf_qdisc(queue)
+                if run(leaf) != 0:
+                    run(['qdisc', 'replace', 'dev', device,
+                         'parent', '%s%x' % (ROOT_HANDLE, queue['number']),
+                         'handle', '%x:' % queue['number'], 'fq_codel'], quiet=False)
 
     return len(devices)
 
@@ -327,5 +454,11 @@ if __name__ == '__main__':
         print('shaper flushed')
     elif action == 'statistics':
         print(ujson.dumps(statistics()))
+    elif action == 'notes':
+        for note in notes(load_model()):
+            print(note)
     else:
-        print('shaper applied on %d interface(s)' % apply_model())
+        count = apply_model()
+        for note in notes(load_model()):
+            print('shaper: %s' % note, file=sys.stderr)
+        print('shaper applied on %d interface(s)' % count)

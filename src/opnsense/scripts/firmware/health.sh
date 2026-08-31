@@ -189,6 +189,8 @@ if [ -z "${CMD}" -o "${CMD}" = "firewall" ]; then
 	# applied, which no other check on this page would notice.
 	output_txt ">>> Check that the configured firewall rules reached the kernel"
 	output_cmd sh -c '/usr/local/opnsense/scripts/firewall/nft_verify.php 2>&1 || true'
+	output_txt ">>> Check what the traffic shaper cannot translate"
+	output_cmd sh -c '/usr/local/opnsense/scripts/shaper/tc_apply.py notes 2>&1 || true'
 fi
 
 output_done
