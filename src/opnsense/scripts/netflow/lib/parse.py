@@ -27,6 +27,7 @@
     parse flowd log files
 """
 import glob
+import os
 import subprocess
 import re
 from lib.flowparser import FlowParser
@@ -38,12 +39,20 @@ class Interfaces(object):
     def __init__(self):
         """ construct local interface mapping
         """
+        """ MurOS: this used to run a FreeBSD helper that does not exist here
+            and, worse, numbered the interfaces by the order it printed them
+            rather than by their real index, so a flow was attributed to
+            whichever interface happened to be listed at that position. The
+            kernel keeps the mapping, one file per device.
+        """
         self._if_index = dict()
-        sp = subprocess.run(['/usr/local/sbin/ifinfo'], capture_output=True, text=True)
-        interfaces = re.findall(r"Interface ([^ ]+)", sp.stdout)
 
-        for index, interface in enumerate(interfaces, start=1):
-            self._if_index["%s" % index] = interface
+        for device in os.listdir('/sys/class/net'):
+            try:
+                with open('/sys/class/net/%s/ifindex' % device) as fhandle:
+                    self._if_index[fhandle.read().strip()] = device
+            except OSError:
+                continue
 
     def if_device(self, if_index):
         """ convert index to device (if found)

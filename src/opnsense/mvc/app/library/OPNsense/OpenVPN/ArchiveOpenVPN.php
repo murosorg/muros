@@ -118,7 +118,23 @@ class ArchiveOpenVPN extends PlainOpenVPN
         }
         file_put_contents("{$content_dir}/{$base_filename}.ovpn", implode("\n", $conf));
 
-        Shell::run_safe('cd %s && /usr/local/bin/zip -r %s %s', [$tempdir, $content_dir . ".zip", $base_filename]);
+        /*
+         * MurOS: the archive was handed to a command line packer living at a
+         * path that does not exist here, so exporting a client configuration
+         * produced an empty file. The extension of the language does the same
+         * job without a shell, which also keeps the private key of the client
+         * out of a command line.
+         */
+        $archive = new \ZipArchive();
+        if ($archive->open($content_dir . ".zip", \ZipArchive::CREATE | \ZipArchive::OVERWRITE) !== true) {
+            throw new UserException(gettext('Failed to create the client archive'));
+        }
+        $archive->addEmptyDir($base_filename);
+        foreach (glob($content_dir . "/*") as $filename) {
+            $archive->addFile($filename, $base_filename . '/' . basename($filename));
+        }
+        $archive->close();
+
         $result = file_get_contents($content_dir . ".zip");
 
         // cleanup
