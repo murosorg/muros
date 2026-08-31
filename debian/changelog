@@ -1,3 +1,22 @@
+muros (0.9.78) trixie; urgency=medium
+
+  * The changelog tab of the firmware page shows something. It used to download
+    a tarball of pre-rendered changelogs from the OPNsense mirrors, the port
+    replaced that with an empty stub, and an operator had no way to see what an
+    update contained. A Debian package carries its own changelog, so the history
+    up to the running version is already on the box and apt can fetch the one of
+    a version not installed yet: both are turned into the per version text, HTML
+    and index the page reads. The repository publishes the changelog of every
+    package alongside it and the box ships the apt configuration that points
+    there, so a pending update can be read before it is applied.
+  * The sqlite3 repair path called a FreeBSD path that does not exist here, so a
+    corrupted database was dumped into an empty file and reimported from it. The
+    command is looked up now, and the repair is skipped when it is not
+    installed.
+  * Removed the inert FreeBSD ifconfig parser left next to the iproute2 one.
+
+ -- MurOS <jpzi@proton.me>  Mon, 31 Aug 2026 20:45:00 +0200
+
 muros (0.9.77) trixie; urgency=medium
 
   * Wireless is driven through nl80211 instead of the FreeBSD ifconfig that no
