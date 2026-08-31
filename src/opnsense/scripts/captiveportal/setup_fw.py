@@ -83,6 +83,10 @@ def load_zones(config_xml=CONFIG_XML):
         zoneid = zone.findtext('zoneid')
         if zoneid is None or zoneid.strip() == '':
             continue
+        if (zone.findtext('disableRules') or '').strip() not in ('', '0'):
+            # the operator took over: no redirection, no gate, no portal
+            # opening is built for this zone, the rules are theirs to write
+            continue
         zone_devs = []
         for tag in _csv(zone.findtext('interfaces')):
             if tag in devices:

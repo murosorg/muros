@@ -282,8 +282,20 @@ def build(zones):
             'add rule %s %s rdr %s ip saddr @%s return' % (TABLE_FAMILY, TABLE_NAME, iif, names[('allow', 4)]),
             'add rule %s %s rdr %s ip6 saddr @%s return' % (TABLE_FAMILY, TABLE_NAME, iif, names[('allow', 6)]),
             'add rule %s %s rdr %s ether saddr @%s return' % (TABLE_FAMILY, TABLE_NAME, iif, names[('allowmac', 0)]),
-            'add rule %s %s rdr %s tcp dport 80 redirect to :%d' % (TABLE_FAMILY, TABLE_NAME, iif, http_port),
-            'add rule %s %s rdr %s tcp dport 443 redirect to :%d' % (TABLE_FAMILY, TABLE_NAME, iif, https_port),
+            # plain web traffic is redirected wherever it was headed,
+            # except towards another client of the zone, which would put the
+            # portal in the middle of a conversation it has nothing to do with
+            'add rule %s %s rdr %s ip daddr != @%s tcp dport 80 redirect to :%d'
+            % (TABLE_FAMILY, TABLE_NAME, iif, names[('member', 4)], http_port),
+            'add rule %s %s rdr %s ip6 daddr != @%s tcp dport 80 redirect to :%d'
+            % (TABLE_FAMILY, TABLE_NAME, iif, names[('member', 6)], http_port),
+            # encrypted traffic is only redirected when it was addressed to
+            # the firewall itself. Answering for someone else under a name we
+            # have no certificate for gives the client a security warning
+            # instead of the portal, and hides the failure behind it; a client
+            # detecting a captive network asks the firewall directly.
+            'add rule %s %s rdr %s fib daddr type local tcp dport 443 redirect to :%d'
+            % (TABLE_FAMILY, TABLE_NAME, iif, https_port),
         ]
 
         # accounting (non terminating) followed by the forward gate.
