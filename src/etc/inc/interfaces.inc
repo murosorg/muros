@@ -969,6 +969,7 @@ function interface_reset($interface, $ifacecfg = false, $suspend = false)
             break;
         case 'pppoe':
         case 'pptp':
+        case 'ppp':
             /* MurOS: the session is a pppd instance owned by systemd */
             mwexecfm('/usr/bin/systemctl stop muros-ppp@%s.service', $interface);
             break;
@@ -1030,6 +1031,7 @@ function interface_ppps_bound($interface, $family = null)
         case 'ppp':
         case 'pppoe':
         case 'pptp':
+        case 'ppp':
         case 'l2tp':
             $ipv4_mode = true;
             break;
@@ -1117,10 +1119,11 @@ function interface_ppps_reset($interface, $suspend, $ifcfg, $ppps)
 }
 
 /*
- * MurOS: PPP session (PPPoE, PPTP and L2TP). mpd5 and netgraph do not exist on
- * Debian, so the session is run by pppd, with its rp-pppoe plugin for PPPoE,
- * with the pptp helper as its terminal for PPTP, and driven by xl2tpd for L2TP,
- * supervised by the muros-ppp@ and muros-l2tp@<interface>.service templates. pppd names the interface itself
+ * MurOS: PPP session (PPPoE, PPTP, L2TP and serial modem). mpd5 and netgraph do
+ * not exist on Debian, so the session is run by pppd, with its rp-pppoe plugin
+ * for PPPoE, with the pptp helper as its terminal for PPTP, on the serial device
+ * itself for a modem, and driven by xl2tpd for L2TP, supervised by the
+ * muros-ppp@ and muros-l2tp@<interface>.service templates. pppd names the interface itself
  * (ifname), so the device stays the one recorded in the configuration and every
  * consumer (gateways, ruleset, monitoring) is unaffected. The link scripts are
  * reached through the pppd hook directories, see pppd-hook.sh.
@@ -1138,8 +1141,9 @@ function interface_pppd_configure($interface, $ifcfg, $ppp, $ports, $mtus, $ipv6
     }
 
     /* the payload of a PPPoE session is 8 bytes smaller than the parent link,
-     * a PPTP one loses the GRE and IP headers on top of that */
-    $mtu = !empty($mtus[0]) ? (int)$mtus[0] : ($type == 'pppoe' ? 1492 : 1400);
+     * a PPTP one loses the GRE and IP headers on top of that, and a modem link
+     * carries plain PPP frames */
+    $mtu = !empty($mtus[0]) ? (int)$mtus[0] : ($type == 'pppoe' ? 1492 : ($type == 'ppp' ? 1500 : 1400));
     $mru = !empty($ppp['mru']) ? (int)$ppp['mru'] : $mtu;
 
     $conf = [];
@@ -1149,6 +1153,56 @@ function interface_pppd_configure($interface, $ifcfg, $ppp, $ports, $mtus, $ipv6
     if ($type == 'pppoe') {
         $conf[] = 'plugin rp-pppoe.so';
         $conf[] = sprintf('nic-%s', $port);
+    } elseif ($type == 'ppp') {
+        /*
+         * Serial or USB modem: pppd talks to the device directly and the dial
+         * sequence is a chat script, which is where the init string, the SIM
+         * pin, the access point and the number belong. FreeBSD expressed the
+         * same steps as mpd "set modem script" commands.
+         */
+        if (!file_exists($port)) {
+            log_msg("PPP on {$device}: {$port} does not exist", LOG_ERR);
+            return;
+        }
+
+        $chat = [
+            "ABORT 'NO CARRIER'",
+            "ABORT 'NO DIALTONE'",
+            'ABORT BUSY',
+            'ABORT ERROR',
+            "TIMEOUT " . (!empty($ppp['connect-timeout']) ? (int)$ppp['connect-timeout'] : 60),
+            "'' ATZ",
+        ];
+
+        if (!empty($ppp['initstr'])) {
+            $chat[] = sprintf("OK '%s'", str_replace("'", '', base64_decode($ppp['initstr'])));
+        }
+        if (!empty($ppp['simpin'])) {
+            $chat[] = sprintf('OK AT+CPIN=%s', preg_replace('/\D/', '', $ppp['simpin']));
+            /* the modem needs a moment to register after unlocking the SIM */
+            $chat[] = sprintf('OK-AT-OK ATZ');
+        }
+        if (!empty($ppp['apn'])) {
+            $chat[] = sprintf(
+                'OK AT+CGDCONT=%d,"IP","%s"',
+                !empty($ppp['apnum']) ? (int)$ppp['apnum'] : 1,
+                str_replace('"', '', $ppp['apn'])
+            );
+        }
+
+        $chat[] = sprintf('OK ATD%s', !empty($ppp['phone']) ? $ppp['phone'] : '*99#');
+        $chat[] = "CONNECT ''";
+
+        $chatfile = "/var/etc/ppp/{$interface}.chat";
+        file_put_contents($chatfile, implode(PHP_EOL, $chat) . PHP_EOL);
+        chmod($chatfile, 0600);
+
+        $conf[] = $port;
+        $conf[] = '115200';
+        $conf[] = 'modem';
+        $conf[] = 'crtscts';
+        $conf[] = 'lock';
+        $conf[] = sprintf('connect "/usr/sbin/chat -v -f %s"', $chatfile);
     } elseif ($type == 'l2tp') {
         /*
          * L2TP: the tunnel is established by xl2tpd, which starts pppd on the
@@ -1299,6 +1353,7 @@ function interface_ppps_configure($interface)
         case 'ppp':
         case 'pppoe':
         case 'pptp':
+        case 'ppp':
         case 'l2tp':
             $ipv4_mode = 'enable';
             break;
@@ -1387,7 +1442,7 @@ function interface_ppps_configure($interface)
         }
     }
 
-    if (in_array($ppp['type'], ['pppoe', 'pptp', 'l2tp'])) {
+    if (in_array($ppp['type'], ['pppoe', 'pptp', 'l2tp', 'ppp'])) {
         interface_pppd_configure(
             $interface,
             $ifcfg,

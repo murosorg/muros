@@ -55,39 +55,37 @@ function interfaces_ptpid_next()
 
 function serial_devices()
 {
-    $modems = [];
-
-    foreach (shell_safe('/sbin/sysctl -qa %s', 'dev.u3g', true) as $line) {
-        $portnum = explode('.', $line)[2];
-        if (is_numeric($portnum)) {
-            if (!isset($modems[$portnum])) {
-                $modems[$portnum] = [];
-            }
-            if (strpos($line, '%desc:') !== false) {
-                $modems[$portnum]['descr'] = explode('%desc:', $line)[1];
-            } elseif (strpos($line, '%pnpinfo:') !== false) {
-                foreach (explode(' ', explode('%pnpinfo:', $line)[1]) as $prop) {
-                    $tmp = explode('=', $prop);
-                    if (count($tmp) == 2) {
-                        $modems[$portnum][$tmp[0]] = $tmp[1];
-                    }
-                }
-            }
-        }
-    }
-
+    /*
+     * MurOS: serial and USB modem devices. FreeBSD enumerated the u3g driver
+     * through sysctl and offered the matching /dev/cua* nodes; on Linux the
+     * candidates are the standard serial ports plus the USB CDC and serial
+     * converters, and the model of a USB device is published by the kernel next
+     * to it in sysfs.
+     */
     $serialports = [];
 
-    foreach (glob('/dev/cua?[0-9]{,.[0-9]}', GLOB_BRACE) as $device) {
-        $serialports[$device] = ['descr' => ''];
-        $tty = explode('.', explode('cua', $device)[1])[0];
+    foreach (glob('/dev/{ttyS,ttyUSB,ttyACM}[0-9]*', GLOB_BRACE) as $device) {
+        $descr = '';
+        $name = basename($device);
 
-        foreach ($modems as $modem) {
-            if (isset($modem['ttyname']) && $modem['ttyname'] == $tty) {
-                $serialports[$device] = $modem;
+        /* the device link points at the USB interface, whose parent holds the
+         * manufacturer and product strings */
+        $sysfs = sprintf('/sys/class/tty/%s/device', $name);
+        if (is_dir($sysfs)) {
+            $parts = [];
+            foreach (['../manufacturer', '../product', '../../manufacturer', '../../product'] as $attribute) {
+                $value = @file_get_contents($sysfs . '/' . $attribute);
+                if ($value !== false && trim($value) !== '' && !in_array(trim($value), $parts)) {
+                    $parts[] = trim($value);
+                }
             }
+            $descr = implode(' ', $parts);
         }
+
+        $serialports[$device] = ['descr' => $descr];
     }
+
+    ksort($serialports);
 
     return $serialports;
 }
