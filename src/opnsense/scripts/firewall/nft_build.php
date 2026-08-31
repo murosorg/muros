@@ -402,7 +402,7 @@ function build_interfaces(SimpleXMLElement $cfg): array
         if (filter_var($ip6, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
             $entry['ip6'] = $ip6;
             if ($sub6 !== '') {
-                $entry['cidr6'] = $ip6 . '/' . $sub6;
+                $entry['cidr6'] = network6_of($ip6, (int)$sub6);
             }
         }
         $out[(string)$key] = $entry;
@@ -447,8 +447,71 @@ function build_interfaces(SimpleXMLElement $cfg): array
  * interface group. Empty when the key is unknown. */
 function iface_devices(array $ifaces, string $key): array
 {
-    $key = trim($key);
-    return $key !== '' && isset($ifaces[$key]) ? $ifaces[$key]['devices'] : [];
+    $devices = [];
+    /* several pages let a rule name more than one interface, stored as a
+       comma separated list; a list read as a single key resolves to nothing
+       and leaves the rule matching every interface instead of two */
+    foreach (array_filter(array_map('trim', explode(',', $key)), 'strlen') as $name) {
+        if (isset($ifaces[$name])) {
+            $devices = array_merge($devices, $ifaces[$name]['devices']);
+        }
+    }
+
+    return array_values(array_unique($devices));
+}
+
+/* Interface keys named by a rule, whatever the number. */
+function iface_keys(array $ifaces, string $key): array
+{
+    $keys = [];
+    foreach (array_filter(array_map('trim', explode(',', $key)), 'strlen') as $name) {
+        if (isset($ifaces[$name])) {
+            $keys[] = $name;
+        }
+    }
+
+    return $keys;
+}
+
+/* Whether a rule asks for its translation to be reflected on the inside
+ * networks. A blank value on the rule follows the system setting. */
+function reflection_enabled(SimpleXMLElement $cfg, SimpleXMLElement $rule, bool $binat = false): bool
+{
+    $mode = strtolower(trim((string)($rule->natreflection ?? '')));
+    if ($mode === 'disable') {
+        return false;
+    }
+    if ($mode === 'enable' || $mode === 'purenat') {
+        return true;
+    }
+    if ($binat) {
+        return trim((string)($cfg->system->enablebinatreflection ?? '')) !== '';
+    }
+
+    return trim((string)($cfg->system->disablenatreflection ?? '')) === '';
+}
+
+/* The inside interfaces a reflection applies to: everything the firewall
+ * carries a network on, except the interfaces the translation is published
+ * on. Returns the devices to match on ingress and the networks to match on
+ * the way back. */
+function reflection_scope(array $ifaces, array $exclude, string $family): array
+{
+    $devices = [];
+    $networks = [];
+    foreach ($ifaces as $key => $itf) {
+        if (in_array($key, $exclude, true)) {
+            continue;
+        }
+        $net = $family === 'ip6' ? $itf['cidr6'] : $itf['cidr4'];
+        if ($net === null) {
+            continue;
+        }
+        $devices = array_merge($devices, $itf['devices']);
+        $networks[] = $net;
+    }
+
+    return [array_values(array_unique($devices)), array_values(array_unique($networks))];
 }
 
 /* An iifname/oifname operand for one device or a set of them. */
@@ -459,6 +522,24 @@ function ifname_expr(array $devices): string
         return ifname_token($devices[0]);
     }
     return '{ ' . implode(', ', array_map('ifname_token', $devices)) . ' }';
+}
+
+/* Return the network CIDR for an IPv6 address and prefix length. Writing the
+ * host address with a prefix would name the interface, not the subnet behind
+ * it, and a rule meant for the whole network would read as one host. */
+function network6_of(string $ip, int $prefix): ?string
+{
+    $packed = @inet_pton($ip);
+    if ($packed === false || $prefix < 0 || $prefix > 128) {
+        return null;
+    }
+    for ($i = 0; $i < 16; $i++) {
+        $bits = $prefix - ($i * 8);
+        $mask = $bits >= 8 ? 0xff : ($bits <= 0 ? 0x00 : (0xff << (8 - $bits)) & 0xff);
+        $packed[$i] = chr(ord($packed[$i]) & $mask);
+    }
+
+    return inet_ntop($packed) . '/' . $prefix;
 }
 
 /* Return the network CIDR for an IPv4 address and prefix length. */
@@ -1484,6 +1565,7 @@ function build_nat(SimpleXMLElement $cfg, array $ifaces, array $wanDevs, array $
 
     /* port forwards: destination NAT plus an associated forward pass. */
     $noRdr = [];
+    $reflect = [];
     if (isset($cfg->nat->rule)) {
         foreach ($cfg->nat->rule as $r) {
             if (isset($r->disabled)) {
@@ -1509,12 +1591,16 @@ function build_nat(SimpleXMLElement $cfg, array $ifaces, array $wanDevs, array $
                 $parts[] = 'iifname ' . ifname_expr($devs);
             }
             $ok = true;
+            $published = null;
             foreach (['source' => 'saddr', 'destination' => 'daddr'] as $side => $keyword) {
                 $ep = $r->{$side} ?? null;
                 $value = resolve_endpoint($ep, $family, $ifaces, $aliases);
                 if ($value !== null) {
                     $neg = isset($ep->not) && trim((string)$ep->not) !== '0' ? '!= ' : '';
                     $parts[] = "$family $keyword $neg$value";
+                    if ($side === 'destination' && $neg === '') {
+                        $published = $value;
+                    }
                 } elseif (!endpoint_is_any($ep)) {
                     /* an unresolved destination would publish the forward on
                        every address the interface answers for */
@@ -1569,7 +1655,6 @@ function build_nat(SimpleXMLElement $cfg, array $ifaces, array $wanDevs, array $
                 continue;
             }
             foreach ([
-                'natreflection' => 'reflecting the forward back onto the inside networks',
                 'tag' => 'setting a firewall tag',
                 'tagged' => 'matching a firewall tag',
             ] as $field => $detail) {
@@ -1600,6 +1685,43 @@ function build_nat(SimpleXMLElement $cfg, array $ifaces, array $wanDevs, array $
             }
             $passes[] = '        ' . implode(' ', $fp) . ' ct status dnat counter accept comment "'
                 . rule_tag($r, 'port forward pass') . '"';
+
+            /* Reflection. A host on an inside network that asks for the
+             * published address gets the same translation, and the reply has
+             * to come back through the firewall or the client would see it
+             * arrive from the internal address it never talked to. That
+             * second half is the hairpin source translation below. */
+            if (!reflection_enabled($cfg, $r)) {
+                continue;
+            }
+            if ($published === null) {
+                degrade_rule($r, 'natreflection', 'the forward has no single published address to reflect');
+                continue;
+            }
+            list($rdevs, $rnets) = reflection_scope($ifaces, iface_keys($ifaces, (string)$r->interface), $family);
+            if (empty($rdevs)) {
+                degrade_rule($r, 'natreflection', 'no inside network carries an address to reflect it on');
+                continue;
+            }
+            $rp = ['iifname ' . ifname_expr($rdevs), "$family daddr $published", $proto];
+            if ($extPort !== null) {
+                $rp[] = "dport $extPort";
+            }
+            $pre[] = '        ' . implode(' ', $rp) . " dnat to $to comment \""
+                . rule_tag($r, 'port forward reflection') . '"';
+
+            $hp = [
+                "$family saddr " . (count($rnets) === 1 ? $rnets[0] : '{ ' . implode(', ', $rnets) . ' }'),
+                "$family daddr $target",
+                $proto,
+            ];
+            $hport = $localPort !== '' ? fmt_ports($localPort) : $extPort;
+            if ($hport !== null) {
+                $hp[] = "dport $hport";
+            }
+            $hp[] = 'ct status dnat';
+            $reflect[] = '        ' . implode(' ', $hp) . ' counter masquerade comment "'
+                . rule_tag($r, 'port forward reflection') . '"';
         }
     }
 
@@ -1658,6 +1780,21 @@ function build_nat(SimpleXMLElement $cfg, array $ifaces, array $wanDevs, array $
 
             $passes[] = "        $family daddr $internal ct status dnat counter accept comment \""
                 . rule_tag($r, '1:1 nat pass') . '"';
+
+            if (!reflection_enabled($cfg, $r, true)) {
+                continue;
+            }
+            list($rdevs, $rnets) = reflection_scope($ifaces, iface_keys($ifaces, (string)$r->interface), $family);
+            if (empty($rdevs)) {
+                degrade_rule($r, 'natreflection', 'no inside network carries an address to reflect it on');
+                continue;
+            }
+            $pre[] = '        iifname ' . ifname_expr($rdevs) . " $family daddr $external"
+                . " dnat to $internal comment \"" . rule_tag($r, '1:1 nat reflection') . '"';
+            $reflect[] = '        ' . "$family saddr "
+                . (count($rnets) === 1 ? $rnets[0] : '{ ' . implode(', ', $rnets) . ' }')
+                . " $family daddr $internal ct status dnat counter masquerade comment \""
+                . rule_tag($r, '1:1 nat reflection') . '"';
         }
     }
 
@@ -1680,7 +1817,9 @@ function build_nat(SimpleXMLElement $cfg, array $ifaces, array $wanDevs, array $
      * (manual outbound rules and 1:1 NAT), and finally the broad automatic
      * masquerade which would otherwise claim addresses that should follow a
      * more specific mapping. */
-    $post = array_merge($noNat, $post, $autoMasq);
+    /* the hairpin translations belong with the specific source NAT, after the
+       no-nat returns and before the broad masquerade */
+    $post = array_merge($noNat, $reflect, $post, $autoMasq);
 
     /* No-rdr returns must be evaluated before any dnat rule so excluded
      * traffic is never redirected. */
