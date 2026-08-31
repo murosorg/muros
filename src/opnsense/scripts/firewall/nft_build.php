@@ -36,10 +36,13 @@
  *   - one-to-one and NPTv6: whole prefixes are mapped with the nftables
  *     netmap statement, single addresses with a plain dnat and snat
  *
- * Not yet handled (kept on the roadmap): the source NAT rules of the model
- * tree (OPNsense/Firewall/Filter/snatrules, the legacy outbound rules are
- * rendered), and the pf state options that count states globally (max,
- * max-src-nodes).
+ *   - source NAT of the model tree: the rules of the Source NAT page are
+ *     rendered next to the legacy outbound ones, as a masquerade for an
+ *     interface target and an snat for a fixed address or pool
+ *
+ * Not yet handled (kept on the roadmap): a source NAT target that is an
+ * address alias (nftables cannot translate to a set) and the pf state options
+ * that count states globally (max, max-src-nodes).
  *
  * Usage: nft_build.php [config.xml]   (defaults to /conf/config.xml)
  * The ruleset is written to stdout.
@@ -622,6 +625,195 @@ function build_model_nat(SimpleXMLElement $cfg, array $ifaces, array $aliases): 
     return ['pre' => $pre, 'post' => $post, 'passes' => $passes];
 }
 
+/* The address range covered by a prefix, written the way an nft nat target
+ * wants a pool: "first-last". A single address is returned as is. */
+function prefix_pool(string $cidr): ?string
+{
+    if (strpos($cidr, '/') === false) {
+        return $cidr;
+    }
+
+    list($addr, $len) = explode('/', $cidr, 2);
+    $len = (int)$len;
+    $packed = @inet_pton($addr);
+    if ($packed === false) {
+        return null;
+    }
+
+    $bytes = strlen($packed);
+    if ($len < 0 || $len > $bytes * 8) {
+        return null;
+    }
+    if ($len === $bytes * 8) {
+        return inet_ntop($packed);
+    }
+
+    $first = $packed;
+    $last = $packed;
+    for ($i = 0; $i < $bytes; $i++) {
+        $bits = $len - ($i * 8);
+        $mask = $bits >= 8 ? 0xff : ($bits <= 0 ? 0x00 : (0xff << (8 - $bits)) & 0xff);
+        $first[$i] = chr(ord($packed[$i]) & $mask);
+        $last[$i] = chr(ord($packed[$i]) | ((~$mask) & 0xff));
+    }
+
+    return inet_ntop($first) . '-' . inet_ntop($last);
+}
+
+/*
+ * MurOS: the source NAT rules of the model tree.
+ *
+ * Firewall: NAT: Source NAT writes into OPNsense/Firewall/Filter/snatrules,
+ * with a schema of its own (source_net / destination_net / target, one
+ * address family per rule), while the older Outbound page keeps writing
+ * <nat><outbound><rule>. The builder only read the legacy location, so a rule
+ * created on the current page was accepted, listed, counted in the GUI and
+ * never applied: the traffic left the box with whatever source address the
+ * automatic masquerade picked, which is exactly what the rule was written to
+ * avoid.
+ *
+ * A rule becomes one postrouting line per transport protocol it covers. The
+ * target decides the verdict: an interface, an interface address token or an
+ * empty target is a masquerade, so a dynamic uplink keeps working after its
+ * address changes, and a literal address or prefix is an snat to that address
+ * or to the pool it spans. A target port is only emitted on IPv4 and with a
+ * known transport protocol, since nft rejects a port in the nat target
+ * otherwise, and static-port keeps the original port by leaving the target
+ * without one, which is what conntrack already does whenever it can. A target
+ * that resolves to an alias is skipped: nftables cannot translate to a set.
+ *
+ * These rules do not depend on the mode of the legacy Outbound page: the two
+ * pages write different places and an operator using the model one has no
+ * reason to have visited the other.
+ *
+ * No-NAT rules are returned separately so the caller can place them at the
+ * top of the chain, ahead of every translating rule.
+ */
+function build_model_snat(SimpleXMLElement $cfg, array $ifaces, array $aliases): array
+{
+    $post = [];
+    $nonat = [];
+
+    $root = $cfg->OPNsense->Firewall->Filter ?? null;
+    if ($root === null || !isset($root->snatrules->rule)) {
+        return ['post' => $post, 'nonat' => $nonat];
+    }
+
+    $items = [];
+    foreach ($root->snatrules->rule as $r) {
+        $items[] = $r;
+    }
+    usort($items, function ($a, $b) {
+        return (int)trim((string)($a->sequence ?? '0')) <=> (int)trim((string)($b->sequence ?? '0'));
+    });
+
+    foreach ($items as $r) {
+        if (trim((string)($r->enabled ?? '1')) === '0') {
+            continue;
+        }
+        $devs = iface_devices($ifaces, (string)$r->interface);
+        if (empty($devs)) {
+            continue;
+        }
+
+        $family = trim((string)($r->ipprotocol ?? 'inet')) === 'inet6' ? 'ip6' : 'ip';
+        $s = mvc_resolve_net((string)($r->source_net ?? ''), $family, $ifaces, $aliases);
+        $d = mvc_resolve_net((string)($r->destination_net ?? ''), $family, $ifaces, $aliases);
+        if (!$s['ok'] || !$d['ok']) {
+            continue;
+        }
+        $sneg = trim((string)($r->source_not ?? '0')) === '1' ? '!= ' : '';
+        $dneg = trim((string)($r->destination_not ?? '0')) === '1' ? '!= ' : '';
+
+        $proto = strtolower(trim((string)($r->protocol ?? '')));
+        if ($proto === 'tcp/udp') {
+            $protocols = ['tcp', 'udp'];
+        } elseif ($proto === '' || $proto === 'any') {
+            $protocols = [null];
+        } else {
+            $protocols = [$proto];
+        }
+        $sport = resolve_port((string)($r->source_port ?? ''), $aliases);
+        $dport = resolve_port((string)($r->destination_port ?? ''), $aliases);
+
+        $isNoNat = trim((string)($r->nonat ?? '0')) === '1';
+        $verb = 'counter return';
+        if (!$isNoNat) {
+            $target = trim((string)($r->target ?? ''));
+            $pool = null;
+            $masquerade = false;
+            if ($target === '' || strtolower($target) === 'any' || isset($ifaces[$target])) {
+                $masquerade = true;
+            } elseif (substr($target, -2) === 'ip' && isset($ifaces[substr($target, 0, -2)])) {
+                $itf = $ifaces[substr($target, 0, -2)];
+                $addr = $family === 'ip6' ? $itf['ip6'] : $itf['ip4'];
+                if ($addr === null) {
+                    $masquerade = true;
+                } else {
+                    $pool = $addr;
+                }
+            } else {
+                $ipPart = strpos($target, '/') !== false ? substr($target, 0, strpos($target, '/')) : $target;
+                $flag = $family === 'ip6' ? FILTER_FLAG_IPV6 : FILTER_FLAG_IPV4;
+                if (filter_var($ipPart, FILTER_VALIDATE_IP, $flag) === false) {
+                    continue;
+                }
+                $pool = prefix_pool($target);
+                if ($pool === null) {
+                    continue;
+                }
+            }
+
+            $tport = '';
+            if (trim((string)($r->staticnatport ?? '0')) !== '1' && $family === 'ip') {
+                $tport = fmt_ports(trim((string)($r->target_port ?? ''))) ?? '';
+            }
+            $verb = $masquerade ? 'counter masquerade' : "counter snat to $pool";
+        }
+
+        $descr = nft_comment((string)($r->description ?? ''));
+        $comment = $descr === '' ? ($isNoNat ? 'no source nat' : 'source nat') : $descr;
+        $log = trim((string)($r->log ?? '0')) === '1'
+            ? 'log prefix "muros,nat,' . trim((string)$r['uuid']) . ' " ' : '';
+
+        foreach ($protocols as $p) {
+            $parts = ['oifname ' . ifname_expr($devs)];
+            if ($s['expr'] === null && $d['expr'] === null) {
+                $parts[] = $family === 'ip6' ? 'meta nfproto ipv6' : 'meta nfproto ipv4';
+            }
+            if ($s['expr'] !== null) {
+                $parts[] = "$family saddr $sneg" . $s['expr'];
+            }
+            if ($d['expr'] !== null) {
+                $parts[] = "$family daddr $dneg" . $d['expr'];
+            }
+
+            $ported = $p !== null && in_array($p, ['tcp', 'udp', 'sctp'], true);
+            if ($p !== null) {
+                $parts[] = "meta l4proto $p";
+            }
+            if ($ported && $sport !== null) {
+                $parts[] = "$p sport $sport";
+            }
+            if ($ported && $dport !== null) {
+                $parts[] = "$p dport $dport";
+            }
+
+            $verdict = $verb;
+            if (!$isNoNat && $ported && $tport !== '') {
+                $verdict .= ($verb === 'counter masquerade' ? ' to' : '') . ":$tport";
+            }
+            $post[] = '        ' . implode(' ', $parts) . ' ' . $log . $verdict . " comment \"$comment\"";
+        }
+
+        if ($isNoNat) {
+            $nonat = array_merge($nonat, array_splice($post, count($post) - count($protocols)));
+        }
+    }
+
+    return ['post' => $post, 'nonat' => $nonat];
+}
+
 /* Build the NAT chains (source NAT / masquerade and destination NAT port
  * forwards) from the <nat> section. Returns prerouting lines, postrouting
  * lines and the filter passes that must accompany port forwards (traffic
@@ -824,6 +1016,12 @@ function build_nat(SimpleXMLElement $cfg, array $ifaces, array $wanDevs, array $
     $pre = array_merge($model['pre'], $pre);
     $post = array_merge($model['post'], $post);
     $passes = array_merge($passes, $model['passes']);
+
+    /* the source NAT rules of the model tree sit with the other specific
+     * source NAT, their exclusions with the other no-nat returns */
+    $snat = build_model_snat($cfg, $ifaces, $aliases);
+    $noNat = array_merge($noNat, $snat['nonat']);
+    $post = array_merge($post, $snat['post']);
 
     /* Ordering in the postrouting chain matters: No-NAT "return" rules first
      * so excluded traffic is never translated, then the specific source NAT
