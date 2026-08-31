@@ -40,6 +40,14 @@ enabled() {
     [ "$_v" = "yes" ]
 }
 
+# The daemon configurations in /etc/kea are generated from the model, by the
+# kea_sync plugin hook. On FreeBSD the rc script ran it through kea_setup before
+# starting the daemons; that rc script is gone, so the hook runs here, otherwise
+# Kea would start on whatever /etc/kea holds, the stock Debian sample included.
+sync_config() {
+    /usr/local/sbin/pluginctl -c kea_sync || true
+}
+
 apply() {
     _mode="$1"
     for _d in $DAEMONS; do
@@ -75,9 +83,9 @@ status() {
 }
 
 case "${1:-}" in
-    start)        apply start ;;
-    restart)      apply restart ;;
-    reload)       apply restart ;;
+    start)        sync_config; apply start ;;
+    restart)      sync_config; apply restart ;;
+    reload)       sync_config; apply restart ;;
     stop)         stop_all ;;
     status)       status ;;
     *) echo "usage: $0 {start|stop|restart|reload|status}" >&2; exit 1 ;;
