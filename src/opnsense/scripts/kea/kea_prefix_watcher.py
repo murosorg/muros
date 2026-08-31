@@ -115,13 +115,20 @@ if __name__ == '__main__':
                     "no LLA found for %s, skipping route %s" % (record.get('hwaddr'), prefix)
                 )
                 continue
-            # lazy drop
-            subprocess.run(['/sbin/route', 'delete', '-inet6', prefix], capture_output=True)
             # https://kea.readthedocs.io/en/latest/arm/hooks.html#the-lease4-get-by-lease6-get-by-commands
             # state names (default (or assigned) (0), declined (1), expired-reclaimed (2), released (3), and registered (4))
             if record.get('state', 0) == 0:
+                # MurOS: route(8) does not exist on Debian, so the delegated
+                # prefixes were never routed to their client. iproute2 takes the
+                # link-local next hop with its device instead of the scope id,
+                # and "replace" installs the route or moves it to the new client
+                # in one call, which is what the lazy delete was there for.
+                next_hop, _, device = ll_addr.partition('%')
+                command = ['/usr/sbin/ip', '-6', 'route', 'replace', prefix, 'via', next_hop]
+                if device:
+                    command += ['dev', device]
                 # only add when still valid
-                if subprocess.run(['/sbin/route', 'add', '-inet6', prefix, ll_addr], capture_output=True).returncode:
+                if subprocess.run(command, capture_output=True).returncode:
                     syslog.syslog(syslog.LOG_ERR, "failed adding route %s -> %s" % (prefix, ll_addr))
                 else:
                     syslog.syslog(syslog.LOG_NOTICE, "add route %s -> %s" % (prefix, ll_addr))
