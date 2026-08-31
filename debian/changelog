@@ -1,3 +1,35 @@
+muros (0.9.69) trixie; urgency=medium
+
+  * Firewall: a rule on an interface group matches that group again. The
+    generator only knew the interfaces of config.xml, so a group name resolved to
+    nothing and the rule kept no interface match at all, which means it applied to
+    every interface: a block on one group became a block on everything and a pass
+    became a hole through the firewall. Groups are now expanded to the devices of
+    their members, for rules, outbound NAT, port forwards and one to one NAT.
+  * Interfaces: group membership is kept as state instead of ifconfig group
+    attachments, and reported in the interface details.
+  * Firewall: the pf ruleset body that filter_configure_sync() stopped executing
+    when the nftables generator took over is gone, five hundred lines of scrub,
+    aliases, legacy rules, pfctl loading and pf table sizing, with the helpers
+    only it used.
+  * Importer: the configuration importer works at all. It loaded ZFS with kldstat
+    and kldload, listed disks with camcontrol, gmirror and graid, and probed
+    partitions by the FreeBSD names s1a, p3, s1 and p1, so on Debian the device
+    list was empty and no partition ever matched. Disks come from lsblk, types
+    from blkid, and every partition carrying a readable file system is tried until
+    one holds an installation, which also handles a separate boot or EFI
+    partition. The password reset chroot bind mounts dev, proc and sys.
+  * System: the RAM disk options for /var/log and /tmp and the swap file option
+    do something again. They were applied at boot by rc scripts nothing calls,
+    built on mtree, hw.physmem and swapinfo; they are systemd mount and swap units
+    now, written from the configuration by the page and by the boot chain. The RAM
+    disks apply on the next reboot, as they did on FreeBSD.
+  * Boot: the last FreeBSD rc leftovers are removed, the crash dump helper built
+    on dumpon and savecore, the live media mode, and the installer wrapper around
+    bsdinstall that the Debian live installer of the image replaces.
+
+ -- MurOS <jpzi@proton.me>  Mon, 31 Aug 2026 10:15:00 +0200
+
 muros (0.9.68) trixie; urgency=medium
 
   * Web interface: the administration page reconfigures the front end that is
