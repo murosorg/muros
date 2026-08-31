@@ -1,3 +1,21 @@
+muros (0.9.64) trixie; urgency=medium
+
+  * L2TP: the last PPP type still generated as an mpd5 configuration now runs
+    under xl2tpd, with the pppd options file generated like the other types and a
+    lac that dials on startup and redials for ever, supervised by a
+    muros-l2tp@<interface>.service template. xl2tpd is a recommendation.
+  * NetFlow local collection: flowd has no Debian package and both the collector
+    and the aggregator were started through FreeBSD rc scripts, so nothing was
+    ever collected and the Insight pages stayed empty. Only the daemon was
+    missing: the reporting side reads the flowd log with the parser shipped in
+    tree, so a collector receives the datagrams sent to the loopback, decodes
+    NetFlow version 5 and version 9 including templates, and appends records in
+    that same format. It keeps the flowd pid file contract so the aggregator can
+    rotate the log and have it reopened. Both run as units, the collector shows
+    up in the service list.
+
+ -- MurOS <dev@muros.org>  Mon, 31 Aug 2026 08:10:00 +0200
+
 muros (0.9.63) trixie; urgency=medium
 
   * PPTP: sessions run under pppd like PPPoE, with the pptp helper handed to
