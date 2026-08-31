@@ -113,5 +113,7 @@ foreach (config_read_array('gateways', 'gateway_group') as $group) {
 foreach (array_keys($names) as $name) {
     $mark = gateway_mark($name);
     printf("dropping the connections marked %d (%s)\n", $mark, $name);
-    mwexecfm('/usr/sbin/conntrack -D -m %s', $mark);
+    /* the gateway number lives in the low sixteen bits of the mark, the
+       intrusion detection writes its own flags above them */
+    mwexecfm('/usr/sbin/conntrack -D -m %s/0xffff', $mark);
 }
