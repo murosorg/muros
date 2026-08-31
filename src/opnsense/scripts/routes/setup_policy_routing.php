@@ -13,6 +13,12 @@
  * gateway sends its traffic out the matching uplink while everything else
  * follows the main table.
  *
+ * Gateway groups get a table too, holding the members of the highest tier that
+ * still passes the trigger of the group, as a multipath route when the tier
+ * holds more than one. That is the failover: the monitor reloads the ruleset
+ * when a member changes state, this script runs again and the table of the
+ * group points at what is left.
+ *
  * The table id and the ip rule priority both equal the mark, so this script
  * owns and can rebuild every table/rule in the mark range without touching
  * anything else on the box. It is idempotent: it installs the desired set and
@@ -91,30 +97,101 @@ function remove_mark(string $fam, int $mark): void
     run(sprintf('/usr/sbin/ip %s route flush table %d', $fam, $mark));
 }
 
-/* Read the gateways to provision from the running configuration, as
- * name/address/device triplets. This lets the firewall apply refresh the
- * tables after every ruleset reload without knowing the topology, and keeps
- * the tables in sync when a gateway address or interface changes. Disabled,
- * loopback and inactive gateways are skipped by the model. */
+/* Add one next hop to the table of a gateway or of a gateway group. A group
+ * whose active tier holds several gateways ends up with several next hops in
+ * the same table, which is how the load balancing of a tier is expressed on
+ * Linux. Hops are keyed by address family: a group mixing an IPv4 and an IPv6
+ * gateway gets one table per family under the same mark, and the ip rule of
+ * each family only ever reaches the routes of that family. */
+function add_hop(array &$desired, string $name, string $gwip, string $dev, int $weight = 1): void
+{
+    if ($name === '' || $dev === '' || filter_var($gwip, FILTER_VALIDATE_IP) === false) {
+        return;
+    }
+
+    $fam = strpos($gwip, ':') !== false ? '-6' : '-4';
+    $mark = gateway_mark($name);
+
+    if (!isset($desired[$fam][$mark])) {
+        $desired[$fam][$mark] = ['name' => $name, 'hops' => []];
+    }
+
+    foreach ($desired[$fam][$mark]['hops'] as $hop) {
+        if ($hop['gwip'] === $gwip && $hop['dev'] === $dev) {
+            return;
+        }
+    }
+
+    $desired[$fam][$mark]['hops'][] = ['gwip' => $gwip, 'dev' => $dev, 'weight' => max(1, $weight)];
+}
+
+/* Read what to provision from the running configuration. This lets the
+ * firewall apply refresh the tables after every ruleset reload without knowing
+ * the topology, and keeps them in sync when a gateway address or interface
+ * changes. Disabled, loopback and inactive gateways are skipped by the model.
+ *
+ * Gateway groups are provisioned as well, and this is what makes multi-WAN
+ * failover work: nft_build.php marks a rule pinned to a group exactly like a
+ * rule pinned to a gateway, so the group needs a table of its own. Its next
+ * hops are the members of the highest tier that still satisfies the trigger of
+ * the group, which the model resolves from the live dpinger status. When a
+ * member goes down the monitor runs rc.routing_configure, which reloads the
+ * ruleset, which calls this script again, and the table then points at the
+ * next tier. */
 function discover_gateways(): array
 {
     require_once 'config.inc';
     require_once 'util.inc';
     require_once 'interfaces.inc';
 
-    $triplets = [];
+    $desired = [];
+
     foreach ((new \OPNsense\Routing\Gateways())->gatewaysIndexedByName() as $name => $gw) {
-        $gwip = (string)($gw['gateway'] ?? '');
-        $dev = (string)($gw['if'] ?? '');
-        if ((string)$name === '' || $dev === '' || filter_var($gwip, FILTER_VALIDATE_IP) === false) {
-            continue;
-        }
-        $triplets[] = (string)$name;
-        $triplets[] = $gwip;
-        $triplets[] = $dev;
+        add_hop($desired, (string)$name, (string)($gw['gateway'] ?? ''), (string)($gw['if'] ?? ''));
     }
 
-    return $triplets;
+    $status = function_exists('return_gateways_status') ? return_gateways_status() : [];
+    foreach ((new \OPNsense\Routing\GatewayGroups())->getActiveGroups($status) as $name => $members) {
+        foreach ($members as $member) {
+            add_hop(
+                $desired,
+                (string)$name,
+                (string)($member['gwip'] ?? ''),
+                (string)($member['int'] ?? ''),
+                (int)($member['weight'] ?? 1)
+            );
+        }
+    }
+
+    return $desired;
+}
+
+/* A single next hop is a plain default route, several are a multipath route.
+ * The weights come from the gateway configuration, so a tier balancing two
+ * uplinks of different capacity splits the flows accordingly. */
+function route_command(string $fam, int $mark, array $hops): string
+{
+    if (count($hops) === 1) {
+        return sprintf(
+            '/usr/sbin/ip %s route replace default via %s dev %s table %d',
+            $fam,
+            escapeshellarg($hops[0]['gwip']),
+            escapeshellarg($hops[0]['dev']),
+            $mark
+        );
+    }
+
+    $command = sprintf('/usr/sbin/ip %s route replace default table %d', $fam, $mark);
+    foreach ($hops as $hop) {
+        $command .= sprintf(
+            ' nexthop via %s dev %s weight %d',
+            escapeshellarg($hop['gwip']),
+            escapeshellarg($hop['dev']),
+            $hop['weight']
+        );
+    }
+
+    return $command;
 }
 
 $args = array_slice($argv, 1);
@@ -126,22 +203,19 @@ $flush = in_array('--flush', $args, true);
 $desired = [];
 if (!$flush) {
     if ($auto) {
-        $args = discover_gateways();
-    }
-    if (count($args) % 3 !== 0) {
-        fwrite(STDERR, "expected name/gateway/device triplets\n");
-        exit(1);
-    }
-    for ($i = 0; $i < count($args); $i += 3) {
-        $name = $args[$i];
-        $gwip = $args[$i + 1];
-        $dev = $args[$i + 2];
-        if ($name === '' || filter_var($gwip, FILTER_VALIDATE_IP) === false || $dev === '') {
-            fwrite(STDERR, "skipping invalid gateway\n");
-            continue;
+        $desired = discover_gateways();
+    } else {
+        if (count($args) % 3 !== 0) {
+            fwrite(STDERR, "expected name/gateway/device triplets\n");
+            exit(1);
         }
-        $fam = strpos($gwip, ':') !== false ? '-6' : '-4';
-        $desired[$fam][gateway_mark($name)] = ['name' => $name, 'gwip' => $gwip, 'dev' => $dev];
+        for ($i = 0; $i < count($args); $i += 3) {
+            $before = $desired;
+            add_hop($desired, $args[$i], $args[$i + 1], $args[$i + 2]);
+            if ($desired === $before) {
+                fwrite(STDERR, "skipping invalid gateway\n");
+            }
+        }
     }
 }
 
@@ -158,13 +232,10 @@ foreach (['-4', '-6'] as $fam) {
 /* Install or refresh the desired set. */
 foreach ($desired as $fam => $gateways) {
     foreach ($gateways as $mark => $gw) {
-        run(sprintf(
-            '/usr/sbin/ip %s route replace default via %s dev %s table %d',
-            $fam,
-            escapeshellarg($gw['gwip']),
-            escapeshellarg($gw['dev']),
-            $mark
-        ));
+        if (empty($gw['hops'])) {
+            continue;
+        }
+        run(route_command($fam, $mark, $gw['hops']));
         /* (re)create the lookup rule at a fixed priority equal to the mark, in
          * the family of the gateway: an "ip rule" without a family selector is
          * IPv4 only, so an IPv6 gateway got a table no packet ever reached. */
@@ -176,13 +247,16 @@ foreach ($desired as $fam => $gateways) {
             $mark,
             $mark
         ));
+        $vias = [];
+        foreach ($gw['hops'] as $hop) {
+            $vias[] = sprintf('%s dev %s weight %d', $hop['gwip'], $hop['dev'], $hop['weight']);
+        }
         printf(
-            "gateway %s -> mark %d, table %d via %s dev %s\n",
+            "gateway %s -> mark %d, table %d via %s\n",
             $gw['name'],
             $mark,
             $mark,
-            $gw['gwip'],
-            $gw['dev']
+            implode(', ', $vias)
         );
     }
 }
