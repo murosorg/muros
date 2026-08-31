@@ -11,12 +11,14 @@
  * walks the configuration instead, and for every item that is supposed to
  * produce a rule it looks for the tag that rule would carry.
  *
- * Three answers are possible for an item:
- *   applied  the ruleset in the kernel carries its tag
- *   pending  the ruleset the current configuration produces carries its tag,
- *            the loaded one does not, so the filter has not been reloaded
- *            since the configuration changed
- *   missing  neither carries it: nothing the box does will ever apply it
+ * Four answers are possible for an item:
+ *   applied   the ruleset in the kernel carries its tag
+ *   scheduled the generator left it out on purpose, it is outside the time
+ *             window of its schedule
+ *   pending   the ruleset the current configuration produces carries its tag,
+ *             the loaded one does not, so the filter has not been reloaded
+ *             since the configuration changed
+ *   missing   neither carries it: nothing the box does will ever apply it
  *
  * A rule loaded for an item that no longer exists is reported as stale.
  *
@@ -177,11 +179,32 @@ function running_ruleset(?string $file): ?string
     return implode("\n", $output);
 }
 
-function intended_ruleset(string $path): ?string
+function intended_ruleset(string $path, array &$skipped): ?string
 {
     $output = [];
     $status = 0;
-    exec(sprintf('%s/nft_build.php %s 2>/dev/null', escapeshellarg(__DIR__), escapeshellarg($path)), $output, $status);
+    $reportFile = tempnam(sys_get_temp_dir(), 'nftverify');
+    exec(
+        sprintf(
+            '%s/nft_build.php --report %s %s 2>/dev/null',
+            escapeshellarg(__DIR__),
+            escapeshellarg($reportFile),
+            escapeshellarg($path)
+        ),
+        $output,
+        $status
+    );
+
+    /* what the generator left out on purpose, so a rule outside the window of
+       its schedule is not reported as one that will never be applied */
+    $report = json_decode((string)@file_get_contents($reportFile), true);
+    @unlink($reportFile);
+    foreach ($report['skipped'] ?? [] as $entry) {
+        if (!empty($entry['uuid'])) {
+            $skipped[$entry['uuid']] = $entry;
+        }
+    }
+
     if ($status !== 0) {
         return null;
     }
@@ -191,7 +214,8 @@ function intended_ruleset(string $path): ?string
 
 $items = expected_items($cfg);
 $running = running_ruleset($rulesetFile);
-$intended = intended_ruleset($path);
+$skipped = [];
+$intended = intended_ruleset($path, $skipped);
 
 if ($intended === null) {
     fwrite(STDERR, "the ruleset generator failed, nothing can be verified\n");
@@ -201,12 +225,19 @@ if ($intended === null) {
 $intendedTags = tags_of_ruleset($intended);
 $runningTags = $running === null ? [] : tags_of_ruleset($running);
 
-$report = ['applied' => [], 'pending' => [], 'missing' => [], 'stale' => []];
+$report = ['applied' => [], 'scheduled' => [], 'pending' => [], 'missing' => [], 'stale' => []];
 $known = [];
 foreach ($items as $item) {
     $known[$item['uuid']] = true;
     if (isset($runningTags[$item['uuid']])) {
         $report['applied'][] = $item;
+    } elseif (isset($skipped[$item['uuid']])) {
+        $item['description'] = trim(sprintf(
+            '%s (outside the window of schedule %s)',
+            $item['description'],
+            $skipped[$item['uuid']]['detail']
+        ));
+        $report['scheduled'][] = $item;
     } elseif (isset($intendedTags[$item['uuid']])) {
         $report['pending'][] = $item;
     } else {
@@ -233,6 +264,7 @@ if ($json) {
         'ruleset_loaded' => $running !== null,
         'counts' => [
             'applied' => count($report['applied']),
+            'scheduled' => count($report['scheduled']),
             'pending' => count($report['pending']),
             'missing' => count($report['missing']),
             'stale' => count($report['stale']),
@@ -261,15 +293,18 @@ if ($running === null) {
 }
 
 printf(
-    "%d configured items, %d applied, %d pending a reload, %d never applied, %d stale in the kernel\n\n",
+    "%d configured items, %d applied, %d outside their schedule, %d pending a reload, "
+        . "%d never applied, %d stale in the kernel\n\n",
     count($items),
     count($report['applied']),
+    count($report['scheduled']),
     count($report['pending']),
     count($report['missing']),
     count($report['stale'])
 );
 
 print_group('never applied, the generator produces no rule for these:', $report['missing']);
+print_group('outside their schedule, left out on purpose until the window opens:', $report['scheduled']);
 print_group('pending, the filter has not been reloaded since these changed:', $report['pending']);
 print_group('stale, loaded in the kernel but no longer configured:', $report['stale']);
 

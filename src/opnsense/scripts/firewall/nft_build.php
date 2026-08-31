@@ -490,6 +490,105 @@ function nft_comment(string $value): string
 }
 
 /*
+ * MurOS: the schedule of a rule.
+ *
+ * A rule can be limited to a time window, which is how an operator opens
+ * something between two hours or on given days. The generator ignored the
+ * field, so a scheduled rule was permanently active: a pass rule meant to
+ * close again at the end of its window never did, and the GUI kept showing
+ * the schedule next to it.
+ *
+ * The window is evaluated when the ruleset is built, the way pf did it: a rule
+ * outside its window is simply not emitted, and the cron job that already
+ * exists for this reloads the filter regularly so the ruleset follows the
+ * clock. A rule pointing at a schedule that no longer exists stays active,
+ * which is what the rest of the system assumes.
+ */
+function schedules(?SimpleXMLElement $cfg = null): array
+{
+    static $map = [];
+
+    if ($cfg !== null) {
+        $map = [];
+        if (isset($cfg->schedules->schedule)) {
+            foreach ($cfg->schedules->schedule as $sched) {
+                $name = trim((string)$sched->name);
+                if ($name !== '') {
+                    $map[$name] = $sched;
+                }
+            }
+        }
+    }
+
+    return $map;
+}
+
+function schedule_active(string $name): bool
+{
+    if ($name === '') {
+        return true;
+    }
+
+    $map = schedules();
+    if (!isset($map[$name]) || !isset($map[$name]->timerange)) {
+        return true;
+    }
+
+    $now = time();
+    foreach ($map[$name]->timerange as $range) {
+        $hours = trim((string)($range->hour ?? ''));
+        if ($hours !== '') {
+            $parts = explode('-', $hours);
+            if (count($parts) !== 2) {
+                continue;
+            }
+            $from = strtotime(trim($parts[0]));
+            $until = strtotime(trim($parts[1]));
+            if ($from === false || $until === false || $now < $from || $now >= $until) {
+                continue;
+            }
+        }
+
+        /* a window is either a set of weekdays or a set of calendar days */
+        $position = trim((string)($range->position ?? ''));
+        if ($position !== '') {
+            $weekday = (int)date('w') === 0 ? 7 : (int)date('w');
+            foreach (explode(',', $position) as $day) {
+                if ((int)$day === $weekday) {
+                    return true;
+                }
+            }
+            continue;
+        }
+
+        $months = array_values(array_filter(explode(',', trim((string)($range->month ?? ''))), 'strlen'));
+        $days = array_values(array_filter(explode(',', trim((string)($range->day ?? ''))), 'strlen'));
+        if (empty($months) || count($months) !== count($days)) {
+            continue;
+        }
+        $today = date('dm');
+        for ($i = 0; $i < count($days); $i++) {
+            if (sprintf('%02d%02d', (int)$days[$i], (int)$months[$i]) === $today) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+/* Rules the generator leaves out on purpose, so a check can tell them from the
+ * ones it simply does not know how to translate. */
+function skip_rule($rule, string $reason, string $detail = '')
+{
+    $uuid = trim((string)($rule['uuid'] ?? ''));
+    if ($uuid === '') {
+        return;
+    }
+    $GLOBALS['muros_skipped'][] = ['uuid' => $uuid, 'reason' => $reason, 'detail' => $detail];
+}
+
+/*
  * MurOS: the identity a rule carries into the ruleset.
  *
  * Everything generated from a configuration item is tagged with the uuid of
@@ -1189,6 +1288,11 @@ function rule_line(
     if (isset($rule->disabled)) {
         return null;
     }
+    $sched = trim((string)($rule->sched ?? ''));
+    if (!schedule_active($sched)) {
+        skip_rule($rule, 'schedule', $sched);
+        return null;
+    }
     $type = trim((string)$rule->type) ?: 'pass';
     $verdict = ['pass' => 'accept', 'block' => 'drop', 'reject' => 'reject'][$type] ?? null;
     if ($verdict === null) {
@@ -1568,6 +1672,11 @@ function mvc_rule_line(
     if (trim((string)($rule->enabled ?? '1')) === '0') {
         return [];
     }
+    $sched = trim((string)($rule->sched ?? ''));
+    if (!schedule_active($sched)) {
+        skip_rule($rule, 'schedule', $sched);
+        return [];
+    }
     $action = strtolower(trim((string)$rule->action)) ?: 'pass';
     $verdict = ['pass' => 'accept', 'block' => 'drop', 'reject' => 'reject'][$action] ?? null;
     if ($verdict === null) {
@@ -1738,7 +1847,20 @@ function mvc_rule_line(
 
 /* ----------------------------------------------------------------- */
 
-$path = $argv[1] ?? '/conf/config.xml';
+$GLOBALS['muros_skipped'] = [];
+
+$path = null;
+$report = null;
+$argn = count($argv);
+for ($i = 1; $i < $argn; $i++) {
+    if ($argv[$i] === '--report' && isset($argv[$i + 1])) {
+        /* where to write what the generator left out on purpose */
+        $report = $argv[++$i];
+    } elseif ($path === null) {
+        $path = $argv[$i];
+    }
+}
+$path = $path ?? '/conf/config.xml';
 if (!is_readable($path)) {
     fwrite(STDERR, "cannot read configuration: $path\n");
     exit(1);
@@ -1751,6 +1873,7 @@ if ($cfg === false) {
 
 $ifaces = build_interfaces($cfg);
 $aliases = build_aliases($cfg);
+schedules($cfg);
 
 /* CARP/VRRP high availability: keepalived owns the virtual addresses and its
  * VRRP adverts (IP protocol 112) reach this host either as multicast
@@ -2137,3 +2260,7 @@ $out[] = '}';
 $out[] = '';
 
 echo implode("\n", $out);
+
+if ($report !== null) {
+    @file_put_contents($report, json_encode(['skipped' => $GLOBALS['muros_skipped']]));
+}
