@@ -1,3 +1,28 @@
+muros (0.9.62) trixie; urgency=medium
+
+  * Traffic shaper: ported to the Linux queueing disciplines. Shaping was
+    dummynet driven by dnctl with ipfw doing the classification, so the whole
+    feature was inert on Debian: the reload action started FreeBSD rc scripts
+    and the statistics came from a binary that is not installed. A pipe is now an
+    HTB class carrying its bandwidth on every interface a rule uses it on, a
+    queue a child class weighted inside its pipe, the leaf discipline fq_codel or
+    netem when the pipe adds delay, and the counters come from tc. The ruleset
+    classifies traffic by setting the packet priority to the handle of the pipe
+    or queue a shaper rule targets, which is what HTB dequeues on, including the
+    ACK only and non ACK matches used to protect acknowledgements.
+  * Recovery: the recover helper restores what MurOS owns on this platform (the
+    PHP drop-ins of both SAPIs with their runtime directories and a cleared
+    opcode cache, the login shell list, the bogons files, the runtime tree) and
+    finishes an interrupted package configuration with dpkg. It used to restore
+    /etc/master.passwd, /etc/group and /etc/ttys and rebuild the password
+    databases with pwd_mkdb, none of which exists here.
+  * systemd: the CARP reconfiguration and the WireGuard endpoint re-resolution
+    are started through /usr/bin, so the timer finally runs; nothing creates the
+    /usr/local/bin/python3 the unit pointed at.
+  * Unbound: the unreachable FreeBSD chroot mount code is gone.
+
+ -- MurOS <dev@muros.org>  Mon, 31 Aug 2026 07:40:00 +0200
+
 muros (0.9.61) trixie; urgency=medium
 
   * Proxy ARP virtual IPs: answered by the kernel through proxy neighbour
