@@ -13,4 +13,4 @@ ConditionPathExists=/usr/local/etc/wireguard
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/bin/python3 /usr/local/opnsense/scripts/wireguard/reresolve-dns.py
+ExecStart=/usr/bin/python3 /usr/local/opnsense/scripts/wireguard/reresolve-dns.py
