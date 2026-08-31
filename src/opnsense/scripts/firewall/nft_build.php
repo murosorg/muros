@@ -550,6 +550,60 @@ function network_of(string $ip, int $prefix): string
     return long2ip($long & $mask) . '/' . $prefix;
 }
 
+/* The rule that keeps the operator from locking themselves out of the box.
+ *
+ * It used to be a single unconditional line accepting 22, 80 and 443 in the
+ * input chain, which is not an anti-lockout rule but an open management
+ * interface: it accepted those ports on every interface including the one
+ * facing the internet, ahead of the rules the operator wrote, so a policy
+ * that blocked everything on the outside still answered on ssh and on the web
+ * interface, and an explicit block for those ports could never take effect.
+ *
+ * It is bound to the primary inside interface, carries the ports actually in
+ * use rather than a fixed list, and is dropped entirely when the operator
+ * turned it off. */
+function antilockout_lines(SimpleXMLElement $cfg, array $ifaces): array
+{
+    if (isset($cfg->system->webgui->noantilockout)) {
+        return [];
+    }
+
+    $keys = array_keys($ifaces);
+    natsort($keys);
+    $primary = null;
+    foreach ($keys as $key) {
+        if (preg_match('/^(lan|opt[0-9]+|wan)$/', (string)$key)) {
+            $primary = (string)$key;
+            break;
+        }
+    }
+    if ($primary === null || empty($ifaces[$primary]['devices'])) {
+        return [];
+    }
+
+    $ports = [];
+    $protocol = strtolower(trim((string)($cfg->system->webgui->protocol ?? 'https')));
+    $webport = trim((string)($cfg->system->webgui->port ?? ''));
+    $ports[] = $webport !== '' ? $webport : ($protocol === 'https' ? '443' : '80');
+    if ($protocol === 'https' && !isset($cfg->system->webgui->disablehttpredirect)) {
+        $ports[] = '80';
+    }
+    if (isset($cfg->system->ssh->enabled)) {
+        $sshport = trim((string)($cfg->system->ssh->port ?? ''));
+        $ports[] = $sshport !== '' ? $sshport : '22';
+    }
+    $ports = array_values(array_unique(array_filter($ports, 'ctype_digit')));
+    if (empty($ports)) {
+        return [];
+    }
+    sort($ports, SORT_NUMERIC);
+
+    return [
+        '        iifname ' . ifname_expr($ifaces[$primary]['devices'])
+        . ' tcp dport ' . fmt_addr_set($ports) . ' counter accept comment "anti-lockout"',
+    ];
+}
+
 /* Path of the file holding the rules the plugins registered for themselves,
  * written by plugin_rules.php just before the ruleset is built. */
 function plugin_rules_file(): string
@@ -616,6 +670,11 @@ function plugin_rule_lines(array $ifaces, array $aliases): array
     $lines = [];
     foreach ($rules as $rule) {
         if (!is_array($rule) || !empty($rule['disabled'])) {
+            continue;
+        }
+        if (strpos((string)($rule['ref'] ?? ''), 'noantilockout') !== false) {
+            /* built above, from the configuration, so it is there even when
+               the plugin tree cannot be reached */
             continue;
         }
         if (strtolower((string)($rule['direction'] ?? 'in')) !== 'in') {
@@ -2810,8 +2869,7 @@ $nat = build_nat($cfg, $ifaces, $wanDevs, $aliases);
 $aliasSets = alias_set_lines($aliases);
 
 $martians = martian_lines($ifaces);
-$lockout = '        tcp dport ' . fmt_addr_set(ANTI_LOCKOUT_PORTS)
-    . ' counter accept comment "anti-lockout (ssh/web)"';
+$lockout = antilockout_lines($cfg, $ifaces);
 
 $out = [];
 $out[] = '#!/usr/sbin/nft -f';
@@ -2933,7 +2991,9 @@ if ($carp_enabled) {
 // when the management interface sits on a private network (a common
 // WAN-on-LAN setup), block-private would otherwise drop new management
 // connections and lock the operator out of the box.
-$out[] = $lockout;
+foreach ($lockout as $line) {
+    $out[] = $line;
+}
 foreach (plugin_rule_lines($ifaces, $aliases) as $line) {
     $out[] = $line;
 }
