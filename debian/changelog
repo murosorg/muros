@@ -1,3 +1,17 @@
+muros (0.9.81) trixie; urgency=medium
+
+  * The quick option of a rule means something again. The older packet filter
+    evaluated every rule and let the last match decide unless a rule was marked
+    quick, which decided on the spot; nftables stops at the first match, so the
+    port had turned every rule into a quick one. A floating rule without quick,
+    whose entire purpose is to be overridden by a later interface rule, was
+    winning instead: a broad floating block written to be refined further down
+    the list stopped everything it covered. The rules are now ordered so that a
+    first match walk picks exactly the rule the original semantics would have
+    picked.
+
+ -- MurOS <jpzi@proton.me>  Mon, 31 Aug 2026 22:35:00 +0200
+
 muros (0.9.80) trixie; urgency=medium
 
   * A firewall rule limited to a time window is limited again. The generator
