@@ -1,3 +1,19 @@
+muros (0.9.82) trixie; urgency=medium
+
+  * A rule that asks for no connection tracking gets none. The setting exists
+    for the traffic whose replies do not look like replies, and tracking it is
+    what breaks it; the generator ignored the field, so those rules were tracked
+    like every other. Their packets are now excluded ahead of connection
+    tracking. Permissive tracking is what Linux already does by default.
+  * Options that cannot be translated are named instead of dropped in silence.
+    Sequence number modulation, answering the handshake on behalf of the host,
+    global connection and source limits, the overload table, the type of service
+    match, the 802.1p priority, per rule timeouts and accepting IP options are
+    all reported by the rule check, which gained a verdict for a rule that is
+    loaded but does not do everything it says.
+
+ -- MurOS <jpzi@proton.me>  Mon, 31 Aug 2026 22:55:00 +0200
+
 muros (0.9.81) trixie; urgency=medium
 
   * The quick option of a rule means something again. The older packet filter
