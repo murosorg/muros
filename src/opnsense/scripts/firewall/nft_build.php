@@ -1269,6 +1269,136 @@ if (!empty($nat['post'])) {
     $out[] = '    }';
     $out[] = '';
 }
+/*
+ * Traffic shaper classification. tc_apply.py turns every pipe and queue of the
+ * shaper into an HTB class whose handle is 1:<number>, and HTB dequeues a packet
+ * in the class its priority points at, so tagging the priority here is the whole
+ * classification: it replaces the ipfw rules that used to hand a packet to a
+ * dummynet pipe. Shaping is done on egress, after the routing decision, hence a
+ * postrouting chain.
+ */
+function shaper_lines(SimpleXMLElement $cfg, array $ifaces, array $aliases): array
+{
+    $shaper = $cfg->OPNsense->TrafficShaper ?? null;
+    if ($shaper === null) {
+        return [];
+    }
+
+    $numbers = [];
+    foreach ([$shaper->pipes->pipe ?? [], $shaper->queues->queue ?? []] as $collection) {
+        foreach ($collection as $item) {
+            $uuid = (string)$item['uuid'];
+            $number = trim((string)$item->number);
+            if ($uuid !== '' && ctype_digit($number) && trim((string)$item->enabled) !== '0') {
+                $numbers[$uuid] = (int)$number;
+            }
+        }
+    }
+
+    $rules = [];
+    foreach ($shaper->rules->rule ?? [] as $rule) {
+        $rules[] = $rule;
+    }
+    usort($rules, function ($a, $b) {
+        return (int)trim((string)$a->sequence) <=> (int)trim((string)$b->sequence);
+    });
+
+    $lines = [];
+    foreach ($rules as $rule) {
+        if (trim((string)$rule->enabled) === '0') {
+            continue;
+        }
+
+        $target = trim((string)$rule->target);
+        if (!isset($numbers[$target])) {
+            continue;
+        }
+
+        $devices = [];
+        foreach (['interface', 'interface2'] as $field) {
+            $key = trim((string)$rule->$field);
+            if ($key !== '' && isset($ifaces[$key])) {
+                $devices[] = $ifaces[$key]['device'];
+            }
+        }
+        if (empty($devices)) {
+            continue;
+        }
+
+        $proto = trim((string)$rule->proto);
+        $parts = [];
+
+        /* the direction of the shaper rule is expressed against the device: an
+         * inbound rule shapes what arrives on it, an outbound rule what leaves */
+        $direction = trim((string)$rule->direction);
+        $kw = $direction === 'in' ? 'iifname' : 'oifname';
+        $devices = array_values(array_unique($devices));
+        $parts[] = count($devices) === 1
+            ? "$kw " . ifname_token($devices[0])
+            : "$kw { " . implode(', ', array_map('ifname_token', $devices)) . ' }';
+
+        $family = 'ip';
+        if ($proto === 'ip6' || $proto === 'ipv6-icmp') {
+            $family = 'ip6';
+            $parts[] = 'meta nfproto ipv6';
+        } elseif ($proto === 'ip4') {
+            $parts[] = 'meta nfproto ipv4';
+        }
+
+        $l4 = ['tcp' => 'tcp', 'tcp_ack' => 'tcp', 'tcp_ack_not' => 'tcp', 'udp' => 'udp'];
+        if (isset($l4[$proto])) {
+            $parts[] = 'meta l4proto ' . $l4[$proto];
+        } elseif (in_array($proto, ['icmp', 'ipv6-icmp', 'igmp', 'esp', 'ah', 'gre'])) {
+            $parts[] = 'meta l4proto ' . ($proto === 'ipv6-icmp' ? 'icmpv6' : $proto);
+        }
+
+        /* an ACK only rule is the classic way to keep acknowledgements out of a
+         * saturated upload */
+        if ($proto === 'tcp_ack') {
+            $parts[] = 'tcp flags & ack == ack';
+        } elseif ($proto === 'tcp_ack_not') {
+            $parts[] = 'tcp flags & ack != ack';
+        }
+
+        foreach ([['source', 'saddr', 'source_not'], ['destination', 'daddr', 'destination_not']] as $spec) {
+            $value = trim((string)$rule->{$spec[0]});
+            if ($value === '' || $value === 'any') {
+                continue;
+            }
+            $resolved = mvc_resolve_net($value, $family, $ifaces, $aliases);
+            if (!$resolved['ok']) {
+                continue 2;
+            }
+            if ($resolved['expr'] === null) {
+                continue;
+            }
+            $neg = trim((string)$rule->{$spec[2]}) === '1' ? '!= ' : '';
+            $parts[] = "$family {$spec[1]} $neg" . $resolved['expr'];
+        }
+
+        foreach ([['src_port', 'sport'], ['dst_port', 'dport']] as $spec) {
+            $value = trim((string)$rule->{$spec[0]});
+            if ($value === '' || $value === 'any' || !isset($l4[$proto])) {
+                continue;
+            }
+            $ports = resolve_port($value, $aliases);
+            if ($ports === null) {
+                continue;
+            }
+            $parts[] = $l4[$proto] . ' ' . $spec[1] . ' ' . $ports;
+        }
+
+        $descr = preg_replace('/[^\x20-\x7E]/', '', (string)$rule->description);
+        $descr = str_replace('"', "'", $descr);
+
+        $lines[] = '        ' . implode(' ', $parts)
+            . sprintf(' counter meta priority set 1:%x', $numbers[$target])
+            . ($descr === '' ? '' : " comment \"shaper $descr\"");
+    }
+
+    return $lines;
+}
+
 $replyTo = reply_to_lines($cfg, $ifaces);
 if (!empty($mangle) || !empty($replyTo)) {
     /* Policy based routing marks are applied before the routing decision, so
@@ -1284,6 +1414,20 @@ if (!empty($mangle) || !empty($replyTo)) {
         $out[] = $line;
     }
     foreach ($mangle as $line) {
+        $out[] = $line;
+    }
+    $out[] = '    }';
+    $out[] = '';
+}
+$shaper = shaper_lines($cfg, $ifaces, $aliases);
+if (!empty($shaper)) {
+    /* The shaper classes live on the egress interface, so the priority is set
+     * once the outgoing interface is known. The chain is evaluated after the
+     * source NAT one, which does not matter: the priority travels with the
+     * packet, not with the tuple. */
+    $out[] = '    chain mangle_postrouting {';
+    $out[] = '        type filter hook postrouting priority mangle; policy accept;';
+    foreach ($shaper as $line) {
         $out[] = $line;
     }
     $out[] = '    }';
