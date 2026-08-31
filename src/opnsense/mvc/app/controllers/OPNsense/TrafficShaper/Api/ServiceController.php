@@ -46,12 +46,12 @@ class ServiceController extends ApiControllerBase
      * MurOS: the classification lived in ipfw rules generated from a template of
      * their own; it is part of the firewall ruleset now, so applying the shaper
      * reloads the queueing disciplines and then the ruleset that feeds them.
+     * There is no template left to generate: tc_apply.py reads the model.
      */
     public function reconfigureAction()
     {
         if ($this->request->isPost()) {
             $backend = new Backend();
-            $backend->configdRun('template reload OPNsense/Shaper');
 
             $result = trim($backend->configdRun("shaper reload"));
             if (strpos($result, "applied") === false) {
