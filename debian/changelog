@@ -1,3 +1,23 @@
+muros (0.9.63) trixie; urgency=medium
+
+  * PPTP: sessions run under pppd like PPPoE, with the pptp helper handed to
+    pppd as its terminal, a default MTU accounting for the GRE and IP headers
+    and EAP refused since a PPTP server offering it cannot be authenticated
+    against. The unit template is now muros-ppp@ for both types and an interface
+    reset stops either. pptp-linux is a recommendation.
+  * Interfaces: the 6rd and 6to4 tunnels are sit tunnels created with iproute2,
+    encapsulated in the WAN address and without a fixed remote, with the 6rd
+    delegated prefix and relay prefix passed as tunnel attributes. They were
+    stf(4) pseudo interfaces driven by ifconfig, so an interface in either mode
+    stayed dark. That was the last ifconfig call of interfaces.inc.
+  * Interfaces: the unreachable FreeBSD bodies of the PPP and wireless paths are
+    removed, several hundred lines of mpd5 configuration, netgraph control
+    messages and ifconfig radio settings that could never run.
+  * Diagnostics: kernel memory usage is built from /proc/meminfo and
+    /proc/slabinfo instead of vmstat with the FreeBSD libxo output.
+
+ -- MurOS <dev@muros.org>  Mon, 31 Aug 2026 07:55:00 +0200
+
 muros (0.9.62) trixie; urgency=medium
 
   * Traffic shaper: ported to the Linux queueing disciplines. Shaping was
