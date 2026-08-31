@@ -273,7 +273,7 @@ function build_interfaces(SimpleXMLElement $cfg): array
         if ($dev === '') {
             continue;
         }
-        $entry = ['device' => $dev, 'cidr4' => null, 'cidr6' => null,
+        $entry = ['device' => $dev, 'devices' => [$dev], 'cidr4' => null, 'cidr6' => null,
                   'ip4' => null, 'ip6' => null,
                   'blockpriv' => !empty((string)$node->blockpriv),
                   'blockbogons' => !empty((string)$node->blockbogons)];
@@ -297,7 +297,58 @@ function build_interfaces(SimpleXMLElement $cfg): array
         }
         $out[(string)$key] = $entry;
     }
+
+    /*
+     * MurOS: an interface group is a configuration object, not a kernel object.
+     * FreeBSD attached the members to an ifconfig group and pf matched the group
+     * name as if it were an interface. Linux device groups cannot stand in for
+     * that, a netdev belongs to exactly one of them while an interface here can
+     * be in several, so the group is expanded to the devices of its members
+     * while the ruleset is generated. Without this the group name resolved to
+     * nothing: the rule kept no interface match at all and applied to every
+     * interface, which turns a block on one group into a block on everything and
+     * a pass into a hole.
+     */
+    foreach ($cfg->ifgroups->ifgroupentry ?? [] as $group) {
+        $name = trim((string)$group->ifname);
+        if ($name === '' || isset($out[$name])) {
+            continue;
+        }
+        $devices = [];
+        foreach (preg_split('/[\s,|]+/', trim((string)$group->members)) ?: [] as $member) {
+            $member = trim($member);
+            if ($member !== '' && isset($out[$member])) {
+                $devices = array_merge($devices, $out[$member]['devices']);
+            }
+        }
+        $devices = array_values(array_unique($devices));
+        if (empty($devices)) {
+            continue;
+        }
+        $out[$name] = ['device' => $devices[0], 'devices' => $devices,
+                       'cidr4' => null, 'cidr6' => null, 'ip4' => null, 'ip6' => null,
+                       'blockpriv' => false, 'blockbogons' => false];
+    }
+
     return $out;
+}
+
+/* Devices behind an interface key, one for a plain interface, the members of an
+ * interface group. Empty when the key is unknown. */
+function iface_devices(array $ifaces, string $key): array
+{
+    $key = trim($key);
+    return $key !== '' && isset($ifaces[$key]) ? $ifaces[$key]['devices'] : [];
+}
+
+/* An iifname/oifname operand for one device or a set of them. */
+function ifname_expr(array $devices): string
+{
+    $devices = array_values(array_unique($devices));
+    if (count($devices) === 1) {
+        return ifname_token($devices[0]);
+    }
+    return '{ ' . implode(', ', array_map('ifname_token', $devices)) . ' }';
 }
 
 /* Return the network CIDR for an IPv4 address and prefix length. */
@@ -428,11 +479,11 @@ function build_nat(SimpleXMLElement $cfg, array $ifaces, array $wanDevs, array $
             if (isset($r->disabled)) {
                 continue;
             }
-            $dev = $ifaces[trim((string)$r->interface)]['device'] ?? null;
-            if ($dev === null) {
+            $devs = iface_devices($ifaces, (string)$r->interface);
+            if (empty($devs)) {
                 continue;
             }
-            $parts = ['oifname ' . ifname_token($dev)];
+            $parts = ['oifname ' . ifname_expr($devs)];
             $src = resolve_endpoint($r->source ?? null, 'ip', $ifaces, $aliases);
             if ($src !== null) {
                 $parts[] = "ip saddr $src";
@@ -487,7 +538,7 @@ function build_nat(SimpleXMLElement $cfg, array $ifaces, array $wanDevs, array $
             if (isset($r->disabled)) {
                 continue;
             }
-            $dev = $ifaces[trim((string)$r->interface)]['device'] ?? null;
+            $devs = iface_devices($ifaces, (string)$r->interface);
             $proto = strtolower(trim((string)$r->protocol)) ?: 'tcp';
             if (!in_array($proto, ['tcp', 'udp'], true)) {
                 continue;
@@ -501,8 +552,8 @@ function build_nat(SimpleXMLElement $cfg, array $ifaces, array $wanDevs, array $
             $dst = resolve_endpoint($r->destination ?? null, 'ip', $ifaces, $aliases);
             $src = resolve_endpoint($r->source ?? null, 'ip', $ifaces, $aliases);
             $parts = [];
-            if ($dev !== null) {
-                $parts[] = 'iifname ' . ifname_token($dev);
+            if (!empty($devs)) {
+                $parts[] = 'iifname ' . ifname_expr($devs);
             }
             if ($src !== null) {
                 $parts[] = "ip saddr $src";
@@ -554,8 +605,8 @@ function build_nat(SimpleXMLElement $cfg, array $ifaces, array $wanDevs, array $
             if (isset($r->disabled)) {
                 continue;
             }
-            $dev = $ifaces[trim((string)$r->interface)]['device'] ?? null;
-            if ($dev === null) {
+            $devs = iface_devices($ifaces, (string)$r->interface);
+            if (empty($devs)) {
                 continue;
             }
             $external = trim((string)$r->external);
@@ -568,13 +619,13 @@ function build_nat(SimpleXMLElement $cfg, array $ifaces, array $wanDevs, array $
             }
             $peer = resolve_endpoint($r->destination ?? null, 'ip', $ifaces, $aliases);
 
-            $preParts = ['iifname ' . ifname_token($dev), "ip daddr $external"];
+            $preParts = ['iifname ' . ifname_expr($devs), "ip daddr $external"];
             if ($peer !== null) {
                 $preParts[] = "ip saddr $peer";
             }
             $pre[] = '        ' . implode(' ', $preParts) . " dnat to $internal comment \"1:1 nat inbound\"";
 
-            $postParts = ['oifname ' . ifname_token($dev), "ip saddr $internal"];
+            $postParts = ['oifname ' . ifname_expr($devs), "ip saddr $internal"];
             if ($peer !== null) {
                 $postParts[] = "ip daddr $peer";
             }
@@ -730,7 +781,7 @@ function rule_line(SimpleXMLElement $rule, array $ifaces, array $aliases = [], ?
     foreach (preg_split('/[\s,]+/', trim((string)$rule->interface)) ?: [] as $ifkey) {
         $ifkey = trim($ifkey);
         if ($ifkey !== '' && isset($ifaces[$ifkey])) {
-            $devs[] = $ifaces[$ifkey]['device'];
+            $devs = array_merge($devs, $ifaces[$ifkey]['devices']);
         }
     }
     $devs = array_values(array_unique($devs));
@@ -974,7 +1025,7 @@ function mvc_rule_line(SimpleXMLElement $rule, array $ifaces, array $aliases, ?a
     foreach (preg_split('/[\s,]+/', trim((string)$rule->interface)) ?: [] as $ik) {
         $ik = trim($ik);
         if ($ik !== '' && isset($ifaces[$ik])) {
-            $devs[] = $ifaces[$ik]['device'];
+            $devs = array_merge($devs, $ifaces[$ik]['devices']);
         }
     }
     $ifExpr = null;
@@ -1318,7 +1369,7 @@ function shaper_lines(SimpleXMLElement $cfg, array $ifaces, array $aliases): arr
         foreach (['interface', 'interface2'] as $field) {
             $key = trim((string)$rule->$field);
             if ($key !== '' && isset($ifaces[$key])) {
-                $devices[] = $ifaces[$key]['device'];
+                $devices = array_merge($devices, $ifaces[$key]['devices']);
             }
         }
         if (empty($devices)) {
