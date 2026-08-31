@@ -61,6 +61,145 @@ const BLOCK_BOGON_V4 = [
 ];
 const BLOCK_BOGON_V6 = ['::/128', '2001:db8::/32', '2001:10::/28'];
 
+/* The bogon networks, read from the list the updater downloads.
+ *
+ * The generator carried a handful of well known ranges as a constant, which
+ * is not what "block bogon networks" means: the real list is the several
+ * thousand prefixes that are not allocated at this moment, it moves every
+ * week, and a copy frozen in the source is a protection that expires. The
+ * updater already downloaded the full list and wrote it next door, and
+ * nothing read it. Read it, and fall back to the constant when the download
+ * has not happened yet.
+ *
+ * The file marks with a leading "!" the private ranges that must not be part
+ * of it, because blocking those is a separate option; entries falling inside
+ * one of those are left out rather than silently blocking a private network
+ * the operator chose to allow. */
+function bogon_file(string $family): string
+{
+    $dir = (string)getenv('MUROS_BOGONS_DIR');
+    $dir = $dir !== '' ? rtrim($dir, '/') : '/usr/local/etc';
+
+    return $dir . '/' . ($family === 'ip6' ? 'bogonsv6' : 'bogons');
+}
+
+function cidr_bytes(string $cidr, string $family): ?array
+{
+    $parts = explode('/', trim($cidr), 2);
+    $packed = @inet_pton($parts[0]);
+    if ($packed === false) {
+        return null;
+    }
+    $width = $family === 'ip6' ? 128 : 32;
+    if (strlen($packed) !== $width / 8) {
+        return null;
+    }
+    $bits = isset($parts[1]) && ctype_digit(trim($parts[1])) ? (int)trim($parts[1]) : $width;
+
+    return $bits >= 0 && $bits <= $width ? [$packed, $bits] : null;
+}
+
+function cidr_contains(array $outer, array $inner): bool
+{
+    if ($inner[1] < $outer[1]) {
+        return false;
+    }
+    $bits = $outer[1];
+    for ($i = 0; $i < strlen($outer[0]); $i++) {
+        $left = $bits - ($i * 8);
+        if ($left <= 0) {
+            break;
+        }
+        $mask = $left >= 8 ? 0xff : ((0xff << (8 - $left)) & 0xff);
+        if ((ord($outer[0][$i]) & $mask) !== (ord($inner[0][$i]) & $mask)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+function bogon_networks(string $family): array
+{
+    $file = bogon_file($family);
+    if (!is_readable($file)) {
+        return $family === 'ip6' ? BLOCK_BOGON_V6 : BLOCK_BOGON_V4;
+    }
+    $handle = fopen($file, 'r');
+    if ($handle === false) {
+        return $family === 'ip6' ? BLOCK_BOGON_V6 : BLOCK_BOGON_V4;
+    }
+
+    $excluded = [];
+    $entries = [];
+    while (($line = fgets($handle)) !== false) {
+        $token = trim($line);
+        if ($token === '' || $token[0] === '#') {
+            continue;
+        }
+        if ($token[0] === '!') {
+            $range = cidr_bytes(substr($token, 1), $family);
+            if ($range !== null) {
+                $excluded[] = $range;
+            }
+            continue;
+        }
+        $entries[] = $token;
+    }
+    fclose($handle);
+
+    $networks = [];
+    foreach ($entries as $token) {
+        $range = cidr_bytes($token, $family);
+        if ($range === null) {
+            continue;
+        }
+        foreach ($excluded as $skip) {
+            if (cidr_contains($skip, $range)) {
+                continue 2;
+            }
+        }
+        $networks[] = $token;
+    }
+
+    return empty($networks) ? ($family === 'ip6' ? BLOCK_BOGON_V6 : BLOCK_BOGON_V4) : $networks;
+}
+
+/* Named sets for the bogon lists. Several thousand prefixes repeated inline
+ * on every interface would be unreadable and slow to load. */
+function bogon_set_lines(array $ifaces, int $maxEntries = 0): array
+{
+    $wanted = false;
+    foreach ($ifaces as $itf) {
+        if (!empty($itf['blockbogons'])) {
+            $wanted = true;
+            break;
+        }
+    }
+    if (!$wanted) {
+        return [];
+    }
+
+    $lines = [];
+    foreach (['ip' => ['__bogons_v4', 'ipv4_addr'], 'ip6' => ['__bogons_v6', 'ipv6_addr']] as $family => $spec) {
+        $networks = bogon_networks($family);
+        $lines[] = '    set ' . $spec[0] . ' {';
+        $lines[] = '        type ' . $spec[1] . ';';
+        $lines[] = '        flags interval;';
+        $lines[] = '        auto-merge;';
+        if ($maxEntries > 0) {
+            $lines[] = '        size ' . $maxEntries . ';';
+        }
+        foreach (element_lines($networks, '        ') as $line) {
+            $lines[] = $line;
+        }
+        $lines[] = '    }';
+        $lines[] = '';
+    }
+
+    return $lines;
+}
+
 /* An interface name is safe to use bare only when it is plain word
  * characters. VLAN (eth0.100), bridge/bond (br-lan) and wildcards must be
  * quoted or `nft -f` rejects the whole ruleset. */
@@ -878,9 +1017,9 @@ function martian_lines(array $ifaces, SimpleXMLElement $cfg): array
                 . " $logPrivate" . "counter drop comment \"block-private v6 $key\"";
         }
         if ($itf['blockbogons']) {
-            $lines[] = "        iifname $ifn ip saddr " . fmt_addr_set(BLOCK_BOGON_V4)
+            $lines[] = "        iifname $ifn ip saddr @__bogons_v4"
                 . " $logBogon" . "counter drop comment \"block-bogon v4 $key\"";
-            $lines[] = "        iifname $ifn ip6 saddr " . fmt_addr_set(BLOCK_BOGON_V6)
+            $lines[] = "        iifname $ifn ip6 saddr @__bogons_v6"
                 . " $logBogon" . "counter drop comment \"block-bogon v6 $key\"";
         }
     }
@@ -2899,7 +3038,11 @@ $nat = build_nat($cfg, $ifaces, $wanDevs, $aliases);
 /* Upper bound on the number of entries an alias may hold, from the advanced
    firewall page. Without it a downloaded list that grows without limit takes
    the memory it wants. */
-$aliasSets = alias_set_lines($aliases, (int)($cfg->system->maximumtableentries ?? 0));
+$maxTableEntries = (int)($cfg->system->maximumtableentries ?? 0);
+$aliasSets = array_merge(
+    bogon_set_lines($ifaces, $maxTableEntries),
+    alias_set_lines($aliases, $maxTableEntries)
+);
 
 $martians = martian_lines($ifaces, $cfg);
 $portZero = port_zero_lines($cfg);
