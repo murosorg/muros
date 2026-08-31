@@ -1,4 +1,8 @@
 #!/bin/sh
 
-# Startup configd
-/usr/local/etc/rc.d/configd start
+# MurOS: configd is a systemd unit, muros-configd.service, and the boot chain is
+# already ordered after it. Starting it here is a no-op on a normal boot and a
+# safety net when the early level is replayed by hand or by an upgrade, since
+# the next hook and the whole chain talk to the configd socket.
+
+systemctl start muros-configd.service

@@ -1,10 +1,17 @@
 #!/bin/sh
 
-# Perform major updates
+# MurOS: FreeBSD staged the kernel, the base set and the packages with
+# opnsense-update -K -B -P and installed them on the next boot, rebooting once
+# more after every stage that had been applied. Debian has no staged install:
+# the firmware scripts run apt, which applies everything before the reboot, so
+# there is nothing left to install here. What can survive a reboot is an
+# interrupted dpkg run, which leaves packages unpacked but unconfigured, and
+# PHP and the services would then start against a half installed tree.
+# Finishing that run is the equivalent of the staged install, minus the reboot.
 
-for STAGE in K B P; do
-	if opnsense-update -${STAGE}; then
-		echo "Rebooting now."
-		reboot
-	fi
-done
+if [ -n "$(dpkg --audit 2>/dev/null)" ]; then
+	echo "Finishing an interrupted package installation."
+	DEBIAN_FRONTEND=noninteractive dpkg --configure --pending || true
+fi
+
+exit 0

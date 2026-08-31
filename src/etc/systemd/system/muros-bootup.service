@@ -4,6 +4,12 @@
 # the plugin chains (early, dhcp, dns, monitor, vpn, bootup). Without it the
 # services configured in config.xml only started when an operator applied a page
 # in the interface.
+#
+# The unit also reproduces the two things /etc/rc did around the chain: it holds
+# the exclusive lock on /var/run/booting for its whole run, which is what
+# product::booting() probes and therefore what exit_on_bootup() and the boot
+# performance log rely on, and it runs the early and start syshook levels before
+# and after the chain, which nothing invoked on Debian anymore.
 [Unit]
 Description=MurOS configuration boot chain
 Documentation=https://github.com/ecritel/muros
@@ -14,9 +20,23 @@ Wants=muros-configd.service
 [Service]
 Type=oneshot
 RemainAfterExit=yes
+# PHP directories, ownerships and the lock file have to exist before any PHP
+# runs: the chain, the templates and the early hooks all write as the web user
+ExecStartPre=/usr/local/etc/rc.subr.d/php
+ExecStartPre=/bin/sh -c 'touch /var/run/booting; chmod 660 /var/run/booting'
+ExecStartPre=/usr/local/etc/rc.syshook early
 # the interface and filter steps it repeats are idempotent, the plugin chains
-# are the reason it runs last
-ExecStart=/usr/bin/php /usr/local/etc/rc.bootup
+# are the reason it runs last. flock drops the lock when rc.bootup exits, so
+# the start hooks below already see a booted system
+ExecStart=/usr/bin/flock -n -o /var/run/booting /usr/local/etc/rc.bootup
+# deferred work: the dynamic addresses acquired during the chain, the syslog and
+# cron restarts, the tunables of late loaded modules
+ExecStartPost=/usr/local/etc/rc.syshook start
+# the stop level: /etc/rc.shutdown ran it on FreeBSD and nothing does under
+# systemd, so an operator reboot from the interface flushed the state while a
+# systemctl reboot did not. The hooks are idempotent, running them twice when
+# rc.halt already did is harmless.
+ExecStop=/usr/local/etc/rc.syshook stop
 StandardOutput=journal
 TimeoutStartSec=900
 
