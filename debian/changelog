@@ -1,3 +1,19 @@
+muros (0.9.83) trixie; urgency=medium
+
+  * The table offenders are added to is filled again. A rule carrying a per
+    source limit can name a table the sources that go over it are added to,
+    which another rule blocks wholesale; the generator read the field and did
+    nothing with it, so the limit forgot the source immediately and the block
+    rule written against that table matched an empty set forever. The table is a
+    set updated from the rule that catches the offender, under the name of the
+    alias, so the block rule already written against it is the one that fills
+    up. An entry lasts an hour. A table that already contains networks cannot be
+    used this way and is reported rather than silently ignored.
+  * Flushing the per source counters does something. The action was wired to a
+    command that does nothing, so the button was a lie.
+
+ -- MurOS <jpzi@proton.me>  Mon, 31 Aug 2026 23:20:00 +0200
+
 muros (0.9.82) trixie; urgency=medium
 
   * A rule that asks for no connection tracking gets none. The setting exists
