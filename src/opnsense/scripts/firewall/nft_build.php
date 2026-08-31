@@ -33,8 +33,13 @@
  *     connections a single source may hold, and how fast it may open them,
  *     through a dynamic set keyed by the source address
  *
- * Not yet handled (kept on the roadmap): IPv6 NPt and subnet 1:1 netmap, and
- * the pf state options that count states globally (max, max-src-nodes).
+ *   - one-to-one and NPTv6: whole prefixes are mapped with the nftables
+ *     netmap statement, single addresses with a plain dnat and snat
+ *
+ * Not yet handled (kept on the roadmap): the source NAT rules of the model
+ * tree (OPNsense/Firewall/Filter/snatrules, the legacy outbound rules are
+ * rendered), and the pf state options that count states globally (max,
+ * max-src-nodes).
  *
  * Usage: nft_build.php [config.xml]   (defaults to /conf/config.xml)
  * The ruleset is written to stdout.
@@ -444,6 +449,179 @@ function wan_devices(SimpleXMLElement $cfg, array $ifaces): array
     return $wan;
 }
 
+/* Mask an address to its prefix, so a mapping shows the network it really
+ * translates: the kernel applies the prefix anyway, and an operator who typed
+ * a host address inside the range would otherwise read a rule that lies. */
+function mask_prefix(string $cidr): string
+{
+    if (strpos($cidr, '/') === false) {
+        return $cidr;
+    }
+
+    list($addr, $len) = explode('/', $cidr, 2);
+    $len = (int)$len;
+    $packed = @inet_pton($addr);
+    if ($packed === false) {
+        return $cidr;
+    }
+
+    $bytes = strlen($packed);
+    if ($len < 0 || $len > $bytes * 8) {
+        return $cidr;
+    }
+
+    for ($i = 0; $i < $bytes; $i++) {
+        $bits = $len - ($i * 8);
+        $mask = $bits >= 8 ? 0xff : ($bits <= 0 ? 0x00 : (0xff << (8 - $bits)) & 0xff);
+        $packed[$i] = chr(ord($packed[$i]) & $mask);
+    }
+
+    return inet_ntop($packed) . '/' . $len;
+}
+
+/* A description turned into something an nft comment accepts. */
+function nft_comment(string $value): string
+{
+    $value = preg_replace('/[^\x20-\x7E]/', '', trim($value));
+    return substr(str_replace('"', "'", (string)$value), 0, 100);
+}
+
+/*
+ * MurOS: the one-to-one and NPTv6 rules of the model tree.
+ *
+ * Both used to live under <nat> and the model migrations moved them to
+ * OPNsense/Firewall/Filter, where the current GUI writes them. The builder
+ * only ever read the old location, so on any box that ran those migrations,
+ * and on every new one, a one-to-one mapping or an IPv6 prefix translation was
+ * configured, listed in the GUI, and simply never rendered.
+ *
+ * A mapping between two whole prefixes is what nftables calls a netmap:
+ * "dnat ip prefix to" and "snat ip prefix to" rewrite the host part inside the
+ * prefix instead of pinning every address to a single one, which is what pf
+ * did with binat. Single addresses keep the plain dnat and snat form. The
+ * kernel wants both prefixes the same size, and the GUI stores the external
+ * side of a one-to-one rule without a mask, so the mask of the internal side
+ * is applied to it, exactly like pf derived it.
+ *
+ * NPTv6 is the same netmap on IPv6, minus the checksum neutral rewrite of
+ * RFC 6296, which nftables does not implement. Connection tracking fixes the
+ * checksums instead, so a translated flow is correct on the wire, but a peer
+ * cannot infer the internal address from the external one and back.
+ */
+function build_model_nat(SimpleXMLElement $cfg, array $ifaces, array $aliases): array
+{
+    $pre = [];
+    $post = [];
+    $passes = [];
+
+    $root = $cfg->OPNsense->Firewall->Filter ?? null;
+    if ($root === null) {
+        return ['pre' => $pre, 'post' => $post, 'passes' => $passes];
+    }
+
+    $literal = function (?string $expr): bool {
+        return $expr !== null && $expr !== '' && $expr[0] !== '@' && $expr[0] !== '{';
+    };
+    $masklen = function (string $expr): ?int {
+        return preg_match('#/(\d+)$#', $expr, $m) ? (int)$m[1] : null;
+    };
+
+    if (isset($root->onetoone->rule)) {
+        foreach ($root->onetoone->rule as $r) {
+            if ((string)($r->enabled ?? '1') !== '1') {
+                continue;
+            }
+            $devs = iface_devices($ifaces, (string)$r->interface);
+            $external = trim((string)$r->external);
+            if (empty($devs) || $external === '') {
+                continue;
+            }
+
+            $family = strpos($external, ':') !== false ? 'ip6' : 'ip';
+            $full = $family === 'ip6' ? 128 : 32;
+            $internal = mvc_resolve_net((string)($r->source_net ?? ''), $family, $ifaces, $aliases);
+            if (!$internal['ok'] || !$literal($internal['expr'])) {
+                continue;
+            }
+            $inside = $internal['expr'];
+            $mask = $masklen($inside);
+
+            $outside = $external;
+            if ($masklen($outside) === null && $mask !== null && $mask < $full) {
+                $outside .= '/' . $mask;
+            }
+            if ($masklen($outside) !== null && $masklen($outside) !== ($mask ?? $full)) {
+                continue;
+            }
+
+            $netmap = $mask !== null && $mask < $full;
+            if ($netmap) {
+                $inside = mask_prefix($inside);
+                $outside = mask_prefix($outside);
+            }
+            $peer = mvc_resolve_net((string)($r->destination_net ?? ''), $family, $ifaces, $aliases);
+            $peerExpr = $peer['ok'] ? $peer['expr'] : null;
+            $descr = nft_comment((string)($r->description ?? ''));
+            $comment = $descr === '' ? '1:1 nat' : $descr;
+
+            $preParts = ['iifname ' . ifname_expr($devs), "$family daddr $outside"];
+            if ($peerExpr !== null) {
+                $preParts[] = "$family saddr $peerExpr";
+            }
+            $preParts[] = $netmap ? "dnat $family prefix to $inside" : "dnat to $inside";
+            $pre[] = '        ' . implode(' ', $preParts) . " comment \"$comment inbound\"";
+
+            $postParts = ['oifname ' . ifname_expr($devs), "$family saddr $inside"];
+            if ($peerExpr !== null) {
+                $postParts[] = "$family daddr $peerExpr";
+            }
+            $postParts[] = $netmap ? "snat $family prefix to $outside" : "snat to $outside";
+            $post[] = '        ' . implode(' ', $postParts) . " comment \"$comment outbound\"";
+
+            $passes[] = "        $family daddr $inside ct status dnat counter accept comment \"$comment pass\"";
+        }
+    }
+
+    if (isset($root->npt->rule)) {
+        foreach ($root->npt->rule as $r) {
+            if ((string)($r->enabled ?? '1') !== '1') {
+                continue;
+            }
+            $devs = iface_devices($ifaces, (string)$r->interface);
+            if (empty($devs)) {
+                continue;
+            }
+
+            $internal = mvc_resolve_net((string)($r->source_net ?? ''), 'ip6', $ifaces, $aliases);
+            $external = mvc_resolve_net((string)($r->destination_net ?? ''), 'ip6', $ifaces, $aliases);
+            if (($external['expr'] ?? null) === null && !empty((string)($r->trackif ?? ''))) {
+                /* a tracked interface carries the prefix delegated to it */
+                $external = mvc_resolve_net((string)$r->trackif, 'ip6', $ifaces, $aliases);
+            }
+            if (!$literal($internal['expr'] ?? null) || !$literal($external['expr'] ?? null)) {
+                continue;
+            }
+
+            $inside = mask_prefix($internal['expr']);
+            $outside = mask_prefix($external['expr']);
+            if ($masklen($inside) === null || $masklen($inside) !== $masklen($outside)) {
+                continue;
+            }
+
+            $descr = nft_comment((string)($r->description ?? ''));
+            $comment = $descr === '' ? 'npt' : $descr;
+
+            $post[] = '        oifname ' . ifname_expr($devs) . " ip6 saddr $inside"
+                . " snat ip6 prefix to $outside comment \"$comment outbound\"";
+            $pre[] = '        iifname ' . ifname_expr($devs) . " ip6 daddr $outside"
+                . " dnat ip6 prefix to $inside comment \"$comment inbound\"";
+            $passes[] = "        ip6 daddr $inside ct status dnat counter accept comment \"$comment pass\"";
+        }
+    }
+
+    return ['pre' => $pre, 'post' => $post, 'passes' => $passes];
+}
+
 /* Build the NAT chains (source NAT / masquerade and destination NAT port
  * forwards) from the <nat> section. Returns prerouting lines, postrouting
  * lines and the filter passes that must accompany port forwards (traffic
@@ -638,6 +816,14 @@ function build_nat(SimpleXMLElement $cfg, array $ifaces, array $wanDevs, array $
             $passes[] = "        ip daddr $internal ct status dnat counter accept comment \"1:1 nat pass\"";
         }
     }
+
+    /* the one-to-one and NPTv6 mappings of the model tree translate whole
+     * prefixes, so they belong with the specific source NAT, ahead of the
+     * masquerade */
+    $model = build_model_nat($cfg, $ifaces, $aliases);
+    $pre = array_merge($model['pre'], $pre);
+    $post = array_merge($model['post'], $post);
+    $passes = array_merge($passes, $model['passes']);
 
     /* Ordering in the postrouting chain matters: No-NAT "return" rules first
      * so excluded traffic is never translated, then the specific source NAT
