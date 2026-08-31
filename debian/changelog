@@ -1,3 +1,20 @@
+muros (0.9.97) trixie; urgency=medium
+
+  * Blocking bogon networks blocked seven well known ranges written into the
+    source, not the several thousand prefixes that are unallocated today. The
+    updater already downloaded the full list every night and wrote it next to
+    the firewall, and nothing read it. The ruleset now builds its bogon sets
+    from that list, and keeps the built-in ranges only until the first
+    download. Private ranges marked as excluded in the list are left out, so
+    blocking bogons no longer quietly blocks a private network the operator
+    allowed.
+  * The nightly download itself never ran: its action still called the
+    FreeBSD helper that launches a background job, which does not exist here.
+    Every other action had been ported, this one was missed, so a firewall
+    installed months ago still carried the list of the day it was built.
+
+ -- MurOS <dev@muros.org>  Mon, 31 Aug 2026 23:10:02 +0200
+
 muros (0.9.96) trixie; urgency=medium
 
   * Four settings of the advanced firewall page had no effect at all.
