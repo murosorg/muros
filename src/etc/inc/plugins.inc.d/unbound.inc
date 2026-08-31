@@ -113,48 +113,6 @@ function unbound_service_mount_sync($umount = false)
      * many call sites while preventing spurious "/sbin/mount: not found" errors.
      */
     return;
-
-    $mountpoints = [
-        '/var/unbound/dev' => [
-            'special' => 'devfs',
-            'fstype' => 'devfs'
-        ],
-        '/var/unbound/usr/local/lib/' . readlink('/usr/local/bin/python3') => [
-            'special' => '/usr/local/lib/' . readlink('/usr/local/bin/python3'),
-            'fstype' => 'nullfs'
-        ],
-        '/var/unbound/lib' => [
-            'special' => '/lib',
-            'fstype' => 'nullfs'
-        ]
-    ];
-
-    /* collect mounted */
-    $mounted = [];
-    $tmp = json_decode(shell_safe('/sbin/mount --libxo json'), true) ?? [];
-    if (!empty($tmp['mount']) && !empty($tmp['mount']['mounted'])) {
-        foreach ($tmp['mount']['mounted'] as $dev) {
-            if (!empty($dev['node'])) {
-                $mounted[$dev['node']] = $dev;
-            }
-        }
-    }
-
-    /* sync requested mountpoints */
-    foreach ($mountpoints as $mntpoint => $dev) {
-        $mntargs = [$dev['fstype'], $dev['special'], $mntpoint];
-        $mntcmd = '/sbin/mount ' . ($dev['fstype'] != 'devfs' ? '-r' : '') . ' -t %s %s %s';
-        if (!empty($mounted[$mntpoint])) {
-            if ($umount || $mounted[$mntpoint]['special'] != $dev['special']) {
-                mwexecfm('/sbin/umount %s', $mntpoint);
-                if (!$umount) {
-                    mwexecf($mntcmd, $mntargs);
-                }
-            }
-        } elseif (!$umount) {
-            mwexecf($mntcmd, $mntargs);
-        }
-    }
 }
 
 function unbound_service_stop()
