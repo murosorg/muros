@@ -148,7 +148,7 @@
             <endpoint>/api/diagnostics/system/system_mbuf</endpoint>
         </endpoints>
         <translations>
-            <title>Mbuf</title>
+            <title>Network Buffers</title>
             <used>Used</used>
             <free>Free</free>
         </translations>

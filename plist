@@ -1297,6 +1297,12 @@
 /usr/local/opnsense/scripts/interfaces/list_sockstat.py
 /usr/local/opnsense/scripts/interfaces/macinfo.py
 /usr/local/opnsense/scripts/interfaces/mpd.script
+/usr/local/opnsense/scripts/interfaces/netstat_bpf.py
+/usr/local/opnsense/scripts/interfaces/netstat_interfaces.py
+/usr/local/opnsense/scripts/interfaces/netstat_memory.py
+/usr/local/opnsense/scripts/interfaces/netstat_netisr.py
+/usr/local/opnsense/scripts/interfaces/netstat_protocol.py
+/usr/local/opnsense/scripts/interfaces/netstat_sockets.py
 /usr/local/opnsense/scripts/interfaces/ping.py
 /usr/local/opnsense/scripts/interfaces/portprobe.py
 /usr/local/opnsense/scripts/interfaces/ppp-ipv6.php
