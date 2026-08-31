@@ -5,6 +5,7 @@
 [Unit]
 Description=MurOS DHCP lease change sweep
 Documentation=https://github.com/ecritel/muros
+After=muros-bootup.service
 
 [Timer]
 OnBootSec=90

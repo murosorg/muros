@@ -6,8 +6,11 @@
 [Unit]
 Description=MurOS DHCP lease change watcher
 Documentation=https://github.com/ecritel/muros
-After=systemd-networkd.service
+After=systemd-networkd.service muros-bootup.service
 
+# ordered after the boot chain: the chain configures every interface itself and
+# a lease arriving in the middle of it would replay the newwanip chain against a
+# half configured system.
 [Path]
 # networkd writes the lease atomically (temporary file plus rename), which
 # shows up as a change of the directory.

@@ -3,7 +3,7 @@
 [Unit]
 Description=MurOS DHCP lease change handler
 Documentation=https://github.com/ecritel/muros
-After=muros-configd.service
+After=muros-configd.service muros-bootup.service
 
 [Service]
 Type=oneshot

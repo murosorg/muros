@@ -102,6 +102,24 @@ function fingerprint($lease)
     return implode("\n", $parts) . "\n";
 }
 
+/*
+ * MurOS: the boot chain publishes the same information for every interface and
+ * configd defers "interface newip" while the system is booting, so a lease that
+ * lands in the middle of the chain must not be replayed here. The chain holds
+ * the exclusive lock on /var/run/booting for its whole run, which is what
+ * product::booting() probes. The path and timer units are ordered after the
+ * chain, but the kernel can still deliver a lease event before they are, so the
+ * lock is checked here too; the next sweep of the timer picks the lease up.
+ */
+$lock = @fopen('/var/run/booting', 'r');
+if ($lock !== false) {
+    if (!flock($lock, LOCK_SH | LOCK_NB)) {
+        exit(0);
+    }
+    flock($lock, LOCK_UN);
+    fclose($lock);
+}
+
 $only = array_slice($argv, 1);
 @mkdir($stateDir, 0700, true);
 
