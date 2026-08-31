@@ -24,148 +24,197 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-# PROVIDE: captiveportal
-# REQUIRE: pf
-# KEYWORD: shutdown
+# MurOS: this was an rc.subr script, so on Debian it could not even be sourced:
+# every start, stop and restart of the captive portal failed on the missing
+# /etc/rc.subr, and the enable variable it looked for came from an rc.conf.d
+# fragment nothing generates anymore. It is a plain script now, with the same
+# three verbs configd calls, and the zone chroots get device nodes instead of a
+# devfs mount.
 
-. /etc/rc.subr
+set -u
 
-name=captiveportal
-rcvar=captiveportal_enable
-start_precmd=captiveportal_prestart
-start_cmd="${name}_start"
-stop_cmd="${name}_stop"
+CPWORKDIR="/var/captiveportal"
+CPDEFAULTTEMPLATE="/usr/local/opnsense/scripts/captiveportal/htdocs_default"
+CPCONF="/usr/local/etc/captiveportal.conf"
+CPSCRIPTS="/usr/local/opnsense/scripts/captiveportal"
+DISPATCHER_PID="/var/run/lighttpd-api-dispatcher.pid"
+BACKGROUND_PID="/var/run/captiveportal.db.pid"
+CPUSER="www-data"
 
-[ -z "$captiveportal_enable" ]       && captiveportal_enable="NO"
-
-captiveportal_load_rc_config()
+captiveportal_zones()
 {
-    CPWORKDIR="/var/captiveportal"
-    CPDEFAULTTEMPLATE="/usr/local/opnsense/scripts/captiveportal/htdocs_default"
+	if [ -f "${CPCONF}" ]; then
+		sed -n 's/^\[zone_\([0-9][0-9]*\)\]$/\1/p' "${CPCONF}"
+	fi
+}
 
-    # extract all zones from captive portal configuration
-    CPZONES=`cat /usr/local/etc/captiveportal.conf | grep "\[zone_" | sed 's/\[zone_//' | sed 's/\]//'`
+pid_of()
+{
+	_pid=""
+	if [ -f "$1" ]; then
+		_pid=$(cat "$1" 2> /dev/null)
+	fi
+	case "${_pid}" in
+	''|*[!0-9]*)
+		return 1
+		;;
+	esac
+	[ -d "/proc/${_pid}" ] || return 1
+	echo "${_pid}"
+}
+
+pid_stop()
+{
+	_pid=$(pid_of "$1") || {
+		rm -f "$1"
+		return 0
+	}
+	kill -TERM "${_pid}" 2> /dev/null
+	_wait=0
+	while [ -d "/proc/${_pid}" ] && [ "${_wait}" -lt 10 ]; do
+		sleep 1
+		_wait=$((_wait + 1))
+	done
+	if [ -d "/proc/${_pid}" ]; then
+		kill -KILL "${_pid}" 2> /dev/null
+	fi
+	rm -f "$1"
+}
+
+# lighttpd chroots into the zone directory, so the few character devices the
+# runtime touches have to exist inside it. FreeBSD mounted a devfs, Linux gets
+# the nodes created once, which also means nothing to unmount when a zone is
+# removed.
+zone_devices()
+{
+	_dev="$1/dev"
+	mkdir -p "${_dev}"
+	[ -c "${_dev}/null" ] || mknod -m 666 "${_dev}/null" c 1 3
+	[ -c "${_dev}/zero" ] || mknod -m 666 "${_dev}/zero" c 1 5
+	[ -c "${_dev}/random" ] || mknod -m 666 "${_dev}/random" c 1 8
+	[ -c "${_dev}/urandom" ] || mknod -m 666 "${_dev}/urandom" c 1 9
 }
 
 captiveportal_cleanup_zones()
 {
-    # cleanup removed zones
-    for installed_zoneid in `ls $CPWORKDIR |  sed 's/zone//g'`; do
-        if [ -d $CPWORKDIR/zone$installed_zoneid ]; then
-            is_installed=0
-            for zoneid in $CPZONES; do
-                if [ "$zoneid" -eq "$installed_zoneid" ]; then
-                    is_installed=1
-                fi
-            done
-            if [ "$is_installed" -eq 0 ]; then
-                echo "Uninstall : zone $installed_zoneid"
-                umount "$CPWORKDIR/zone$installed_zoneid/dev"
-                rm -rf "$CPWORKDIR/zone$installed_zoneid"
-            fi
-        fi
-    done
-}
-
-captiveportal_prestart()
-{
-    # initialize captiveportal work directory
-    mkdir -p $CPWORKDIR
+	_zones=$(captiveportal_zones)
+	for _installed in $(ls "${CPWORKDIR}" 2> /dev/null | sed 's/zone//g'); do
+		[ -d "${CPWORKDIR}/zone${_installed}" ] || continue
+		_found=0
+		for _zoneid in ${_zones}; do
+			if [ "${_zoneid}" = "${_installed}" ]; then
+				_found=1
+			fi
+		done
+		if [ "${_found}" -eq 0 ]; then
+			echo "Uninstall : zone ${_installed}"
+			rm -rf "${CPWORKDIR}/zone${_installed}"
+		fi
+	done
 }
 
 captiveportal_start()
 {
-    # if the API dispatcher is already running, we will assume all parts are running
-    if ! pgrep -qF /var/run/lighttpd-api-dispatcher.pid 2> /dev/null; then
-        echo "Starting API dispatcher"
-        /usr/sbin/lighttpd -f /var/etc/lighttpd-api-dispatcher.conf
+	mkdir -p "${CPWORKDIR}"
 
-        # generate ssl certificates
-        /usr/local/opnsense/scripts/captiveportal/generate_certs.php
+	if pid_of "${DISPATCHER_PID}" > /dev/null; then
+		echo "already running"
+		return 0
+	fi
 
-        # startup / bootstrap zones
-        for zoneid in $CPZONES; do
-            # bootstrap captiveportal jail
-            zonedirname="zone$zoneid"
-            echo "Install : zone $zoneid"
-            mkdir -p $CPWORKDIR/$zonedirname
-            # remove temp (flush)
-            rm -rf $CPWORKDIR/$zonedirname/tmp
-            mkdir -p $CPWORKDIR/$zonedirname/tmp
-            chmod 770 $CPWORKDIR/$zonedirname/tmp
+	echo "Starting API dispatcher"
+	rm -f "${DISPATCHER_PID}"
+	/usr/sbin/lighttpd -f /var/etc/lighttpd-api-dispatcher.conf
 
-            mkdir -p $CPWORKDIR/$zonedirname/dev
-            if ! mount -uw $CPWORKDIR/$zonedirname/dev 2> /dev/null; then
-                mount -t devfs devfs $CPWORKDIR/$zonedirname/dev
-            fi
+	${CPSCRIPTS}/generate_certs.php
 
-            # sync default template
-            cp -a $CPDEFAULTTEMPLATE/ $CPWORKDIR/$zonedirname/htdocs/
+	for _zoneid in $(captiveportal_zones); do
+		_zonedir="${CPWORKDIR}/zone${_zoneid}"
+		echo "Install : zone ${_zoneid}"
+		mkdir -p "${_zonedir}"
+		rm -rf "${_zonedir}/tmp"
+		mkdir -p "${_zonedir}/tmp"
+		chmod 770 "${_zonedir}/tmp"
 
-            # chown zone files to chroot user
-            chown -R www:www $CPWORKDIR/$zonedirname
+		zone_devices "${_zonedir}"
 
-            # overlay custom user layout if available.
-            /usr/local/opnsense/scripts/captiveportal/overlay_template.py $zoneid
+		cp -a "${CPDEFAULTTEMPLATE}/" "${_zonedir}/htdocs/"
+		chown -R "${CPUSER}:${CPUSER}" "${_zonedir}"
 
-            # start new instance
-            echo "Start : zone $zoneid"
-            /usr/sbin/lighttpd -f /var/etc/lighttpd-cp-zone-$zoneid.conf
-        done
+		${CPSCRIPTS}/overlay_template.py "${_zoneid}"
 
-        captiveportal_cleanup_zones
-        echo "start captiveportal background process"
-        /usr/local/opnsense/scripts/captiveportal/cp-background-process.py start
+		echo "Start : zone ${_zoneid}"
+		rm -f "/var/run/lighttpd-cp-zone-${_zoneid}.pid"
+		/usr/sbin/lighttpd -f "/var/etc/lighttpd-cp-zone-${_zoneid}.conf"
+	done
 
-        # build the nftables captive portal enforcement
-        echo "setup captiveportal firewall"
-        /usr/local/opnsense/scripts/captiveportal/setup_fw.py
-    else
-        echo "already running"
-    fi
+	captiveportal_cleanup_zones
+
+	echo "start captiveportal background process"
+	${CPSCRIPTS}/cp-background-process.py start
+
+	echo "setup captiveportal firewall"
+	${CPSCRIPTS}/setup_fw.py
 }
 
-# stop captive portal (sub) processes
 captiveportal_stop()
 {
-    # startup API dispatcher, forwards captive portal api request to shared OPNsense API
-    if [ -f /var/run/lighttpd-api-dispatcher.pid ]; then
-        echo "Stopping API dispatcher"
-        /bin/pkill -TERM -F /var/run/lighttpd-api-dispatcher.pid
-        if [ -f /var/run/lighttpd-api-dispatcher.pid ]; then
-            # in case pkill didn't do anything, always remove pid file
-            rm -f /var/run/lighttpd-api-dispatcher.pid
-        fi
-    fi
+	if [ -f "${DISPATCHER_PID}" ]; then
+		echo "Stopping API dispatcher"
+		pid_stop "${DISPATCHER_PID}"
+	fi
 
-    # stopping zone http servers
-    for zoneid in $CPZONES; do
-        # stop running instance
-        zonepid="/var/run/lighttpd-cp-zone-$zoneid.pid"
-        if [ -f $zonepid ]; then
-            echo "Stop : zone $zoneid"
-            /bin/pkill -TERM -F $zonepid
-            rm -f $zonepid
-        fi
-    done
+	for _zonepid in /var/run/lighttpd-cp-zone-*.pid; do
+		[ -f "${_zonepid}" ] || continue
+		echo "Stop : $(basename "${_zonepid}" .pid | sed 's/lighttpd-cp-//')"
+		pid_stop "${_zonepid}"
+	done
 
-    # stopping unconfigured zones (not in $CPZONES list)
-    for zonepid in `ls /var/run/lighttpd-cp-zone-*.pid 2>/dev/null`; do
-        /bin/pkill -TERM -F $zonepid
-        rm -f $zonepid
-    done
+	if [ -f "${BACKGROUND_PID}" ]; then
+		echo "stop captiveportal background process"
+		pid_stop "${BACKGROUND_PID}"
+	fi
 
-    if [ -f /var/run/captiveportal.db.pid ]; then
-        echo "stop captiveportal background process"
-        /bin/pkill -TERM -F /var/run/captiveportal.db.pid
-    fi
+	/usr/sbin/nft delete table inet captiveportal 2> /dev/null
 
-    # remove the nftables captive portal enforcement
-    /usr/sbin/nft delete table inet captiveportal 2> /dev/null
-
-    captiveportal_cleanup_zones
+	captiveportal_cleanup_zones
 }
 
-captiveportal_load_rc_config
-load_rc_config $name
-run_rc_command $1
+captiveportal_status()
+{
+	_rc=1
+	if pid_of "${DISPATCHER_PID}" > /dev/null; then
+		echo "API dispatcher is running"
+		_rc=0
+	else
+		echo "API dispatcher is not running"
+	fi
+	for _zoneid in $(captiveportal_zones); do
+		if pid_of "/var/run/lighttpd-cp-zone-${_zoneid}.pid" > /dev/null; then
+			echo "zone ${_zoneid} is running"
+		else
+			echo "zone ${_zoneid} is not running"
+		fi
+	done
+	return ${_rc}
+}
+
+case "${1:-}" in
+start|onestart|faststart|quietstart)
+	captiveportal_start
+	;;
+stop|onestop|faststop)
+	captiveportal_stop
+	;;
+restart|onerestart)
+	captiveportal_stop
+	captiveportal_start
+	;;
+status|onestatus)
+	captiveportal_status
+	;;
+*)
+	echo "usage: $0 {start|stop|restart|status}" >&2
+	exit 64
+	;;
+esac
