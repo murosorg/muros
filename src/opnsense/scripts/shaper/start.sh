@@ -24,21 +24,10 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-SERVICE=${1}
+# MurOS: dnctl and ipfw do not exist on Debian, the shaper is a set of queueing
+# disciplines applied with tc. Kept as the entry point the rest of the stack
+# already calls, the service argument is ignored.
 
-if [ -z "${SERVICE}" -o "${SERVICE}" = "dnctl" ]; then
-    /etc/rc.d/dnctl start
-fi
-
-if [ -z "${SERVICE}" -o "${SERVICE}" = "ipfw" ]; then
-    if /etc/rc.d/ipfw enabled; then
-        /etc/rc.d/ipfw start
-        # synchronize ipfw/pf load order
-        /usr/local/opnsense/scripts/shaper/sync_fw_hooks.py
-    else
-        /etc/rc.d/ipfw onestop
-        /sbin/ipfw -f flush
-    fi
-fi
+/usr/local/opnsense/scripts/shaper/tc_apply.py apply
 
 exit 0

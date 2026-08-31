@@ -23,8 +23,7 @@
 #    ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 #    POSSIBILITY OF SUCH DAMAGE.
 
-#    flush ipfw rules, pipes, queues
+# MurOS: drop the queueing disciplines of every interface, the equivalent of
+# flushing the dummynet pipes and queues.
 
-/sbin/ipfw -f flush
-/sbin/ipfw -f pipe flush
-/sbin/ipfw -f queue flush
+/usr/local/opnsense/scripts/shaper/tc_apply.py flush
