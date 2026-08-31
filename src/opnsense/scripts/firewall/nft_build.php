@@ -29,8 +29,12 @@
  *   - reply-to: on a multi-WAN box, new connections arriving on a WAN are
  *     marked with that WAN's gateway so their replies leave the same uplink
  *
- * Not yet handled (kept on the roadmap): IPv6 NPt and subnet 1:1 netmap,
- * traffic shaping/dummynet, and the finer pf state options.
+ *   - max-src-conn / max-src-conn-rate: a pass rule limits how many
+ *     connections a single source may hold, and how fast it may open them,
+ *     through a dynamic set keyed by the source address
+ *
+ * Not yet handled (kept on the roadmap): IPv6 NPt and subnet 1:1 netmap, and
+ * the pf state options that count states globally (max, max-src-nodes).
  *
  * Usage: nft_build.php [config.xml]   (defaults to /conf/config.xml)
  * The ruleset is written to stdout.
@@ -754,7 +758,13 @@ function reply_to_lines(SimpleXMLElement $cfg, array $ifaces): array
  * uses a feature this iteration does not handle yet. When $mangle is provided
  * and the rule routes through a gateway, a matching prerouting mark rule is
  * appended to it (policy based routing / route-to). */
-function rule_line(SimpleXMLElement $rule, array $ifaces, array $aliases = [], ?array &$mangle = null): ?string
+function rule_line(
+    SimpleXMLElement $rule,
+    array $ifaces,
+    array $aliases = [],
+    ?array &$mangle = null,
+    ?array &$srclimits = null
+): ?string
 {
     if (isset($rule->disabled)) {
         return null;
@@ -943,7 +953,133 @@ function rule_line(SimpleXMLElement $rule, array $ifaces, array $aliases = [], ?
     if ($descr !== '') {
         $line .= " comment \"$descr\"";
     }
+
+    /* the per source limits guard the rule, so they are emitted just above it */
+    if ($verdict === 'accept') {
+        $limits = source_limit_lines($rule, $stmt, $family, $descr, $srclimits);
+        if (!empty($limits)) {
+            $limits[] = $line;
+            return implode("\n", $limits);
+        }
+    }
+
     return $line;
+}
+
+/*
+ * MurOS: the per source limits of a pass rule.
+ *
+ * pf carried them as state options on the rule itself, max-src-conn for the
+ * number of simultaneous connections a single source may hold and
+ * max-src-conn-rate for how fast it may open them, and the generated ruleset
+ * dropped them on the floor here: the options are in the configuration, the
+ * GUI still offers them under Advanced features, and nothing was ever emitted,
+ * so a rule meant to slow a brute force down passed everything.
+ *
+ * nftables expresses both with a dynamic set keyed by the source address, one
+ * per rule and per family, updated by the rule itself. "ct count over N"
+ * matches while the source holds more than N tracked connections and
+ * "limit rate over N/unit" matches while it opens them faster than allowed, so
+ * each limit becomes a drop rule placed just before the pass rule it belongs
+ * to, and only new connections are ever tested.
+ *
+ * The rate set carries a timeout so a source that stopped connecting leaves
+ * the set. The counting set does not: its entries are reference counted by
+ * conntrack and disappear when the last connection of that source closes.
+ */
+function source_limit_lines(
+    SimpleXMLElement $rule,
+    string $stmt,
+    string $family,
+    string $descr,
+    ?array &$srclimits
+): array {
+    if ($srclimits === null) {
+        return [];
+    }
+
+    $conn = 0;
+    foreach (['max-src-conn', 'max-src-states'] as $field) {
+        $value = (int)trim((string)($rule->{$field} ?? ''));
+        if ($value > 0 && ($conn === 0 || $value < $conn)) {
+            $conn = $value;
+        }
+    }
+    $rate = (int)trim((string)($rule->{'max-src-conn-rate'} ?? ''));
+    $seconds = (int)trim((string)($rule->{'max-src-conn-rates'} ?? ''));
+
+    if ($conn <= 0 && $rate <= 0) {
+        return [];
+    }
+
+    $type = $family === 'ip6' ? 'ipv6_addr' : 'ipv4_addr';
+    $saddr = $family === 'ip6' ? 'ip6 saddr' : 'ip saddr';
+    $prefix = $stmt === '' ? '' : $stmt . ' ';
+    $comment = $descr === '' ? '' : ' comment "' . $descr . '"';
+    $lines = [];
+
+    if ($conn > 0) {
+        $name = sprintf('srcconn_%d', count($srclimits) + 1);
+        $srclimits[] = ['name' => $name, 'type' => $type, 'timeout' => 0];
+        $lines[] = sprintf(
+            '        %sct state new add @%s { %s ct count over %d } counter drop%s',
+            $prefix,
+            $name,
+            $saddr,
+            $conn,
+            $comment
+        );
+    }
+
+    if ($rate > 0) {
+        /* pf took a count and a period in seconds, nft takes a rate against one
+         * of its own units, so the period is normalised to the smallest unit
+         * that keeps the ratio expressible as a whole number. The burst is the
+         * configured count itself, which is what pf allowed before it started
+         * refusing. */
+        $seconds = $seconds > 0 ? $seconds : 1;
+        if ($seconds <= 1) {
+            $limit = sprintf('%d/second', $rate);
+        } elseif ($seconds <= 60) {
+            $limit = sprintf('%d/minute', max(1, (int)round($rate * 60 / $seconds)));
+        } elseif ($seconds <= 3600) {
+            $limit = sprintf('%d/hour', max(1, (int)round($rate * 3600 / $seconds)));
+        } else {
+            $limit = sprintf('%d/day', max(1, (int)round($rate * 86400 / $seconds)));
+        }
+
+        $name = sprintf('srcrate_%d', count($srclimits) + 1);
+        $srclimits[] = ['name' => $name, 'type' => $type, 'timeout' => max(60, $seconds)];
+        $lines[] = sprintf(
+            '        %sct state new add @%s { %s limit rate over %s burst %d packets } counter drop%s',
+            $prefix,
+            $name,
+            $saddr,
+            $limit,
+            $rate,
+            $comment
+        );
+    }
+
+    return $lines;
+}
+
+/* Declarations of the dynamic sets the per source limits update. */
+function source_limit_sets(array $srclimits): array
+{
+    $lines = [];
+    foreach ($srclimits as $set) {
+        $lines[] = '    set ' . $set['name'] . ' {';
+        $lines[] = '        type ' . $set['type'] . ';';
+        $lines[] = '        size 65535;';
+        $lines[] = $set['timeout'] > 0 ? '        flags dynamic,timeout;' : '        flags dynamic;';
+        if ($set['timeout'] > 0) {
+            $lines[] = '        timeout ' . $set['timeout'] . 's;';
+        }
+        $lines[] = '    }';
+    }
+
+    return $lines;
 }
 
 /* Resolve a NetworkAliasField value (source_net / destination_net of an MVC
@@ -1003,7 +1139,13 @@ function mvc_resolve_net(string $value, string $family, array $ifaces, array $al
  * gets its own translator. A rule may yield several lines: an "any" (inet46)
  * rule is emitted once per family. Every line carries the rule uuid as its
  * comment so per-rule counters can be mapped back to the GUI. */
-function mvc_rule_line(SimpleXMLElement $rule, array $ifaces, array $aliases, ?array &$mangle = null): array
+function mvc_rule_line(
+    SimpleXMLElement $rule,
+    array $ifaces,
+    array $aliases,
+    ?array &$mangle = null,
+    ?array &$srclimits = null
+): array
 {
     if (trim((string)($rule->enabled ?? '1')) === '0') {
         return [];
@@ -1163,6 +1305,15 @@ function mvc_rule_line(SimpleXMLElement $rule, array $ifaces, array $aliases, ?a
         if ($uuid !== '') {
             $line .= " comment \"$uuid\"";
         }
+
+        /* the per source limits guard the rule, so they are emitted just above
+         * it, and a rule covering both families gets one set per family */
+        if ($verdict === 'accept') {
+            foreach (source_limit_lines($rule, $stmt, $family, $uuid, $srclimits) as $limit) {
+                $lines[] = $limit;
+            }
+        }
+
         $lines[] = $line;
     }
 
@@ -1215,10 +1366,12 @@ $rules = [];
 /* prerouting mark rules for policy based routing (route-to), collected from
  * gateway-pinned pass rules and emitted as a mangle chain. */
 $mangle = [];
+/* dynamic sets backing the per source limits of the rules that carry one */
+$srclimits = [];
 /* legacy <filter><rule> entries */
 if (isset($cfg->filter)) {
     foreach ($cfg->filter->rule as $rule) {
-        $line = rule_line($rule, $ifaces, $aliases, $mangle);
+        $line = rule_line($rule, $ifaces, $aliases, $mangle, $srclimits);
         if ($line !== null) {
             $rules[] = $line;
         }
@@ -1236,7 +1389,7 @@ if (isset($cfg->OPNsense->Firewall->Filter->rules->rule)) {
         return ((int)$a->sequence) <=> ((int)$b->sequence);
     });
     foreach ($mvcRules as $rule) {
-        foreach (mvc_rule_line($rule, $ifaces, $aliases, $mangle) as $line) {
+        foreach (mvc_rule_line($rule, $ifaces, $aliases, $mangle, $srclimits) as $line) {
             $rules[] = $line;
         }
     }
@@ -1319,6 +1472,13 @@ foreach ($aliasSets as $line) {
     $out[] = $line;
 }
 if (!empty($aliasSets)) {
+    $out[] = '';
+}
+$limitSets = source_limit_sets($srclimits);
+foreach ($limitSets as $line) {
+    $out[] = $line;
+}
+if (!empty($limitSets)) {
     $out[] = '';
 }
 $out[] = '    chain input {';
