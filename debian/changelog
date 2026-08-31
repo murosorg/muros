@@ -1,3 +1,18 @@
+muros (0.9.74) trixie; urgency=medium
+
+  * Firewall rules limit their sources again. A pass rule can cap how many
+    connections a single source holds and how fast it opens them, the options
+    are in the configuration and the GUI still offers them under Advanced
+    features, but the generated ruleset dropped them: a rule meant to slow a
+    brute force down passed everything. Both become a dynamic set keyed by the
+    source address, one per rule and per address family, and a drop rule placed
+    just above the pass rule it guards. Only new connections are tested, the
+    counting set is reference counted by connection tracking and the rate set
+    ages its sources out. The pf state options that count globally, max and
+    max-src-nodes, stay on the roadmap.
+
+ -- MurOS <jpzi@proton.me>  Mon, 31 Aug 2026 18:55:00 +0200
+
 muros (0.9.73) trixie; urgency=medium
 
   * Multi-WAN failover moves the connections that were already open. The
