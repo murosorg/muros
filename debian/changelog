@@ -1,3 +1,23 @@
+muros (0.9.72) trixie; urgency=medium
+
+  * Multi-WAN failover: a rule pinned to a gateway group now leaves through
+    that group. The ruleset already marked those flows exactly like a rule
+    pinned to a single gateway, but only real gateways were given a routing
+    table, so the mark landed on nothing and the traffic silently followed the
+    main table. A group gets its table too, holding the members of the highest
+    tier that still satisfies its trigger, as a multipath route weighted by the
+    gateway configuration when that tier holds several uplinks. The failover
+    falls out of it: the monitor reloads the ruleset when a member changes
+    state, the tables are rebuilt from the live status, and the group starts
+    using what is left.
+  * Packaging: a box can tell which build it runs. The core version token had
+    been left behind at 0.9.14 while the package moved on, and the commit and
+    the hash stayed at their placeholder, so the firmware page reported a
+    version that never existed. They are derived at build time now, the version
+    from the package version and the commit from the checkout.
+
+ -- MurOS <jpzi@proton.me>  Mon, 31 Aug 2026 18:20:00 +0200
+
 muros (0.9.71) trixie; urgency=medium
 
   * Host discovery: the service exists on Debian. OPNsense shipped hostwatch as
