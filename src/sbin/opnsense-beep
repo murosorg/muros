@@ -26,6 +26,7 @@
 # POSSIBILITY OF SUCH DAMAGE.
 
 BEEPDIR="/usr/local/etc/opnsense-beep.d"
+BEEP="/usr/bin/beep"
 COMMAND=${1}
 
 if [ -z "${COMMAND}" ]; then
@@ -43,7 +44,14 @@ done
 
 shift $((OPTIND - 1))
 
-if [ ! -c "/dev/speaker" ]; then
+# MurOS: FreeBSD played the melodies through the speaker(4) device with the
+# beep port, /dev/speaker accepting a pitch and a duration in units of 1/100 s.
+# Linux drives the PC speaker through an input event device, which the beep(1)
+# packaged by Debian opens itself, and its arguments are a frequency in hertz
+# and a length in milliseconds. The melody files keep the FreeBSD unit so an
+# operator melody stays valid, the conversion happens below. A machine without a
+# PC speaker, which is most of them, simply has no beep binary installed.
+if [ ! -x "${BEEP}" ]; then
 	exit 0
 fi
 
@@ -66,7 +74,8 @@ fi
 (
 	if /usr/bin/flock 9; then
 		cat "${BEEPFILE}" | while read NOTE DURATION; do
-			/usr/local/bin/beep -p "${NOTE}" "${DURATION}"
+			[ -n "${NOTE}" ] || continue
+			${BEEP} -f "${NOTE}" -l "$((DURATION * 10))" 2> /dev/null
 		done
 	fi
 ) 9< ${BEEPDIR}/start

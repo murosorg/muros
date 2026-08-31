@@ -22,7 +22,7 @@ Depends: ${misc:Depends},
  radvd, syslog-ng-core, rrdtool
 Recommends: unbound, dnsmasq, softflowd, pptp-linux, xl2tpd, openssh-server, openvpn, wireguard-tools, strongswan, charon-systemd, strongswan-swanctl,
  keepalived, conntrackd, isc-dhcp-relay
-Suggests: suricata
+Suggests: suricata, beep
 Description: MurOS firewall and routing platform
  MurOS is an OPNsense fork ported to Debian. It provides a web-managed
  stateful firewall (nftables), NAT, interfaces and routing on top of a

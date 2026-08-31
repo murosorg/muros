@@ -58,9 +58,12 @@ All files including the defaults can be overwritten by appending
 .Sq .local
 to a file name.
 .Pp
-The file format is one note value followed by a duration value per line
-as understood by
-.Xr beep 1 .
+The file format is one frequency in hertz followed by a duration in
+units of 1/100 second per line.
+The melodies are played with
+.Xr beep 1 ,
+which drives the PC speaker and is optional: without it installed the
+utility exits silently.
 .Sh FILES
 .Bl -tag -width Ds
 .It Pa /usr/local/etc/opnsense-beep.d
