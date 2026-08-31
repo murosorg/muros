@@ -1,0 +1,19 @@
+[Unit]
+# Instance name is the MurOS interface the session belongs to (wan, opt1, ...),
+# which is also the name of the generated xl2tpd configuration and of its lac.
+# xl2tpd starts pppd itself on the pseudo terminal of the tunnel, with the pppd
+# options file generated next to it.
+Description=MurOS L2TP session on %i
+Documentation=https://github.com/ecritel/muros
+After=network.target
+ConditionPathExists=/var/etc/xl2tpd/%i.conf
+
+[Service]
+# xl2tpd dials its lac on startup and redials for ever, so systemd only has to
+# cover a real exit of the daemon.
+ExecStart=/usr/sbin/xl2tpd -D -c /var/etc/xl2tpd/%i.conf -p /var/run/xl2tpd_%i.pid -C /var/run/xl2tpd_%i.ctl
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -972,6 +972,9 @@ function interface_reset($interface, $ifacecfg = false, $suspend = false)
             /* MurOS: the session is a pppd instance owned by systemd */
             mwexecfm('/usr/bin/systemctl stop muros-ppp@%s.service', $interface);
             break;
+        case 'l2tp':
+            mwexecfm('/usr/bin/systemctl stop muros-l2tp@%s.service', $interface);
+            break;
         default:
             break;
     }
@@ -1114,10 +1117,10 @@ function interface_ppps_reset($interface, $suspend, $ifcfg, $ppps)
 }
 
 /*
- * MurOS: PPP session (PPPoE and PPTP). mpd5 and netgraph do not exist on
- * Debian, so the session is run by pppd, with its rp-pppoe plugin for PPPoE and
- * with the pptp helper as its terminal for PPTP, supervised by the
- * muros-ppp@<interface>.service template. pppd names the interface itself
+ * MurOS: PPP session (PPPoE, PPTP and L2TP). mpd5 and netgraph do not exist on
+ * Debian, so the session is run by pppd, with its rp-pppoe plugin for PPPoE,
+ * with the pptp helper as its terminal for PPTP, and driven by xl2tpd for L2TP,
+ * supervised by the muros-ppp@ and muros-l2tp@<interface>.service templates. pppd names the interface itself
  * (ifname), so the device stays the one recorded in the configuration and every
  * consumer (gateways, ruleset, monitoring) is unaffected. The link scripts are
  * reached through the pppd hook directories, see pppd-hook.sh.
@@ -1141,9 +1144,22 @@ function interface_pppd_configure($interface, $ifcfg, $ppp, $ports, $mtus, $ipv6
 
     $conf = [];
 
+    $peer = $peers[0] ?? '';
+
     if ($type == 'pppoe') {
         $conf[] = 'plugin rp-pppoe.so';
         $conf[] = sprintf('nic-%s', $port);
+    } elseif ($type == 'l2tp') {
+        /*
+         * L2TP: the tunnel is established by xl2tpd, which starts pppd on the
+         * pseudo terminal of the session and reads these options from its lac.
+         * Refusing EAP is the same story as with PPTP.
+         */
+        if (!is_ipaddr($peer) && !is_hostname($peer)) {
+            log_msg("L2TP on {$device}: no server configured", LOG_ERR);
+            return;
+        }
+        $conf[] = 'refuse-eap';
     } else {
         /*
          * PPTP: the control connection is set up by the pptp helper, which
@@ -1151,7 +1167,6 @@ function interface_pppd_configure($interface, $ifcfg, $ppp, $ports, $mtus, $ipv6
          * PPTP server offering it cannot be authenticated against, MSCHAPv2 is
          * what such a server actually expects.
          */
-        $peer = $peers[0] ?? '';
         if (!is_ipaddr($peer) && !is_hostname($peer)) {
             log_msg("PPTP on {$device}: no server configured", LOG_ERR);
             return;
@@ -1222,7 +1237,35 @@ function interface_pppd_configure($interface, $ifcfg, $ppp, $ports, $mtus, $ipv6
     file_put_contents($conffile, implode(PHP_EOL, $conf) . PHP_EOL);
     chmod($conffile, 0600);
 
-    $unit = sprintf('muros-ppp@%s.service', $interface);
+    if ($type == 'l2tp') {
+        /*
+         * xl2tpd dials the lac on its own (autodial) and redials for ever, so
+         * the session recovers from a tunnel drop without systemd restarting
+         * the daemon.
+         */
+        @mkdir('/var/etc/xl2tpd', 0750, true);
+        $lac = [
+            '[global]',
+            'port = 1701',
+            'access control = no',
+            '',
+            sprintf('[lac %s]', $interface),
+            sprintf('lns = %s', $peer),
+            sprintf('pppoptfile = %s', $conffile),
+            'autodial = yes',
+            'redial = yes',
+            'redial timeout = 5',
+            'max redials = 0',
+            'require authentication = no',
+            '',
+        ];
+        file_put_contents("/var/etc/xl2tpd/{$interface}.conf", implode(PHP_EOL, $lac));
+
+        $unit = sprintf('muros-l2tp@%s.service', $interface);
+    } else {
+        $unit = sprintf('muros-ppp@%s.service', $interface);
+    }
+
     mwexecfm('/usr/bin/systemctl stop %s', $unit);
     mwexecf('/usr/bin/systemctl start %s', $unit);
 
@@ -1344,7 +1387,7 @@ function interface_ppps_configure($interface)
         }
     }
 
-    if (in_array($ppp['type'], ['pppoe', 'pptp'])) {
+    if (in_array($ppp['type'], ['pppoe', 'pptp', 'l2tp'])) {
         interface_pppd_configure(
             $interface,
             $ifcfg,
