@@ -195,6 +195,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         system_cron_configure();
         system_powerd_configure();
         system_kernel_configure();
+        system_storage_configure();
 
         $savemsg = get_std_save_message();
     }
@@ -391,8 +392,10 @@ include("head.inc");
                   <input name="use_mfs_var" type="checkbox" id="use_mfs_var" value="yes" <?= !empty($pconfig['use_mfs_var']) ? 'checked="checked"' : '' ?>/>
                   <?= gettext('Use memory file system for /var/log') ?>
                   <div class="hidden" data-for="help_for_use_mfs_var">
-                    <?= gettext('Set this if you wish to use /var/log as a RAM disk (memory file system disks) ' .
-                      'rather than using the hard disk. Setting this will cause the log data to be lost on reboot.') ?>
+                    <?= gettext('Set this if you wish to use /var/log as a RAM disk rather than using the hard ' .
+                      'disk. Setting this will cause the log data to be lost on reboot. The mount is enabled here ' .
+                      'and applied on the next reboot, remounting it under running services would hide the files ' .
+                      'they already have open.') ?>
                   </div>
                 </td>
               </tr>
@@ -401,7 +404,7 @@ include("head.inc");
                 <td>
                   <input name="max_mfs_var" type="text" id="max_mfs_var" placeholder="50" value="<?= html_safe($pconfig['max_mfs_var']) ?>"/>
                   <div class="hidden" data-for="help_for_max_mfs_var">
-                    <?= gettext('Percentage of RAM used for the respective memory disk. A value of "0" means unlimited, which will additionally include all swap space.') ?>
+                    <?= gettext('Percentage of RAM used for the respective memory disk, 50 percent when left empty.') ?>
                   </div>
                 </td>
               </tr>
@@ -411,7 +414,8 @@ include("head.inc");
                   <input name="use_mfs_tmp" type="checkbox" id="use_mfs_tmp" value="yes" <?=!empty($pconfig['use_mfs_tmp']) ? 'checked="checked"' : '';?>/>
                   <?=gettext('Use memory file system for /tmp'); ?>
                   <div class="hidden" data-for="help_for_use_mfs_tmp">
-                    <?= gettext('Set this if you wish to use /tmp as a RAM disk (memory file system disk) rather than using the hard disk.') ?>
+                    <?= gettext('Set this if you wish to use /tmp as a RAM disk rather than using the hard disk. ' .
+                      'Applied on the next reboot.') ?>
                   </div>
                 </td>
               </tr>
@@ -420,7 +424,7 @@ include("head.inc");
                 <td>
                   <input name="max_mfs_tmp" type="text" id="max_mfs_tmp" placeholder="50" value="<?= html_safe($pconfig['max_mfs_tmp']) ?>"/>
                   <div class="hidden" data-for="help_for_max_mfs_tmp">
-                    <?= gettext('Percentage of RAM used for the respective memory disk. A value of "0" means unlimited, which will additionally include all swap space.') ?>
+                    <?= gettext('Percentage of RAM used for the respective memory disk, 50 percent when left empty.') ?>
                   </div>
                 </td>
               </tr>

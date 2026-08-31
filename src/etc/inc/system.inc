@@ -1143,6 +1143,126 @@ function system_sysctl_configure($verbose = false)
     service_log("done.\n", $verbose);
 }
 
+/**
+ * MurOS: the appliance storage options used to be applied at boot by the rc
+ * scripts: rc.subr.d/var mounted /var/log as an mfs sized from hw.physmem,
+ * rc.subr.d/tmp did the same for /tmp and rc.subr.d/swapon attached a swap
+ * file. None of that survives here, so the options were dead settings in the
+ * miscellaneous page. On Debian they are systemd objects, a tmpfs mount unit
+ * per directory and a swap unit for the file, written from the configuration.
+ *
+ * The RAM disks are enabled but not mounted: remounting /var/log or /tmp under
+ * running services would hide the files they already have open, so they take
+ * effect on the next boot, exactly as they did on FreeBSD. The swap file is
+ * created and activated right away, there is nothing to hide.
+ */
+function system_storage_configure($verbose = false)
+{
+    global $config;
+
+    service_log('Configuring storage...', $verbose);
+
+    $ramdisks = [
+        'var-log' => ['where' => '/var/log', 'mode' => '0755',
+                      'enable' => 'use_mfs_var', 'size' => 'max_mfs_var'],
+        'tmp' => ['where' => '/tmp', 'mode' => '1777',
+                  'enable' => 'use_mfs_tmp', 'size' => 'max_mfs_tmp'],
+    ];
+
+    $reload = false;
+
+    foreach ($ramdisks as $unit => $spec) {
+        $file = "/etc/systemd/system/{$unit}.mount";
+
+        if (!isset($config['system'][$spec['enable']])) {
+            if (file_exists($file)) {
+                mwexecf('/usr/bin/systemctl disable %s', ["{$unit}.mount"], true);
+                @unlink($file);
+                $reload = true;
+            }
+            continue;
+        }
+
+        $percent = $config['system'][$spec['size']] ?? 50;
+        if (!is_numeric($percent) || $percent < 1 || $percent > 100) {
+            $percent = 50;
+        }
+
+        $content = "[Unit]\n" .
+            "Description=MurOS RAM disk for {$spec['where']}\n" .
+            "DefaultDependencies=no\n" .
+            "Conflicts=umount.target\n" .
+            "Before=local-fs.target umount.target\n" .
+            "After=systemd-remount-fs.service\n" .
+            "\n[Mount]\n" .
+            "What=tmpfs\n" .
+            "Where={$spec['where']}\n" .
+            "Type=tmpfs\n" .
+            "Options=mode={$spec['mode']},nosuid,nodev,size={$percent}%\n" .
+            "\n[Install]\n" .
+            "WantedBy=local-fs.target\n";
+
+        if (@file_get_contents($file) !== $content) {
+            file_put_contents($file, $content);
+            $reload = true;
+        }
+
+        mwexecf('/usr/bin/systemctl enable %s', ["{$unit}.mount"], true);
+    }
+
+    $swapfile = '/swapfile';
+    $swapunit = '/etc/systemd/system/swapfile.swap';
+    $swapsize = $config['system']['use_swap_file'] ?? null;
+
+    if (empty($swapsize)) {
+        if (file_exists($swapunit)) {
+            mwexecf('/usr/bin/systemctl disable --now %s', ['swapfile.swap'], true);
+            @unlink($swapunit);
+            $reload = true;
+        }
+        if (file_exists($swapfile)) {
+            mwexecf('/sbin/swapoff %s', [$swapfile], true);
+            @unlink($swapfile);
+        }
+    } else {
+        $wanted = (int)$swapsize * 1024 * 1024;
+
+        if (!file_exists($swapfile) || filesize($swapfile) != $wanted) {
+            mwexecf('/sbin/swapoff %s', [$swapfile], true);
+            @unlink($swapfile);
+            if (mwexecf('/usr/bin/fallocate -l %s %s', [$wanted, $swapfile], true)) {
+                mwexecf('/bin/dd if=/dev/zero of=%s bs=1M count=%s', [$swapfile, (int)$swapsize], true);
+            }
+            chmod($swapfile, 0600);
+            mwexecf('/sbin/mkswap %s', [$swapfile], true);
+        }
+
+        $content = "[Unit]\n" .
+            "Description=MurOS swap file\n" .
+            "\n[Swap]\n" .
+            "What={$swapfile}\n" .
+            "\n[Install]\n" .
+            "WantedBy=swap.target\n";
+
+        if (@file_get_contents($swapunit) !== $content) {
+            file_put_contents($swapunit, $content);
+            $reload = true;
+        }
+
+        if ($reload) {
+            mwexecf('/usr/bin/systemctl daemon-reload', [], true);
+        }
+
+        mwexecf('/usr/bin/systemctl enable --now %s', ['swapfile.swap'], true);
+    }
+
+    if ($reload) {
+        mwexecf('/usr/bin/systemctl daemon-reload', [], true);
+    }
+
+    service_log("done.\n", $verbose);
+}
+
 function system_kernel_configure($verbose = false)
 {
     global $config;

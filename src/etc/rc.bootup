@@ -87,6 +87,7 @@ if (is_interface_mismatch()) {
 
 interfaces_loopback_configure(true); /* loopback device is required early for syslog */
 system_kernel_configure(true);
+system_storage_configure(true);
 system_sysctl_configure(true);
 system_timezone_configure(true);
 system_firmware_configure(true);

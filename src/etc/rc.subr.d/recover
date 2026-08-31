@@ -92,7 +92,6 @@ $known_shells = [
     '/bin/bash',
     '/usr/bin/bash',
     '/usr/bin/zsh',
-    '/usr/local/sbin/opnsense-installer',
     '/usr/local/sbin/opnsense-shell',
 ];
 
