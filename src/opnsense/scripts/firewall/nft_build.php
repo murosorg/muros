@@ -238,6 +238,13 @@ function alias_set_lines(array $aliases): array
          */
         $expire = ($al['type'] ?? '') === 'external' ? (int)($al['expire'] ?? 0) : 0;
         $setFlags = $expire > 0 ? 'flags interval,timeout;' : 'flags interval;';
+        /* a set a rule adds to cannot carry intervals, and its entries need a
+           lifetime of their own since nothing expires them from outside */
+        $overload = ($al['type'] ?? '') === 'overload';
+        if ($overload) {
+            $expire = 3600;
+            $setFlags = 'flags dynamic,timeout;';
+        }
         if ($al['hasaddr'] ?? false) {
             foreach (['v4' => 'ipv4_addr', 'v6' => 'ipv6_addr'] as $fam => $atype) {
                 $lines[] = '    set ' . $name . '_' . $fam . ' {';
@@ -252,7 +259,11 @@ function alias_set_lines(array $aliases): array
                  * refreshed in place by update_tables.py and frequently contain
                  * overlapping CIDRs, which would otherwise abort the load.
                  */
-                $lines[] = '        auto-merge;';
+                if (!$overload) {
+                    $lines[] = '        auto-merge;';
+                } else {
+                    $lines[] = '        size 65535;';
+                }
                 if (!empty($al[$fam])) {
                     $lines[] = '        elements = { ' . implode(', ', array_unique($al[$fam])) . ' }';
                 }
@@ -490,6 +501,73 @@ function nft_comment(string $value): string
 }
 
 /*
+ * MurOS: the table offenders are added to.
+ *
+ * A rule carrying a per source limit could name a table the sources that go
+ * over it are added to, which another rule then blocks wholesale. pf did the
+ * adding itself; here it is an nftables set updated from the rule that catches
+ * the offender, so the alias the operator already writes their block rule
+ * against is the set that fills up.
+ *
+ * Two constraints come from nftables. A set updated from a rule cannot hold
+ * ranges, so a table that already carries networks cannot be used this way and
+ * the rules pointing at it are reported instead of silently doing nothing. And
+ * entries need a lifetime, since nothing here plays the part of the periodic
+ * expiry pf relied on: an offender stays for an hour.
+ *
+ * What is not translated: pf also dropped every connection the offender
+ * already had open. There is no way to ask nftables for that from a rule.
+ */
+function prepare_overload(SimpleXMLElement $cfg, array &$aliases): array
+{
+    $wanted = [];
+
+    $lists = [$cfg->filter->rule ?? null, $cfg->OPNsense->Firewall->Filter->rules->rule ?? null];
+    foreach ($lists as $rules) {
+        if ($rules === null) {
+            continue;
+        }
+        foreach ($rules as $rule) {
+            $name = trim((string)($rule->overload ?? ''));
+            if ($name !== '' && preg_match('/^[A-Za-z0-9_]+$/', $name)) {
+                $wanted[$name] = true;
+            }
+        }
+    }
+
+    $ready = [];
+    foreach (array_keys($wanted) as $name) {
+        if (isset($aliases[$name])) {
+            $elements = array_merge($aliases[$name]['v4'] ?? [], $aliases[$name]['v6'] ?? []);
+            $ranged = false;
+            foreach ($elements as $element) {
+                if (strpos($element, '/') !== false || strpos($element, '-') !== false) {
+                    $ranged = true;
+                    break;
+                }
+            }
+            if ($ranged || !empty($aliases[$name]['port'])) {
+                continue;
+            }
+            $aliases[$name]['type'] = 'overload';
+            $aliases[$name]['hasaddr'] = true;
+            $aliases[$name]['hasport'] = false;
+            $ready[$name] = true;
+            continue;
+        }
+
+        $aliases[$name] = [
+            'v4' => [], 'v6' => [], 'port' => [],
+            'type' => 'overload', 'expire' => 0,
+            'hasaddr' => true, 'hasport' => false,
+        ];
+        $ready[$name] = true;
+    }
+
+    return $ready;
+}
+
+/*
  * MurOS: what a rule asks of connection tracking.
  *
  * pf let a rule choose how its connections were tracked. Most of that has no
@@ -679,7 +757,6 @@ function report_ignored_options(SimpleXMLElement $rule)
     $known = [
         'max' => 'a global limit on the connections of the rule',
         'max-src-nodes' => 'a global limit on the sources of the rule',
-        'overload' => 'the table offenders are added to',
         'allowopts' => 'accepting packets carrying IP options',
         'tos' => 'matching the type of service field',
         'set_prio' => 'setting the 802.1p priority',
@@ -1652,15 +1729,31 @@ function source_limit_lines(
     $comment = $descr === '' ? '' : ' comment "' . $descr . '"';
     $lines = [];
 
+    /* the table the sources that go over the limit are added to */
+    $overload = trim((string)($rule->overload ?? ''));
+    $collect = '';
+    if ($overload !== '') {
+        if (!empty($GLOBALS['muros_overload_ready'][$overload])) {
+            $collect = sprintf('add @%s_%s { %s } ', $overload, $family === 'ip6' ? 'v6' : 'v4', $saddr);
+        } else {
+            degrade_rule(
+                $rule,
+                'overload',
+                sprintf('the table %s already holds networks, offenders cannot be added to it', $overload)
+            );
+        }
+    }
+
     if ($conn > 0) {
         $name = sprintf('srcconn_%d', count($srclimits) + 1);
         $srclimits[] = ['name' => $name, 'type' => $type, 'timeout' => 0];
         $lines[] = sprintf(
-            '        %sct state new add @%s { %s ct count over %d } counter drop%s',
+            '        %sct state new add @%s { %s ct count over %d } %scounter drop%s',
             $prefix,
             $name,
             $saddr,
             $conn,
+            $collect,
             $comment
         );
     }
@@ -1685,12 +1778,13 @@ function source_limit_lines(
         $name = sprintf('srcrate_%d', count($srclimits) + 1);
         $srclimits[] = ['name' => $name, 'type' => $type, 'timeout' => max(60, $seconds)];
         $lines[] = sprintf(
-            '        %sct state new add @%s { %s limit rate over %s burst %d packets } counter drop%s',
+            '        %sct state new add @%s { %s limit rate over %s burst %d packets } %scounter drop%s',
             $prefix,
             $name,
             $saddr,
             $limit,
             $rate,
+            $collect,
             $comment
         );
     }
@@ -1992,6 +2086,7 @@ if ($cfg === false) {
 $ifaces = build_interfaces($cfg);
 $aliases = build_aliases($cfg);
 schedules($cfg);
+$GLOBALS['muros_overload_ready'] = prepare_overload($cfg, $aliases);
 
 /* CARP/VRRP high availability: keepalived owns the virtual addresses and its
  * VRRP adverts (IP protocol 112) reach this host either as multicast
