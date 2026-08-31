@@ -1,3 +1,50 @@
+muros (0.9.71) trixie; urgency=medium
+
+  * Host discovery: the service exists on Debian. OPNsense shipped hostwatch as
+    a FreeBSD binary reading ARP, NDP and DHCP traffic from a bpf descriptor,
+    and neither that binary nor its rc script were carried over, so configd
+    could not even start the service and the host list, the captive portal, the
+    MAC aliases and the Kea prefix watcher only ever saw the neighbour table.
+    The daemon is written for Linux now: a packet socket per interface with a
+    filter on ARP and the ICMPv6 neighbour discovery messages, promiscuous when
+    asked, completed by the kernel neighbour table for the hosts learned before
+    it started. It writes the same database and the same view, keeps only the
+    addresses that belong to a prefix of the interface they were seen on, and
+    is probed on its pid file. Its settings move from the rc.conf.d fragment to
+    a generated hostwatch.conf, and the setup script stops handing the
+    directories to an account Debian does not have.
+  * Power savings: the setting does something again. It ran powerd(8), a
+    FreeBSD daemon, so nothing happened at all. The four modes are translated
+    into the closest governor the cpufreq driver of the machine offers, the
+    energy performance preference is set where the platform exposes it, and the
+    AC line is followed to switch between the battery and the mains mode.
+  * High availability: a DHCP failover peer gets its interface again. The
+    synchronisation guessed it from the output of netstat and route, two
+    FreeBSD tools, and always came up empty, which dropped the failover
+    configuration on the way to the backup. The kernel is asked directly with
+    a route lookup.
+  * DHCP: the delegated prefixes are routed to their client. The watcher
+    installed those routes with route(8), which does not exist here, so a
+    prefix delegation was handed out and never reachable. iproute2 installs it,
+    and moves it to the new client in the same call.
+  * Monitoring: monit starts. The port kept the FreeBSD path of the binary, and
+    the configuration test read the control file of the Debian package instead
+    of the generated one. Both point at what MurOS renders now, the include
+    directory is created before the daemon reads it, the package is recommended
+    and the unit it ships is kept from running a second instance.
+  * Diagnostics: the netstat tabs that reported the FreeBSD kernel are filled
+    with what Linux accounts. Netisr becomes the per CPU softirq receive
+    statistics, bpf becomes the packet sockets with the process holding them,
+    and the mbuf zone usage becomes the socket memory charged against the
+    pressure limits of the kernel next to the skbuff caches, which is also what
+    the dashboard gauge draws.
+  * System: the sensor inventory comes from the temperature collector, the
+    sysctl call it used to run is FreeBSD only. The PPP interfaces are no
+    longer renamed through netgraph, they are pppd devices since the port, and
+    the pool maintenance no longer calls daemon(8).
+
+ -- MurOS <jpzi@proton.me>  Mon, 31 Aug 2026 17:45:00 +0200
+
 muros (0.9.70) trixie; urgency=medium
 
   * Boot: the services the configuration asks for are started again. FreeBSD
