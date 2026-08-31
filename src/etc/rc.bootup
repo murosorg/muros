@@ -70,9 +70,19 @@ system_login_configure(true);
  * and ask the user to reassign interfaces.  This will
  * avoid a reboot and thats a good thing.
  */
+/*
+ * MurOS: the boot chain runs as a systemd unit, so the interactive assignment
+ * can only be offered when a console is actually attached. Under systemd the
+ * mismatch is reported and the boot continues: muros-interface-assign.service
+ * and the operator menu take care of it, blocking here would hang the boot.
+ */
 if (is_interface_mismatch()) {
-    echo "\nDefault interfaces not found -- Running interface assignment option.\n";
-    while (!set_networking_interfaces_ports(true));
+    if (function_exists('posix_isatty') && posix_isatty(STDIN)) {
+        echo "\nDefault interfaces not found -- Running interface assignment option.\n";
+        while (!set_networking_interfaces_ports(true));
+    } else {
+        log_error('rc.bootup: assigned interfaces are missing, run the interface assignment');
+    }
 }
 
 interfaces_loopback_configure(true); /* loopback device is required early for syslog */

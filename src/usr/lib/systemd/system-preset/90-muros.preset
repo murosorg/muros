@@ -6,5 +6,6 @@ enable muros-firewall.service
 enable muros-interface-assign.service
 enable muros-interfaces.service
 enable muros-carp.service
+enable muros-bootup.service
 enable muros-lease-watch.path
 enable muros-lease-watch.timer

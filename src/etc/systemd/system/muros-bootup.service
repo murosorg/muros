@@ -1,0 +1,24 @@
+# Boot chain of the configuration: everything the FreeBSD /etc/rc used to run
+# through rc.bootup and that no other unit covers, in particular the login and
+# resolver setup, the trust store, the timezone, the hostname, the routing and
+# the plugin chains (early, dhcp, dns, monitor, vpn, bootup). Without it the
+# services configured in config.xml only started when an operator applied a page
+# in the interface.
+[Unit]
+Description=MurOS configuration boot chain
+Documentation=https://github.com/ecritel/muros
+ConditionPathExists=/conf/config.xml
+After=muros-configd.service muros-interfaces.service muros-firewall.service systemd-networkd.service
+Wants=muros-configd.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# the interface and filter steps it repeats are idempotent, the plugin chains
+# are the reason it runs last
+ExecStart=/usr/bin/php /usr/local/etc/rc.bootup
+StandardOutput=journal
+TimeoutStartSec=900
+
+[Install]
+WantedBy=multi-user.target
