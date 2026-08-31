@@ -40,43 +40,32 @@ require_once("XMLRPC_Client.inc");
 
 exit_on_bootup();
 
+/*
+ * MurOS: the peer interface used to be guessed by walking the output of
+ * "netstat -rnWf" for the most specific prefix and, when that found nothing, by
+ * asking route(8) for the route of the address. Both are FreeBSD tools and the
+ * function returned false on Debian, so a DHCP failover peer never got its
+ * interface and the synchronisation dropped the failover configuration.
+ *
+ * "ip route get" answers the same question in one call: the kernel resolves the
+ * address through its own route lookup, which is the most specific prefix by
+ * definition, and reports the device it would leave through.
+ */
 function guess_interface_from_ip($ipaddress)
 {
-    if (is_ipaddrv4($ipaddress)) {
-        $family = "inet";
-    } elseif (is_ipaddrv6($ipaddress)) {
-        $family = "inet6";
-    } else {
+    if (!is_ipaddrv4($ipaddress) && !is_ipaddrv6($ipaddress)) {
         return false;
     }
 
-    /* search for the route with the largest subnet mask in route table */
-    $largest_mask = 0;
-    $best_if = null;
+    $output = json_decode(shell_safe('/usr/sbin/ip -j route get %s', $ipaddress), true);
 
-    foreach (shell_safe('/usr/bin/netstat -rnWf %s', $family, true) as $line) {
-        $fields = preg_split("/\s+/", $line);
-        if (is_subnet($fields[0])) {
-            if (ip_in_subnet($ipaddress, $fields[0])) {
-                list($ip, $mask) = explode('/', $fields[0]);
-                if ($mask > $largest_mask) {
-                    $best_if = $fields[5];
-                    $largest_mask = $mask;
-                }
-            }
+    foreach ($output ?? [] as $route) {
+        if (!empty($route['dev'])) {
+            return $route['dev'];
         }
     }
 
-    if (!empty($best_if)) {
-        return $best_if;
-    }
-
-    $output = shell_safe('/sbin/route -n get %s | /usr/bin/awk \'/interface/ { print $2; };\'', $ipaddress);
-    if (empty($output)) {
-        return false;
-    }
-
-    return $output;
+    return false;
 }
 
 /**
