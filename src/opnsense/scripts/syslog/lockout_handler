@@ -36,6 +36,29 @@ import subprocess
 import time
 from select import select
 
+# MurOS: the lockout list is an nftables named set in "table inet muros", the
+# same object the alias updater maintains, split per family as "<name>_v4" and
+# "<name>_v6" by the ruleset generator. Adding the address with pfctl could not
+# work here, and neither could killing its states: netfilter tracks flows in
+# conntrack, where a host is dropped by matching it as source and as
+# destination, which is what "pfctl -k <host>" did in one go.
+NFT = '/usr/sbin/nft'
+CONNTRACK = '/usr/sbin/conntrack'
+
+
+def lockout_address(table_name, address):
+    try:
+        family = 'v6' if ipaddress.ip_address(address).version == 6 else 'v4'
+    except ValueError:
+        return
+    subprocess.run(
+        [NFT, 'add', 'element', 'inet', 'muros', '%s_%s' % (table_name, family), '{ %s }' % address],
+        capture_output=True
+    )
+    for selector in ['-s', '-d']:
+        subprocess.run([CONNTRACK, '-D', selector, address], capture_output=True)
+
+
 all_rules = {
     '.*Web GUI authentication error.*': False,
     '.*Invalid user.*': False,
@@ -52,7 +75,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--attempts', help='maximum number of attempts', type=int, default=5)
     parser.add_argument('--grace_period', help='keep stats for max number of seconds', type=int, default=3600)
-    parser.add_argument('--pf_table' ,help='pf table to add failed attempts in', default='sshlockout')
+    parser.add_argument('--pf_table' ,help='firewall alias to add failed attempts in', default='sshlockout')
     inputargs = parser.parse_args()
 
     suspects = dict()
@@ -101,10 +124,7 @@ if __name__ == '__main__':
                         # a single attempt can lead to multiple log entries, suppress likely duplicates
                         suspects[ip].append(ts)
                     if len(suspects[ip]) > inputargs.attempts:
-                        syslog.syslog(syslog.LOG_NOTICE, "lockout %s [using table %s] after %d attempts" % (
+                        syslog.syslog(syslog.LOG_NOTICE, "lockout %s [using alias %s] after %d attempts" % (
                             ip, inputargs.pf_table, len(suspects[ip])
                         ))
-                        subprocess.run(['/sbin/pfctl', '-t', inputargs.pf_table, '-T', 'add', str(ip)],
-                                         capture_output=True)
-                        # kill active state(s) for this ip address as well.
-                        subprocess.run(['/sbin/pfctl', '-k', ip], capture_output=True)
+                        lockout_address(inputargs.pf_table, str(ip))
