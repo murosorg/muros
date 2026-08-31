@@ -1,3 +1,20 @@
+muros (0.9.75) trixie; urgency=medium
+
+  * One-to-one NAT and IPv6 prefix translation exist again. Both moved from the
+    old configuration section to the model tree, where the current GUI writes
+    them, and the ruleset builder only ever read the old location: a mapping
+    was configured, listed in the GUI, and never rendered. They are built now,
+    and a mapping between whole prefixes uses the nftables netmap statement,
+    which rewrites the host part inside the prefix the way pf did with binat,
+    while single addresses keep the plain form. The external side of a
+    one-to-one rule inherits the mask of its internal side, as pf derived it,
+    and both sides are masked to their network so a rule shows what it really
+    translates. NPTv6 is not checksum neutral the way RFC 6296 describes,
+    nftables has no such rewrite, connection tracking fixes the checksums
+    instead.
+
+ -- MurOS <jpzi@proton.me>  Mon, 31 Aug 2026 19:05:00 +0200
+
 muros (0.9.74) trixie; urgency=medium
 
   * Firewall rules limit their sources again. A pass rule can cap how many
