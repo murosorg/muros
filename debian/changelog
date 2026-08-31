@@ -1,3 +1,15 @@
+muros (0.9.65) trixie; urgency=medium
+
+  * Serial and USB modems: the last PPP type still generated for mpd5 is dialled
+    by pppd on the device itself, with a chat script carrying the init string,
+    the SIM pin, the access point definition and the number (defaulting to *99#
+    for a mobile modem). The device list of the settings page was built from the
+    FreeBSD u3g sysctl tree and offered /dev/cua nodes; it now enumerates the
+    serial ports, USB serial converters and CDC devices of this platform, with
+    the manufacturer and product strings the kernel publishes in sysfs.
+
+ -- MurOS <dev@muros.org>  Mon, 31 Aug 2026 08:25:00 +0200
+
 muros (0.9.64) trixie; urgency=medium
 
   * L2TP: the last PPP type still generated as an mpd5 configuration now runs
