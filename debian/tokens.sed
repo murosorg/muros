@@ -18,7 +18,7 @@ s=%%CORE_PRODUCT%%=MurOS=g
 s=%%CORE_PYTHON_DOT%%=3.13=g
 s=%%CORE_SERIES_FW%%=1.0=g
 s=%%CORE_SERIES%%=1.0=g
-s=%%CORE_SYSLOGNG%%==g
+s=%%CORE_SYSLOGNG%%=4.8=g
 s=%%CORE_UID%%=33=g
 s=%%CORE_USER%%=www-data=g
 s=%%CORE_VERSION%%=0.9.14=g
