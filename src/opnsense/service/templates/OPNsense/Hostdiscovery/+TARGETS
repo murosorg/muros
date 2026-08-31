@@ -1,1 +1,1 @@
-rc.conf.d:/etc/rc.conf.d/hostwatch
+hostwatch.conf:/usr/local/etc/hostwatch.conf

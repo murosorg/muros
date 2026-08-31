@@ -32,9 +32,12 @@ import ujson
 import sqlite3
 
 
-def is_hostwatch_enabled(rc_file):
-    if os.path.exists(rc_file):
-        return open(rc_file,'r').read().find('hostwatch_enable="YES"') > -1
+def is_hostwatch_enabled(conf_file):
+    # MurOS: the enable flag used to live in the rc.conf.d fragment of the
+    # daemon, which nothing generates anymore, so the discovery data was never
+    # used. It is read from the generated hostwatch.conf now.
+    if os.path.exists(conf_file):
+        return open(conf_file, 'r').read().find('hostwatch_enable="YES"') > -1
     return False
 
 
@@ -61,12 +64,12 @@ if __name__ == '__main__':
         default=None,
         help="Only return hosts seen in the last N seconds"
     )
-    parser.add_argument('--rc_file', help='hostwatch rc(8) config filename', default='/etc/rc.conf.d/hostwatch')
+    parser.add_argument('--conf_file', help='hostwatch config filename', default='/usr/local/etc/hostwatch.conf')
     parser.add_argument('--db_file', help='hostwatch sqlite3 database', default='/var/db/hostwatch/hosts.db')
     inputargs = parser.parse_args()
 
     result = {'source': None, 'rows': []}
-    if inputargs.discover and is_hostwatch_enabled(inputargs.rc_file):
+    if inputargs.discover and is_hostwatch_enabled(inputargs.conf_file) and os.path.exists(inputargs.db_file):
         # use host discovery data, query readonly
         result['source'] = 'discovery'
         con = sqlite3.connect("file:%s?mode=ro" % inputargs.db_file, uri=True)

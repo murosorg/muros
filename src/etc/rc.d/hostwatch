@@ -1,0 +1,162 @@
+#!/bin/sh
+
+# Copyright (C) 2026 MurOS
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice,
+#    this list of conditions and the following disclaimer.
+#
+# 2. Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES,
+# INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
+# AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+# AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY,
+# OR CONSEQUENTIAL DAMAGES HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY.
+
+# MurOS: host discovery.
+#
+# FreeBSD started the hostwatch binary from an rc.subr script and read its
+# flags from the rc.conf.d fragment the configuration generated. Neither the
+# script nor the binary exist on Debian, so configd could not start, stop or
+# probe the service at all. The verbs configd calls are implemented here, on
+# top of the generated /usr/local/etc/hostwatch.conf:
+#
+#   hostwatch_enable      YES when the configuration enables the service
+#   hostwatch_interfaces  interfaces to watch, all of them when empty
+#   hostwatch_skip_nets   networks to ignore
+#   hostwatch_promisc     YES to listen in promiscuous mode
+#   hostwatch_verbose     YES to log every discovered host
+#   hostwatch_expire4     seconds after which an IPv4 record is dropped
+#   hostwatch_expire6     seconds after which an IPv6 record is dropped
+
+set -u
+
+CONF=/usr/local/etc/hostwatch.conf
+DAEMON=/usr/local/sbin/hostwatch
+SETUP=/usr/local/opnsense/scripts/interfaces/setup_hostwatch.sh
+PIDFILE=/var/run/hostwatch/hostwatch.pid
+
+hostwatch_enable="NO"
+hostwatch_interfaces=""
+hostwatch_skip_nets=""
+hostwatch_promisc="NO"
+hostwatch_verbose="NO"
+hostwatch_expire4=""
+hostwatch_expire6=""
+
+if [ -f "${CONF}" ]; then
+	. "${CONF}"
+fi
+
+running_pid()
+{
+	_pid=""
+	if [ -f "${PIDFILE}" ]; then
+		_pid=$(cat "${PIDFILE}" 2> /dev/null)
+	fi
+	case "${_pid}" in
+	''|*[!0-9]*)
+		return 1
+		;;
+	esac
+	if kill -0 "${_pid}" 2> /dev/null; then
+		echo "${_pid}"
+		return 0
+	fi
+	return 1
+}
+
+daemon_arguments()
+{
+	set --
+	for _if in ${hostwatch_interfaces}; do
+		set -- "$@" -i "${_if}"
+	done
+	for _net in ${hostwatch_skip_nets}; do
+		set -- "$@" -s "${_net}"
+	done
+	if [ -n "${hostwatch_expire4}" ]; then
+		set -- "$@" -E "${hostwatch_expire4}"
+	fi
+	if [ -n "${hostwatch_expire6}" ]; then
+		set -- "$@" -e "${hostwatch_expire6}"
+	fi
+	if [ "${hostwatch_promisc}" = "YES" ]; then
+		set -- "$@" -p
+	fi
+	if [ "${hostwatch_verbose}" = "YES" ]; then
+		set -- "$@" -v
+	fi
+	echo "$@"
+}
+
+start()
+{
+	if [ "${hostwatch_enable}" != "YES" ]; then
+		return 0
+	fi
+
+	if running_pid > /dev/null; then
+		return 0
+	fi
+
+	if [ ! -x "${DAEMON}" ]; then
+		echo "hostwatch: ${DAEMON} is not installed" >&2
+		return 1
+	fi
+
+	"${SETUP}"
+
+	# muros-daemon detaches the process and writes its pid, the way daemon(8)
+	# did it for the rc script on FreeBSD.
+	/usr/local/sbin/muros-daemon -f -p "${PIDFILE}" "${DAEMON}" $(daemon_arguments)
+}
+
+stop()
+{
+	_pid=$(running_pid) || return 0
+	kill "${_pid}" 2> /dev/null
+	_count=0
+	while [ ${_count} -lt 50 ] && kill -0 "${_pid}" 2> /dev/null; do
+		sleep 0.1
+		_count=$((_count + 1))
+	done
+	kill -9 "${_pid}" 2> /dev/null
+	rm -f "${PIDFILE}"
+}
+
+status()
+{
+	if _pid=$(running_pid); then
+		echo "hostwatch is running as pid ${_pid}."
+		return 0
+	fi
+	echo "hostwatch is not running."
+	return 1
+}
+
+case "${1:-}" in
+start)
+	start
+	;;
+stop)
+	stop
+	;;
+restart)
+	stop
+	start
+	;;
+status)
+	status
+	;;
+*)
+	echo "usage: $0 {start|stop|restart|status}" >&2
+	exit 64
+	;;
+esac

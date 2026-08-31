@@ -33,8 +33,10 @@ function hostwatch_services()
     if (!(new \OPNsense\Hostdiscovery\Hostwatch())->general->enabled->isEmpty()) {
         $services[] = [
             'description' => gettext('Host discovery service'),
-            /* XXX currently unreliable because too slow */
-            //'pidfile' => '/var/run/hostwatch/hostwatch.pid',
+            /* MurOS: the daemon writes its pid when it starts, so the service
+             * is probed on the pidfile. The process name check inherited from
+             * FreeBSD never matched, the daemon runs as a python interpreter. */
+            'pidfile' => '/var/run/hostwatch/hostwatch.pid',
             'configd' => [
                 'restart' => ['hostwatch restart'],
                 'start' => ['hostwatch start'],

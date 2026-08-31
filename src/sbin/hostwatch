@@ -1,0 +1,520 @@
+#!/usr/bin/python3
+
+"""
+    Copyright (c) 2026 MurOS
+    All rights reserved.
+
+    Redistribution and use in source and binary forms, with or without
+    modification, are permitted provided that the following conditions are met:
+
+    1. Redistributions of source code must retain the above copyright notice,
+     this list of conditions and the following disclaimer.
+
+    2. Redistributions in binary form must reproduce the above copyright
+     notice, this list of conditions and the following disclaimer in the
+     documentation and/or other materials provided with the distribution.
+
+    THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES,
+    INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
+    AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+    AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY,
+    OR CONSEQUENTIAL DAMAGES HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY.
+
+    MurOS host discovery daemon.
+
+    OPNsense ships hostwatch as a FreeBSD binary that reads ARP, NDP and DHCP
+    traffic from a bpf(4) descriptor and stores what it sees in a SQLite
+    database. The binary does not exist on Debian, so the whole host discovery
+    page, the captive portal host list, the MAC aliases and the Kea prefix
+    watcher fell back to the neighbour table, which only knows the hosts the
+    firewall itself talked to.
+
+    This is the Linux implementation of the same daemon and it writes the same
+    database, /var/db/hostwatch/hosts.db, with the v_hosts view list_hosts.py
+    queries. Discovery has two sources:
+
+      - a packet socket per interface, with a classic BPF filter that keeps ARP
+        and the ICMPv6 neighbour discovery messages, the Linux equivalent of the
+        bpf(4) reader, optionally in promiscuous mode;
+      - the kernel neighbour table, read back periodically with iproute2, which
+        carries the entries learned before the daemon started.
+
+    An address is only recorded when it belongs to a prefix configured on the
+    interface it was seen on, or when it is an IPv6 link-local address. Without
+    that rule a WAN interface would register every address on the internet
+    behind the MAC address of the upstream router.
+"""
+
+import argparse
+import csv
+import ctypes
+import ipaddress
+import json
+import os
+import select
+import signal
+import socket
+import sqlite3
+import struct
+import subprocess
+import sys
+import syslog
+import time
+
+OUI_FILE = '/usr/local/opnsense/contrib/ieee/oui.csv'
+IP_BIN = '/usr/sbin/ip'
+
+ETH_P_ALL = 0x0003
+ETH_P_ARP = 0x0806
+ETH_P_IPV6 = 0x86dd
+
+SOL_PACKET = 263
+SO_ATTACH_FILTER = 26
+PACKET_ADD_MEMBERSHIP = 1
+PACKET_MR_PROMISC = 1
+
+ICMPV6_ND_TYPES = (133, 134, 135, 136, 137)
+
+BPF_PROGRAM = [
+    (0x28, 0, 0, 12),
+    (0x15, 0, 5, ETH_P_IPV6),
+    (0x30, 0, 0, 20),
+    (0x15, 0, 5, 58),
+    (0x30, 0, 0, 54),
+    (0x35, 0, 3, 133),
+    (0x25, 2, 1, 137),
+    (0x15, 0, 1, ETH_P_ARP),
+    (0x06, 0, 0, 262144),
+    (0x06, 0, 0, 0),
+]
+
+SCHEMA = [
+    """
+    CREATE TABLE IF NOT EXISTS hosts (
+        interface_name TEXT NOT NULL,
+        ether_address TEXT NOT NULL,
+        ip_address TEXT NOT NULL,
+        protocol TEXT NOT NULL,
+        organization_name TEXT NOT NULL DEFAULT '',
+        first_seen TEXT NOT NULL,
+        last_seen TEXT NOT NULL,
+        PRIMARY KEY (interface_name, ether_address, ip_address)
+    )
+    """,
+    'CREATE INDEX IF NOT EXISTS hosts_last_seen ON hosts (last_seen)',
+    """
+    CREATE VIEW IF NOT EXISTS v_hosts AS
+        SELECT interface_name, ether_address, ip_address, protocol,
+               organization_name, first_seen, last_seen
+        FROM hosts
+    """,
+]
+
+
+class Vendors:
+    def __init__(self):
+        self._db = {}
+        try:
+            with open(OUI_FILE, newline='') as handle:
+                for idx, record in enumerate(csv.reader(handle, delimiter=',')):
+                    if idx > 0 and len(record) > 2:
+                        self._db[record[1]] = record[2]
+        except OSError:
+            pass
+
+    def get(self, mac):
+        return self._db.get(mac.replace(':', '')[:6].upper(), '')
+
+
+class Database:
+    def __init__(self, filename, vendors):
+        os.makedirs(os.path.dirname(filename), exist_ok=True)
+        self._vendors = vendors
+        self._handle = sqlite3.connect(filename, timeout=10)
+        self._handle.execute('PRAGMA journal_mode=WAL')
+        self._handle.execute('PRAGMA busy_timeout=5000')
+        for statement in SCHEMA:
+            self._handle.execute(statement)
+        self._handle.commit()
+
+    def store(self, records):
+        if not records:
+            return
+        rows = []
+        for interface, mac, address, protocol in records:
+            rows.append((interface, mac, address, protocol, self._vendors.get(mac)))
+        self._handle.executemany(
+            """
+            INSERT INTO hosts (
+                interface_name, ether_address, ip_address, protocol,
+                organization_name, first_seen, last_seen
+            )
+            VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+            ON CONFLICT (interface_name, ether_address, ip_address) DO UPDATE SET
+                last_seen = datetime('now'),
+                protocol = excluded.protocol,
+                organization_name = excluded.organization_name
+            """,
+            rows
+        )
+        self._handle.commit()
+
+    def expire(self, protocol, seconds):
+        if not seconds:
+            return 0
+        cursor = self._handle.execute(
+            "DELETE FROM hosts WHERE protocol = ? AND last_seen < datetime('now', ?)",
+            (protocol, '-%d seconds' % seconds)
+        )
+        self._handle.commit()
+        return cursor.rowcount
+
+    def close(self):
+        self._handle.close()
+
+
+def interface_state():
+    result = {}
+    try:
+        process = subprocess.run(
+            [IP_BIN, '-j', 'addr', 'show'], capture_output=True, text=True, check=True
+        )
+        payload = json.loads(process.stdout or '[]')
+    except (OSError, subprocess.CalledProcessError, ValueError):
+        return result
+
+    for item in payload:
+        name = item.get('ifname')
+        if not name or name == 'lo' or not item.get('address'):
+            continue
+        networks = []
+        local = set()
+        for addr in item.get('addr_info', []):
+            address = addr.get('local')
+            prefixlen = addr.get('prefixlen')
+            if not address or prefixlen is None:
+                continue
+            local.add(address)
+            try:
+                networks.append(ipaddress.ip_network('%s/%s' % (address, prefixlen), strict=False))
+            except ValueError:
+                continue
+        result[name] = {
+            'networks': networks,
+            'local': local,
+            'up': 'UP' in item.get('flags', []),
+        }
+    return result
+
+
+def neighbours():
+    result = []
+    for family in ('-4', '-6'):
+        try:
+            process = subprocess.run(
+                [IP_BIN, '-j', family, 'neigh', 'show'], capture_output=True, text=True, check=True
+            )
+            payload = json.loads(process.stdout or '[]')
+        except (OSError, subprocess.CalledProcessError, ValueError):
+            continue
+        for entry in payload:
+            if entry.get('state') in (['FAILED'], ['INCOMPLETE'], ['NOARP']):
+                continue
+            if entry.get('lladdr') and entry.get('dev') and entry.get('dst'):
+                result.append((entry['dev'], entry['lladdr'], entry['dst']))
+    return result
+
+
+def format_mac(raw):
+    return ':'.join('%02x' % octet for octet in raw)
+
+
+def usable_mac(mac):
+    if mac in ('', '00:00:00:00:00:00', 'ff:ff:ff:ff:ff:ff'):
+        return False
+    try:
+        return not int(mac.split(':')[0], 16) & 1
+    except ValueError:
+        return False
+
+
+def parse_arp(frame):
+    if len(frame) < 42:
+        return []
+    proto, hlen, plen, operation = struct.unpack('!HBBH', frame[16:22])
+    if proto != 0x0800 or hlen != 6 or plen != 4:
+        return []
+    records = [(format_mac(frame[22:28]), socket.inet_ntop(socket.AF_INET, frame[28:32]))]
+    if operation == 2:
+        records.append((format_mac(frame[32:38]), socket.inet_ntop(socket.AF_INET, frame[38:42])))
+    return records
+
+
+def parse_neighbour_discovery(frame):
+    if len(frame) < 62:
+        return []
+    message = frame[54]
+    if message not in ICMPV6_ND_TYPES:
+        return []
+    sender = format_mac(frame[6:12])
+    records = [(sender, socket.inet_ntop(socket.AF_INET6, frame[22:38]))]
+    if message == 136 and len(frame) >= 78:
+        owner = sender
+        offset = 78
+        while offset + 8 <= len(frame):
+            option = frame[offset]
+            length = frame[offset + 1] * 8
+            if length == 0:
+                break
+            if option == 2 and length >= 8:
+                owner = format_mac(frame[offset + 2:offset + 8])
+                break
+            offset += length
+        records.append((owner, socket.inet_ntop(socket.AF_INET6, frame[62:78])))
+    return records
+
+
+def parse_frame(frame):
+    if len(frame) < 14:
+        return []
+    ethertype = struct.unpack('!H', frame[12:14])[0]
+    if ethertype == ETH_P_ARP:
+        return parse_arp(frame)
+    if ethertype == ETH_P_IPV6:
+        return parse_neighbour_discovery(frame)
+    return []
+
+
+class Capture:
+    def __init__(self, promiscuous, log):
+        self._promiscuous = promiscuous
+        self._log = log
+        self._sockets = {}
+        self._filter = ctypes.create_string_buffer(
+            b''.join(struct.pack('HBBI', *line) for line in BPF_PROGRAM)
+        )
+
+    @property
+    def sockets(self):
+        return self._sockets
+
+    def sync(self, interfaces):
+        for name in list(self._sockets):
+            if name not in interfaces:
+                self.close(name)
+        for name in interfaces:
+            if name not in self._sockets:
+                self.open(name)
+
+    def open(self, name):
+        try:
+            handle = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.htons(ETH_P_ALL))
+            handle.setsockopt(
+                socket.SOL_SOCKET,
+                SO_ATTACH_FILTER,
+                struct.pack('HxxxxxxP', len(BPF_PROGRAM), ctypes.addressof(self._filter))
+            )
+            handle.bind((name, ETH_P_ALL))
+            if self._promiscuous:
+                handle.setsockopt(
+                    SOL_PACKET,
+                    PACKET_ADD_MEMBERSHIP,
+                    struct.pack('iHH8s', socket.if_nametoindex(name), PACKET_MR_PROMISC, 0, b'')
+                )
+            handle.setblocking(False)
+        except OSError as error:
+            self._log(syslog.LOG_WARNING, 'cannot listen on %s: %s' % (name, error))
+            return
+        self._sockets[name] = handle
+        self._log(syslog.LOG_INFO, 'listening on %s' % name)
+
+    def close(self, name):
+        handle = self._sockets.pop(name, None)
+        if handle is not None:
+            handle.close()
+            self._log(syslog.LOG_INFO, 'stopped listening on %s' % name)
+
+    def close_all(self):
+        for name in list(self._sockets):
+            self.close(name)
+
+
+class Hostwatch:
+    def __init__(self, options):
+        self._options = options
+        self._running = True
+        self._pending = {}
+        self._state = {}
+        self._skip = []
+        for entry in options.skip_net:
+            try:
+                self._skip.append(ipaddress.ip_network(entry, strict=False))
+            except ValueError:
+                self.log(syslog.LOG_WARNING, 'ignoring invalid network %s' % entry)
+        self._database = Database(options.db_file, Vendors())
+        self._capture = Capture(options.promiscuous, self.log)
+
+    def log(self, priority, message):
+        if priority == syslog.LOG_INFO and not self._options.verbose:
+            return
+        syslog.syslog(priority, message)
+
+    def stop(self, signum=None, frame=None):
+        self._running = False
+
+    def selected_interfaces(self):
+        if self._options.interface:
+            return [name for name in self._options.interface if name in self._state]
+        return list(self._state)
+
+    def refresh(self):
+        self._state = interface_state()
+        self._capture.sync(self.selected_interfaces())
+
+    def acceptable(self, interface, mac, address):
+        if not usable_mac(mac):
+            return False
+        info = self._state.get(interface)
+        if info is None or address in info['local']:
+            return False
+        try:
+            candidate = ipaddress.ip_address(address)
+        except ValueError:
+            return False
+        if candidate.is_multicast or candidate.is_unspecified or candidate.is_loopback:
+            return False
+        if candidate.version == 4 and candidate.is_reserved:
+            return False
+        for network in self._skip:
+            if candidate.version == network.version and candidate in network:
+                return False
+        if candidate.version == 6 and candidate.is_link_local:
+            return True
+        for network in info['networks']:
+            if candidate.version == network.version and candidate in network:
+                return True
+        return False
+
+    def record(self, interface, mac, address):
+        mac = mac.lower()
+        if not self.acceptable(interface, mac, address):
+            return
+        protocol = 'inet6' if ':' in address else 'inet'
+        key = (interface, mac, address)
+        if key not in self._pending:
+            self.log(syslog.LOG_INFO, 'host %s %s on %s' % (mac, address, interface))
+        self._pending[key] = protocol
+
+    def drain(self, interface, handle):
+        for _ in range(self._options.batch_size):
+            try:
+                frame = handle.recv(2048)
+            except BlockingIOError:
+                return
+            except OSError as error:
+                self.log(syslog.LOG_WARNING, 'read error on %s: %s' % (interface, error))
+                self._capture.close(interface)
+                return
+            for mac, address in parse_frame(frame):
+                self.record(interface, mac, address)
+
+    def scan_neighbours(self):
+        for interface, mac, address in neighbours():
+            self.record(interface, mac, address)
+
+    def flush(self):
+        if not self._pending:
+            return
+        records = [(key[0], key[1], key[2], value) for key, value in self._pending.items()]
+        self._pending.clear()
+        try:
+            self._database.store(records)
+        except sqlite3.Error as error:
+            self.log(syslog.LOG_ERR, 'cannot store %d hosts: %s' % (len(records), error))
+
+    def expire(self):
+        try:
+            removed = self._database.expire('inet', self._options.expire4)
+            removed += self._database.expire('inet6', self._options.expire6)
+        except sqlite3.Error as error:
+            self.log(syslog.LOG_ERR, 'cannot expire hosts: %s' % error)
+            return
+        if removed:
+            self.log(syslog.LOG_INFO, 'expired %d hosts' % removed)
+
+    def run(self):
+        signal.signal(signal.SIGTERM, self.stop)
+        signal.signal(signal.SIGINT, self.stop)
+
+        self.refresh()
+        self.scan_neighbours()
+        self.flush()
+
+        last_refresh = last_scan = last_expire = time.monotonic()
+        while self._running:
+            handles = list(self._capture.sockets.values())
+            try:
+                readable = select.select(handles, [], [], 1.0)[0]
+            except InterruptedError:
+                continue
+            except OSError:
+                readable = []
+                self.refresh()
+            for handle in readable:
+                for interface, candidate in list(self._capture.sockets.items()):
+                    if candidate is handle:
+                        self.drain(interface, handle)
+                        break
+            self.flush()
+            now = time.monotonic()
+            if now - last_scan >= self._options.scan_interval:
+                last_scan = now
+                self.scan_neighbours()
+                self.flush()
+            if now - last_refresh >= self._options.refresh_interval:
+                last_refresh = now
+                self.refresh()
+            if now - last_expire >= self._options.expire_interval:
+                last_expire = now
+                self.expire()
+
+        self.flush()
+        self._capture.close_all()
+        self._database.close()
+
+
+def main():
+    parser = argparse.ArgumentParser(description='Discover the hosts seen on the local networks')
+    parser.add_argument('-i', '--interface', action='append', default=[], help='interface to watch')
+    parser.add_argument('-s', '--skip-net', action='append', default=[], help='network to ignore')
+    parser.add_argument('-E', '--expire4', type=int, default=0, help='expire IPv4 records after N seconds')
+    parser.add_argument('-e', '--expire6', type=int, default=0, help='expire IPv6 records after N seconds')
+    parser.add_argument('-p', '--promiscuous', action='store_true', help='listen in promiscuous mode')
+    parser.add_argument('-v', '--verbose', action='store_true', help='log every discovered host')
+    parser.add_argument('-d', '--db-file', default='/var/db/hostwatch/hosts.db', help='sqlite3 database')
+    parser.add_argument('--scan-interval', type=int, default=30, help='neighbour table poll interval')
+    parser.add_argument('--refresh-interval', type=int, default=60, help='interface refresh interval')
+    parser.add_argument('--expire-interval', type=int, default=300, help='expiry run interval')
+    parser.add_argument('--batch-size', type=int, default=256, help='frames read per interface and round')
+    options = parser.parse_args()
+
+    syslog.openlog('hostwatch', syslog.LOG_PID, syslog.LOG_DAEMON)
+
+    if os.geteuid() != 0:
+        syslog.syslog(syslog.LOG_ERR, 'hostwatch needs to run as root')
+        return 1
+
+    try:
+        service = Hostwatch(options)
+    except (OSError, sqlite3.Error) as error:
+        syslog.syslog(syslog.LOG_ERR, 'cannot start: %s' % error)
+        return 1
+
+    syslog.syslog(syslog.LOG_NOTICE, 'host discovery started')
+    service.run()
+    syslog.syslog(syslog.LOG_NOTICE, 'host discovery stopped')
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

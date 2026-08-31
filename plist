@@ -91,6 +91,7 @@
 /usr/local/etc/rc.d/captiveportal
 /usr/local/etc/rc.d/configd
 /usr/local/etc/rc.d/flowd_aggregate
+/usr/local/etc/rc.d/hostwatch
 /usr/local/etc/rc.d/netflow
 /usr/local/etc/rc.filter_configure
 /usr/local/etc/rc.filter_synchronize
@@ -1539,7 +1540,7 @@
 /usr/local/opnsense/service/templates/OPNsense/Filter/filter_geoip.conf
 /usr/local/opnsense/service/templates/OPNsense/Filter/filter_tables.conf
 /usr/local/opnsense/service/templates/OPNsense/Hostdiscovery/+TARGETS
-/usr/local/opnsense/service/templates/OPNsense/Hostdiscovery/rc.conf.d
+/usr/local/opnsense/service/templates/OPNsense/Hostdiscovery/hostwatch.conf
 /usr/local/opnsense/service/templates/OPNsense/IDS/+TARGETS
 /usr/local/opnsense/service/templates/OPNsense/IDS/OPNsense.rules
 /usr/local/opnsense/service/templates/OPNsense/IDS/classification.config
@@ -2529,6 +2530,7 @@
 /usr/local/opnsense/www/themes/opnsense/build/images/icon-logo.svg
 /usr/local/sbin/carp_service_status
 /usr/local/sbin/configctl
+/usr/local/sbin/hostwatch
 /usr/local/sbin/ifctl
 /usr/local/sbin/opnsense-beep
 /usr/local/sbin/opnsense-crypt
