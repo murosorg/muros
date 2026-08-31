@@ -1,3 +1,19 @@
+muros (0.9.92) trixie; urgency=medium
+
+  * The captive portal redirected every encrypted connection of an
+    unauthenticated client to itself, whatever its destination. The client got
+    a certificate warning for a site it never asked the firewall about, and
+    the portal stayed hidden behind it. Only the connections addressed to the
+    firewall are redirected now, which is what a client detecting a captive
+    network does.
+  * The portal also intercepted plain web traffic between two clients of the
+    same zone. Traffic aimed at an authenticated client is left alone.
+  * The per-zone setting that hands the rules over to the operator was read by
+    the interface and ignored by the enforcement, which built its redirection
+    anyway. The zone is now left untouched.
+
+ -- MurOS <dev@muros.org>  Mon, 31 Aug 2026 22:22:35 +0200
+
 muros (0.9.91) trixie; urgency=medium
 
   * The rules the plugins register for themselves were shown on the rule page
