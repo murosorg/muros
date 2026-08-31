@@ -1,3 +1,18 @@
+muros (0.9.89) trixie; urgency=medium
+
+  * NAT reflection, the last NAT feature with nothing behind it. A host on an
+    inside network that asks for the published address now gets the same
+    translation as one coming from outside, with the return path translated so
+    the answer comes back through the firewall. It follows the per-rule
+    setting and the two system settings, for port forwards and for 1:1
+    mappings.
+  * A rule naming several interfaces resolved to none of them, which left it
+    matching every interface instead of the two it was bound to.
+  * An IPv6 interface network was written as the interface address with its
+    prefix length, naming one host where the subnet was meant.
+
+ -- MurOS <dev@muros.org>  Mon, 31 Aug 2026 21:38:22 +0200
+
 muros (0.9.88) trixie; urgency=medium
 
   * Outbound NAT rules were translated from a fraction of what the page
