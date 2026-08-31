@@ -56,6 +56,9 @@ filter_configure_sync(true);
 plugins_configure('local', true);
 plugins_configure('vpn', true);
 
-/* plugins service reload */
-pass_safe('/usr/local/etc/rc.freebsd stop');
-pass_safe('/usr/local/etc/rc.freebsd start');
+/*
+ * MurOS: the FreeBSD service walker (rcorder over the generated rc.conf.d
+ * fragments) has no equivalent here, the services are systemd units started and
+ * stopped by the plugin configure functions the chains above already ran.
+ */
+plugins_configure('bootup', true);

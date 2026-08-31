@@ -36,11 +36,11 @@ function ipfw_services()
         $services[] = array(
             'description' => gettext('Shaper'),
             'configd' => array(
-                'restart' => array('ipfw reload'),
-                'start' => array('ipfw reload'),
-                'stop' => array('ipfw reload'),
+                'restart' => array('shaper reload'),
+                'start' => array('shaper reload'),
+                'stop' => array('shaper flush'),
             ),
-            'name' => 'ipfw',
+            'name' => 'shaper',
             'nocheck' => true,
         );
     }
@@ -56,13 +56,13 @@ function ipfw_xmlrpc_sync()
         'description' => gettext('Shaper'),
         'section' => 'OPNsense.TrafficShaper',
         'id' => 'shaper',
-        'services' => ["ipfw"],
+        'services' => ["shaper"],
     );
     $result[] = array(
         'description' => gettext('Captive Portal'),
         'section' => 'OPNsense.captiveportal',
         'id' => 'captiveportal',
-        'services' => ["ipfw"],
+        'services' => ["shaper"],
     );
 
     return $result;
