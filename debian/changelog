@@ -1,3 +1,24 @@
+muros (0.9.77) trixie; urgency=medium
+
+  * Wireless is driven through nl80211 instead of the FreeBSD ifconfig that no
+    longer exists. The channel list, the transmit power table and the card
+    capabilities now come from iw, so the interface form offers the channels the
+    regulatory domain actually allows and stops declaring access point and
+    ad-hoc modes unsupported on cards that support them. The wireless status
+    page shows the scan results and the associated peers again, with what Linux
+    reports about a peer: signal, negotiated rates, traffic counters, idle and
+    connected time. All of it goes through configd, since the web server runs
+    unprivileged.
+  * An open wireless network works. hostapd owns the beacon in every case, so an
+    access point without encryption had nothing to bring it up, and a station
+    joining an open network had no supplicant: both are started as soon as a
+    network name is configured. The hidden network, quality of service and
+    station isolation toggles reach hostapd, and the generated configuration
+    files, which carry the passphrase, are written private.
+  * hostapd, wpasupplicant and wireless-regdb are recommended packages.
+
+ -- MurOS <jpzi@proton.me>  Mon, 31 Aug 2026 20:10:00 +0200
+
 muros (0.9.76) trixie; urgency=medium
 
   * Source NAT rules are applied again. The Source NAT page writes into the
