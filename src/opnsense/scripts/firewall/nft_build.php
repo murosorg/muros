@@ -300,7 +300,7 @@ function element_lines(array $values, string $indent): array
     return $lines;
 }
 
-function alias_set_lines(array $aliases): array
+function alias_set_lines(array $aliases, int $maxEntries = 0): array
 {
     $lines = [];
     foreach ($aliases as $name => $al) {
@@ -344,8 +344,11 @@ function alias_set_lines(array $aliases): array
                  */
                 if (!$overload) {
                     $lines[] = '        auto-merge;';
+                    if ($maxEntries > 0) {
+                        $lines[] = '        size ' . $maxEntries . ';';
+                    }
                 } else {
-                    $lines[] = '        size 65535;';
+                    $lines[] = '        size ' . ($maxEntries > 0 ? $maxEntries : 65535) . ';';
                 }
                 if (!empty($al[$fam])) {
                     foreach (element_lines($al[$fam], '        ') as $line) {
@@ -359,6 +362,9 @@ function alias_set_lines(array $aliases): array
             $lines[] = '    set ' . $name . '_p {';
             $lines[] = '        type inet_service;';
             $lines[] = '        flags interval;';
+            if ($maxEntries > 0) {
+                $lines[] = '        size ' . $maxEntries . ';';
+            }
             if (!empty($al['port'])) {
                 foreach (element_lines($al['port'], '        ') as $line) {
                     $lines[] = $line;
@@ -852,25 +858,49 @@ function resolve_endpoint(?SimpleXMLElement $ep, string $family, array $ifaces, 
     return alias_addr_ref($net, $family, $aliases);
 }
 
-function martian_lines(array $ifaces): array
+function martian_lines(array $ifaces, SimpleXMLElement $cfg): array
 {
+    /* These drops were silent. A packet blocked because it came from a
+       private or unroutable source simply vanished, with nothing in the
+       firewall log to explain it, and the two settings meant to control that
+       logging did nothing. They are logged unless the operator says
+       otherwise, with the prefix the log reader knows. */
+    $logPrivate = !isset($cfg->syslog->nologprivatenets) ? 'log prefix "muros,block,private " ' : '';
+    $logBogon = !isset($cfg->syslog->nologbogons) ? 'log prefix "muros,block,bogon " ' : '';
+
     $lines = [];
     foreach ($ifaces as $key => $itf) {
         $ifn = ifname_token($itf['device']);
         if ($itf['blockpriv']) {
             $lines[] = "        iifname $ifn ip saddr " . fmt_addr_set(BLOCK_PRIVATE_V4)
-                . " counter drop comment \"block-private v4 $key\"";
+                . " $logPrivate" . "counter drop comment \"block-private v4 $key\"";
             $lines[] = "        iifname $ifn ip6 saddr " . fmt_addr_set(BLOCK_PRIVATE_V6)
-                . " counter drop comment \"block-private v6 $key\"";
+                . " $logPrivate" . "counter drop comment \"block-private v6 $key\"";
         }
         if ($itf['blockbogons']) {
             $lines[] = "        iifname $ifn ip saddr " . fmt_addr_set(BLOCK_BOGON_V4)
-                . " counter drop comment \"block-bogon v4 $key\"";
+                . " $logBogon" . "counter drop comment \"block-bogon v4 $key\"";
             $lines[] = "        iifname $ifn ip6 saddr " . fmt_addr_set(BLOCK_BOGON_V6)
-                . " counter drop comment \"block-bogon v6 $key\"";
+                . " $logBogon" . "counter drop comment \"block-bogon v6 $key\"";
         }
     }
     return $lines;
+}
+
+/* Traffic claiming port zero is never legitimate: no service listens there
+ * and it is a classic way of slipping past a filter that only looks at real
+ * port numbers. OPNsense drops it by default and offers to stop doing so;
+ * nothing here did either. */
+function port_zero_lines(SimpleXMLElement $cfg): array
+{
+    if (isset($cfg->system->no_port0_block)) {
+        return [];
+    }
+
+    return [
+        '        meta l4proto { tcp, udp } th sport 0 counter drop comment "block port 0"',
+        '        meta l4proto { tcp, udp } th dport 0 counter drop comment "block port 0"',
+    ];
 }
 
 /* Identify which interface keys act as WAN (uplink). OPNsense marks an
@@ -2866,9 +2896,13 @@ foreach (array_merge($quickRules, array_reverse($lastMatchRules)) as $lines) {
 
 $wanDevs = wan_devices($cfg, $ifaces);
 $nat = build_nat($cfg, $ifaces, $wanDevs, $aliases);
-$aliasSets = alias_set_lines($aliases);
+/* Upper bound on the number of entries an alias may hold, from the advanced
+   firewall page. Without it a downloaded list that grows without limit takes
+   the memory it wants. */
+$aliasSets = alias_set_lines($aliases, (int)($cfg->system->maximumtableentries ?? 0));
 
-$martians = martian_lines($ifaces);
+$martians = martian_lines($ifaces, $cfg);
+$portZero = port_zero_lines($cfg);
 $lockout = antilockout_lines($cfg, $ifaces);
 
 $out = [];
@@ -3000,6 +3034,9 @@ foreach (plugin_rule_lines($ifaces, $aliases) as $line) {
 foreach ($martians as $m) {
     $out[] = $m;
 }
+foreach ($portZero as $line) {
+    $out[] = $line;
+}
 $out[] = '        jump filter_rules';
 $out[] = $default_block_drop;
 $out[] = '    }';
@@ -3010,6 +3047,9 @@ $out[] = '        ct state established,related accept';
 $out[] = '        ct state invalid counter drop';
 foreach ($martians as $m) {
     $out[] = $m;
+}
+foreach ($portZero as $line) {
+    $out[] = $line;
 }
 foreach ($nat['passes'] as $p) {
     $out[] = $p;

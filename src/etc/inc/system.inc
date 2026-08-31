@@ -163,7 +163,7 @@ function system_sysctl_defaults()
      * present on the running kernel, so entries that do not exist (for
      * example the IPv6 keys when IPv6 is disabled) are skipped silently.
      */
-    return [
+    $defaults = [
         /* routing: this is a router/firewall. Forwarding is also shipped as a
          * sysctl.d drop-in (applied at boot before this runs); kept here so it
          * shows on the GUI Tunables page and can be overridden. */
@@ -218,6 +218,25 @@ function system_sysctl_defaults()
         'net.core.wmem_max' => [ 'default' => '4262144', 'description' => 'Maximum socket send buffer (bytes)' ],
         'net.core.netdev_max_backlog' => [ 'default' => '1000', 'description' => 'Maximum input packet queue length per CPU' ],
     ];
+
+    /*
+     * Size of the firewall state table. The advanced firewall page has always
+     * offered a maximum number of states; on FreeBSD it sized the pf state
+     * table, here it is the connection tracking table. Nothing read it, so a
+     * firewall sized for a large number of connections silently kept the
+     * kernel default and dropped new connections once it was reached, with
+     * only a kernel message to show for it. Left unset the kernel default is
+     * untouched.
+     */
+    $maxstates = (int)($config['system']['maximumstates'] ?? 0);
+    if ($maxstates > 0) {
+        $defaults['net.netfilter.nf_conntrack_max'] = [
+            'default' => (string)$maxstates,
+            'description' => 'Maximum number of firewall states'
+        ];
+    }
+
+    return $defaults;
 }
 
 function system_sysctl_get()
