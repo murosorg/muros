@@ -1,3 +1,17 @@
+muros (0.9.86) trixie; urgency=medium
+
+  * Exporting an OpenVPN client configuration produced an empty file: the
+    archive was handed to a packer under a FreeBSD path. It is built in process
+    now, which also keeps the private key of the client out of a command line.
+  * The cipher, key exchange and message authentication lists of the secure
+    shell page were empty, for the same reason.
+  * The flow collector attributed a flow to the wrong interface. It mapped
+    interface indexes with a FreeBSD helper and numbered the interfaces by the
+    order that helper printed them rather than by their real index, so the
+    reports were not empty, they were wrong.
+
+ -- MurOS <jpzi@proton.me>  Tue, 01 Sep 2026 00:55:00 +0200
+
 muros (0.9.85) trixie; urgency=medium
 
   * The traffic shaper can shape what arrives on an interface, which is the
