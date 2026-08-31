@@ -1,3 +1,21 @@
+muros (0.9.79) trixie; urgency=medium
+
+  * A firewall rule can now be checked against the kernel. Every silent failure
+    found in this port had the same shape: an item accepted by the interface,
+    stored, listed back, and never turned into a rule. The new check walks the
+    configuration and looks for each item in the ruleset the kernel runs and in
+    the one the current configuration produces, which separates a rule that is
+    applied, one that waits for a filter reload, and one that will never be
+    applied at all. A rule loaded for an item that no longer exists is reported
+    as stale. It runs from the console with configctl filter verify and as part
+    of the health audit of the firmware page.
+  * Every rule generated from a configuration item now carries the identifier of
+    that item. Only the rules of the newer pages did, which is why the per rule
+    statistics of the interface only ever worked for those: a rule from an older
+    page carried its description instead and no counter could be attached to it.
+
+ -- MurOS <jpzi@proton.me>  Mon, 31 Aug 2026 21:25:00 +0200
+
 muros (0.9.78) trixie; urgency=medium
 
   * The changelog tab of the firmware page shows something. It used to download
