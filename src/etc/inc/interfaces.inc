@@ -1359,238 +1359,6 @@ function interface_ppps_configure($interface)
 
     log_msg("PPP type {$ppp['type']} on {$ifcfg['if']} is not supported on this platform yet.", LOG_ERR);
     return;
-
-    // Construct the mpd.conf file
-    $mpdconf = <<<EOD
-startup:
-  # configure the console
-  set console close
-  # configure the web server
-  set web close
-
-default:
-{$ppp['type']}client:
-  create bundle static {$interface}
-  set bundle {$ipv4_mode} ipcp
-  set bundle {$ipv6_mode} ipv6cp
-  set iface name {$ifcfg['if']}
-
-EOD;
-
-    if (isset($ppp['ondemand'])) {
-        $mpdconf .= "  set iface enable on-demand\n";
-    } else {
-        $mpdconf .= "  set iface disable on-demand\n";
-    }
-    if (!isset($ppp['idletimeout'])) {
-        $mpdconf .= "  set iface idle 0\n";
-    } else {
-        $mpdconf .= "  set iface idle {$ppp['idletimeout']}\n";
-    }
-
-    if (isset($ppp['ondemand'])) {
-        $mpdconf .= "  set iface addrs 10.10.1.1 10.10.1.2\n";
-    }
-
-    if (isset($ppp['tcpmssfix'])) {
-        $mpdconf .= "  set iface disable tcpmssfix\n";
-    } else {
-        $mpdconf .= "  set iface enable tcpmssfix\n";
-    }
-
-    $mpdconf .= "  set iface up-script /usr/local/opnsense/scripts/interfaces/ppp-linkup.sh\n";
-    $mpdconf .= "  set iface down-script /usr/local/opnsense/scripts/interfaces/ppp-linkdown.sh\n";
-
-    if ($ipv4_mode == 'enable') {
-        if ($ppp['type'] == 'ppp') {
-            $localip = is_ipaddr($ppp['localip']) ? $ppp['localip'] : '0.0.0.0';
-            $gateway = is_ipaddr($ppp['gateway']) ? $ppp['gateway'] : "10.64.64.{$idx}";
-            $mpdconf .= "  set ipcp ranges {$localip}/0 {$gateway}/0\n";
-        } else {
-            $mpdconf .= "  set ipcp ranges 0.0.0.0/0 0.0.0.0/0\n";
-        }
-
-        if (isset($ppp['vjcomp'])) {
-            $mpdconf .= "  set ipcp no vjcomp\n";
-        }
-
-        if (!empty($config['system']['dnsallowoverride'])) {
-            $mpdconf .= "  set ipcp enable req-pri-dns\n";
-            $mpdconf .= "  set ipcp enable req-sec-dns\n";
-        }
-    }
-
-    foreach ($ports as $pid => $port) {
-        $mpdconf_arr = [];
-        $port = get_real_interface($port);
-        if ($ppp['type'] == "ppp") {
-            $mpdconf_arr[] = "create link static {$interface}_link{$pid} modem";
-        } else {
-            $mpdconf_arr[] = "create link static {$interface}_link{$pid} {$ppp['type']}";
-        }
-        $mpdconf_arr[] = "set link action bundle {$interface}";
-        if (count($ports) > 1) {
-            $mpdconf_arr[] = "set link enable multilink";
-        } else {
-            $mpdconf_arr[] = "set link disable multilink";
-        }
-        $mpdconf_arr[] = "set link keep-alive 10 60";
-        $mpdconf_arr[] = "set link max-redial 0";
-        if (isset($ppp['shortseq'])) {
-            $mpdconf_arr[] = "set link no shortseq";
-        }
-        if (isset($ppp['acfcomp'])) {
-            $mpdconf_arr[] = "set link no acfcomp";
-        }
-        if (isset($ppp['protocomp'])) {
-            $mpdconf_arr[] = "set link no protocomp";
-        }
-        $mpdconf_arr[] = "set link disable chap pap";
-        $mpdconf_arr[] = "set link accept chap pap eap";
-        $mpdconf_arr[] = "set link disable incoming";
-        $bandwidths = !empty($ppp['bandwidth']) ? explode(',', $ppp['bandwidth']) : null;
-        if (!empty($bandwidths[$pid])) {
-            $mpdconf_arr[] = "set link bandwidth {$bandwidths[$pid]}";
-        }
-
-        if (empty($mtus[$pid])) {
-            /* subtract default header when deriving from interface config (as shown there) */
-            $mtus[$pid] = !empty($ifcfg['mtu']) ? intval($ifcfg['mtu']) - 8 : 1492;
-        }
-        if ($ppp['type'] == 'pppoe' && $mtus[$pid] > 1492) {
-            $mpdconf_arr[] = "set pppoe max-payload " . $mtus[$pid];
-        } else {
-            $mpdconf_arr[] = "set link mtu " . $mtus[$pid];
-        }
-        $mrus = !empty($ppp['mru']) ? explode(',', $ppp['mru']) : null;
-        if (!empty($mrus[$pid])) {
-            $mpdconf_arr[] = "set link mru {$mrus[$pid]}";
-        }
-        $mrrus = !empty($ppp['mrru']) ? explode(',', $ppp['mrru']) : null;
-        if (!empty($mrrus[$pid])) {
-            $mpdconf_arr[] = "set link mrru {$mrrus[$pid]}";
-        }
-
-        if (empty($ppp['username']) && $ppp['type'] == "ppp") {
-            $mpdconf_arr[] = "set auth authname \"user\"";
-        } else {
-            $mpdconf_arr[] = "set auth authname \"{$ppp['username']}\"";
-        }
-        if (empty($ppp['password']) && $ppp['type'] == "ppp") {
-            $mpdconf_arr[] = "set auth password " .  base64_decode('none');
-        } else {
-            $mpdconf_arr[] = "set auth password " . base64_decode($ppp['password']);
-        }
-
-        if ($ppp['type'] == "ppp") {
-            // ppp, modem connections
-            $mpdconf_arr[] = "set modem device {$ppp['ports']}";
-            $mpdconf_arr[] = "set modem script DialPeer";
-            $mpdconf_arr[] = "set modem idle-script Ringback";
-            $mpdconf_arr[] = "set modem watch -cd";
-            $mpdconf_arr[] = "set modem var \$DialPrefix \"DT\"";
-            $mpdconf_arr[] = "set modem var \$Telephone \"{$ppp['phone']}\"";
-            if (isset($ppp['connect-timeout'])) {
-                $mpdconf_arr[] = "set modem var \$ConnectTimeout \"{$ppp['connect-timeout']}\"";
-            }
-            if (isset($ppp['initstr'])) {
-                $initstr = base64_decode($ppp['initstr']);
-                $mpdconf_arr[] = "set modem var \$InitString \"{$initstr}\"";
-            }
-            if (isset($ppp['simpin'])) {
-                $mpdconf_arr[] = "set modem var \$SimPin \"{$ppp['simpin']}\"";
-                if (!empty($ppp['pin-wait'])) {
-                    $mpdconf_arr[] = "set modem var \$PinWait \"{$ppp['pin-wait']}\"";
-                } else {
-                    $mpdconf_arr[] = "set modem var \$PinWait \"0\"";
-                }
-            }
-            if (isset($ppp['apn'])) {
-                $mpdconf_arr[] = "set modem var \$APN \"{$ppp['apn']}\"";
-                if (empty($ppp['apnum'])) {
-                    $mpdconf_arr[] = "set modem var \$APNum \"1\"";
-                } else {
-                    $mpdconf_arr[] = "set modem var \$APNum \"{$ppp['apnum']}\"";
-                }
-            }
-        } elseif ($ppp['type'] == "pppoe") {
-            $provider = $ppp['provider'] ?? '';
-            $hostuniq = '';
-            if (!empty($ppp['hostuniq'])) {
-                $hostuniq = '0x' . strtolower(array_shift(unpack('H*', $ppp['hostuniq']))) . '|';
-            }
-            $mpdconf_arr[] = "set pppoe service \"{$hostuniq}{$provider}\"";
-            $mpdconf_arr[] = "set pppoe iface {$port}";
-        } elseif ($ppp['type'] == "pptp" || $ppp['type'] == "l2tp") {
-            $mpdconf_arr[] = "set {$ppp['type']} self {$localips[$pid]}";
-            $mpdconf_arr[] = "set {$ppp['type']} peer {$gateways[$pid]}";
-        }
-
-        foreach ($mpdconf_arr as $mpdconf_opt) {
-            $mpdconf .= "  " . $mpdconf_opt . "\n";
-        }
-
-        $mpdconf .= "\topen\n";
-    }
-
-    /* stop the service as a precaution */
-    killbypid("/var/run/{$ppp['type']}_{$interface}.pid");
-
-    /* mpd5 modem chat script expected in the same directory as the mpd_xxx.conf files */
-    @copy('/usr/local/opnsense/scripts/interfaces/mpd.script', '/var/etc/mpd.script');
-
-    /* write the configuration */
-    @file_put_contents("/var/etc/mpd_{$interface}.conf", $mpdconf);
-
-    /* create the uptime log if requested */
-    if (isset($ppp['uptime'])) {
-        @touch("/conf/{$ifcfg['if']}.log");
-    } else {
-        @unlink("/conf/{$ifcfg['if']}.log");
-    }
-
-    /* clean up old lock files */
-    foreach ($ports as $port) {
-        @unlink('/var/spool/lock/LCK..' . basename($port));
-    }
-
-    /* precaution for post-start 'up' check */
-    legacy_interface_flags($ifcfg['if'], 'down', false);
-
-    /* fire up mpd */
-    mwexecf(
-        '/usr/local/sbin/mpd5 -b -d /var/etc -f %s -p %s -s ppp %s',
-        ["mpd_{$interface}.conf", "/var/run/{$ppp['type']}_{$interface}.pid", "{$ppp['type']}client"]
-    );
-
-    /* appease netgraph by setting the correct node name */
-    mwexecfb('/usr/local/opnsense/scripts/interfaces/ppp-rename.sh %s %s %s', [$interface, $ifcfg['if'], $ppp['type']]);
-
-    /* wait for functional device */
-    $max = 20;
-    $i = 0;
-    while ($i < $max) {
-        sleep(1);
-        if (does_interface_exist($ifcfg['if'], 'up')) {
-            break;
-        }
-        $i++;
-    }
-
-    if ($i >= $max) {
-        log_msg("interface_ppps_configure() waiting threshold exceeded - device {$ifcfg['if']} is still not up", LOG_WARNING);
-    }
-
-    switch ($ppp['type']) {
-        case 'pppoe':
-            /* automatically change MAC address if parent interface changes */
-            $ng_name = preg_replace('/[.:]/', '_', $ports[0]) . ':';
-            mwexecf('/usr/sbin/ngctl msg %s setautosrc 1', [$ng_name]);
-            /* FALLTHROUGH */
-        default:
-            legacy_interface_mtu($ifcfg['if'], $mtus[0]);
-            break;
-    }
 }
 
 function interfaces_pfsync_configure()
@@ -2358,149 +2126,6 @@ EOD;
         log_msg("Wireless {$if}: WEP is not supported on this platform.", LOG_ERR);
     }
 
-    return;
-
-    /*
-     *    all variables are set, lets start up everything
-     */
-
-    $baseif = interface_get_wireless_base($if);
-    preg_match("/^(.*?)([0-9]*)$/", $baseif, $baseif_split);
-    $wl_sysctl_prefix = 'dev.' . $baseif_split[1] . '.' . $baseif_split[2];
-
-    /* set sysctls for the wireless interface */
-    if (!empty($wl_sysctl)) {
-        fwrite($fd_set, "# sysctls for {$baseif}\n");
-        foreach ($wl_sysctl as $wl_sysctl_line) {
-            fwrite($fd_set, exec_safe('/sbin/sysctl %s.%s', [$wl_sysctl_prefix, $wl_sysctl_line]) . PHP_EOL);
-        }
-    }
-
-    if (isset($wlcfg['wpa']['enable'])) {
-        if ($wlcfg['mode'] == "bss") {
-            fwrite($fd_set, exec_safe('/usr/local/sbin/wpa_supplicant -B -i %s -c %s', [$if, "/var/etc/wpa_supplicant_{$if}.conf"]) . PHP_EOL);
-        }
-        if ($wlcfg['mode'] == "hostap") {
-            fwrite($fd_set, exec_safe('/usr/local/sbin/hostapd -B -P %s %s', ["/var/run/hostapd_{$if}.pid", "/var/etc/hostapd_{$if}.conf"]) . PHP_EOL);
-        }
-    }
-
-    fclose($fd_set);
-
-    /*
-     * Making sure regulatory settings have actually changed
-     * before applying, because changing them requires bringing
-     * down all wireless networks on the interface.
-     */
-    $ifconfig_str = shell_safe('/sbin/ifconfig %s', $if);
-    $reg_changing = false;
-
-    /* special case for the debug country code */
-    if ($wlcfg['regcountry'] == 'DEBUG' && !preg_match("/\sregdomain\s+DEBUG\s/si", $ifconfig_str)) {
-        $reg_changing = true;
-    } elseif ($wlcfg['regdomain'] && !preg_match("/\sregdomain\s+{$wlcfg['regdomain']}\s/si", $ifconfig_str)) {
-        $reg_changing = true;
-    } elseif ($wlcfg['regcountry'] && !preg_match("/\scountry\s+{$wlcfg['regcountry']}\s/si", $ifconfig_str)) {
-        $reg_changing = true;
-    } elseif ($wlcfg['reglocation'] == 'anywhere' && preg_match("/\s(indoor|outdoor)\s/si", $ifconfig_str)) {
-        $reg_changing = true;
-    } elseif ($wlcfg['reglocation'] && $wlcfg['reglocation'] != 'anywhere' && !preg_match("/\s{$wlcfg['reglocation']}\s/si", $ifconfig_str)) {
-        $reg_changing = true;
-    }
-
-    if ($reg_changing) {
-        /* build a complete list of the wireless clones for this interface */
-        $clone_list = [];
-        if (does_interface_exist("{$baseif}_wlan0")) {
-            $clone_list[] = "{$baseif}_wlan0";
-        }
-        if (isset($config['wireless']['clone'])) {
-            foreach ($config['wireless']['clone'] as $clone) {
-                if ($clone['if'] == $baseif) {
-                    $clone_list[] = $clone['cloneif'];
-                }
-            }
-        }
-
-        /* find which clones are up and bring them down */
-        $ifup = legacy_interface_listget('up');
-        $clones_up = [];
-        foreach ($clone_list as $clone_if) {
-            if (in_array($clone_if, $ifup)) {
-                $clones_up[] = $clone_if;
-                mwexecf('/sbin/ifconfig %s down', $clone_if);
-            }
-        }
-
-        $wlregfrmt = ['/sbin/ifconfig %s'];
-        $wlregargs = [$if];
-
-        /* set regulatory domain */
-        if ($wlcfg['regdomain']) {
-            $wlregfrmt[] = 'regdomain %s';
-            $wlregargs[] = $wlcfg['regdomain'];
-        }
-
-        /* set country */
-        if ($wlcfg['regcountry']) {
-            $wlregfrmt[] = 'country %s';
-            $wlregargs[] = $wlcfg['regcountry'];
-        }
-
-        /* set location */
-        if ($wlcfg['reglocation']) {
-            $wlregfrmt[] = '%s';
-            $wlregargs[] = $wlcfg['reglocation'];
-        }
-
-        /* apply the regulatory settings */
-        mwexecf($wlregfrmt, $wlregargs);
-
-        /* bring the clones back up that were previously up */
-        foreach ($clones_up as $clone_if) {
-            mwexecf('/sbin/ifconfig %s up', $clone_if);
-
-            /*
-             * Rerun the setup script for the interface if it isn't this interface, the interface
-             * is in infrastructure mode, and WPA is enabled.
-             * This can be removed if wpa_supplicant stops dying when you bring the interface down.
-             */
-            if ($clone_if != $if) {
-                $friendly_if = convert_real_interface_to_friendly_interface_name($clone_if);
-                if (
-                    !empty($friendly_if)
-                    && isset($config['interfaces'][$friendly_if]['wireless']['wpa']['enable'])
-                    && $config['interfaces'][$friendly_if]['wireless']['mode'] == 'bss'
-                ) {
-                    mwexecf('/bin/sh %s', "/tmp/{$clone_if}_setup.sh");
-                }
-            }
-        }
-    }
-
-    if (!empty($standard)) {
-        /*
-         * The mode must be specified in a separate command before ifconfig
-         * will allow the mode and channel at the same time in the next.
-         *
-         * XXX but we do not have the standard when wireless was not configured...
-         */
-        mwexecf('/sbin/ifconfig %s mode %s', [$if, $standard]);
-    }
-
-    /* configure wireless */
-    mwexecf('/sbin/ifconfig %s ' . implode(' ', $wlcmd), $if);
-
-    /* configure txpower setting (it has been known to fail so run it separately) */
-    if (!empty($wlcfg['txpower'])) {
-        mwexecf('/sbin/ifconfig %s txpower %s', [$if, $wlcfg['txpower']]);
-    }
-
-    sleep(1); /* XXX historic sleep */
-
-    /* execute hostapd and wpa_supplicant if required in shell */
-    mwexecf('/bin/sh %s', "/tmp/{$if}_setup.sh");
-
     return 0;
 }
 
@@ -3058,19 +2683,33 @@ function interface_6rd_configure($interface, $wancfg, $update = false)
 
     $stfiface = "{$interface}_stf";
     legacy_interface_destroy($stfiface);
-    legacy_interface_create('stf', $stfiface);
-    legacy_interface_flags($stfiface, 'link2');
 
     $mtu = !empty($wancfg['mtu']) ? $wancfg['mtu'] - 20 : 1280;
     if ($mtu > 1480) {
         $mtu = 1480;
     }
-    legacy_interface_mtu($stfiface, $mtu);
+
+    /*
+     * MurOS: the FreeBSD stf(4) pseudo interface is a sit tunnel on Linux, and
+     * the 6rd parameters that were ifconfig options (stfv4br, stfv4net) are
+     * tunnel attributes: the border relay is the relay prefix and the delegated
+     * prefix carries the length of the IPv4 address embedded in it. The tunnel
+     * is created encapsulated in the WAN address, without a fixed remote, so
+     * every destination is reached through the relay.
+     */
+    mwexecf('/usr/sbin/ip link add name %s type sit local %s ttl 64 mode ip6ip', [$stfiface, $ip4address]);
+    mwexecf('/usr/sbin/ip link set dev %s mtu %s', [$stfiface, $mtu]);
+    mwexecf('/usr/sbin/ip tunnel 6rd dev %s 6rd-prefix %s/%s 6rd-relay_prefix %s/%s', [
+        $stfiface,
+        $rd6prefix_isp,
+        $rd6prefixlen,
+        $wancfg['gateway-6rd'],
+        $wancfg['prefix-6rd-v4plen'],
+    ]);
+    mwexecf('/usr/sbin/ip link set dev %s up', [$stfiface]);
 
     /* use original prefix length for network address to avoid setting the same subnet as on the LAN side (/64 prefix) */
-    mwexecf('/sbin/ifconfig %s inet6 %s/%s', [$stfiface, $rd6prefix, $rd6prefixlen]);
-    mwexecf('/sbin/ifconfig %s stfv4br %s', [$stfiface, $wancfg['gateway-6rd']]);
-    mwexecf('/sbin/ifconfig %s stfv4net %s/%s', [$stfiface, $ip4address, $wancfg['prefix-6rd-v4plen']]);
+    legacy_interface_setaddress($stfiface, "{$rd6prefix}/{$rd6prefixlen}", 6);
     mwexecf('/usr/local/sbin/ifctl -i %s -6rd -a %s', [$stfiface, $rd6brgw]);
 
     $gateways = new \OPNsense\Routing\Gateways();
@@ -3147,16 +2786,22 @@ function interface_6to4_configure($interface, $wancfg, $update = false)
 
     $stfiface = "{$interface}_stf";
     legacy_interface_destroy($stfiface);
-    legacy_interface_create('stf', $stfiface);
-    legacy_interface_flags($stfiface, 'link2');
 
     $mtu = !empty($wancfg['mtu']) ? $wancfg['mtu'] - 20 : 1280;
     if ($mtu > 1480) {
         $mtu = 1480;
     }
-    legacy_interface_mtu($stfiface, $mtu);
 
-    mwexecf('/sbin/ifconfig %s inet6 %s prefixlen 16', [$stfiface, $stflan]);
+    /*
+     * MurOS: 6to4 is the well known case of a sit tunnel, the kernel derives
+     * the destination from the 2002::/16 address itself once the tunnel has no
+     * fixed remote ("any"), which is what the stf(4) interface did.
+     */
+    mwexecf('/usr/sbin/ip link add name %s type sit local %s remote any ttl 64', [$stfiface, $ip4address]);
+    mwexecf('/usr/sbin/ip link set dev %s mtu %s', [$stfiface, $mtu]);
+    mwexecf('/usr/sbin/ip link set dev %s up', [$stfiface]);
+
+    legacy_interface_setaddress($stfiface, "{$stflan}/16", 6);
     mwexecf('/usr/local/sbin/ifctl -i %s -6rd -a %s', [$stfiface, $stfbrgw]);
 
     $gateways = new \OPNsense\Routing\Gateways();

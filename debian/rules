@@ -49,7 +49,7 @@ override_dh_installsystemd:
 	dh_installsystemd --name=muros-lease-watch --no-enable --no-start muros-lease-watch.service
 	dh_installsystemd --name=muros-wg-reresolve --no-enable --no-start muros-wg-reresolve.timer
 	dh_installsystemd --name=muros-wg-reresolve --no-enable --no-start muros-wg-reresolve.service
-	# muros-pppoe@.service is a template as well: an instance is started when the
+	# muros-ppp@.service is a template as well: an instance is started when the
 	# interface holding the session is applied.
 	# muros-openvpn@.service is a template: instances are started and stopped by
 	# openvpn.inc when a VPN instance is applied, so there is nothing to enable
