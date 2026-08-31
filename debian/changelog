@@ -1,3 +1,24 @@
+muros (0.9.88) trixie; urgency=medium
+
+  * Outbound NAT rules were translated from a fraction of what the page
+    stores. The address family, the protocol, the source and destination
+    ports, the translation pool and its options, static port and logging were
+    all read by the interface and dropped by the generator, so a rule limited
+    to one protocol translated everything, a rule pointing at a pool of
+    addresses translated to the interface address instead, and an IPv6 rule
+    produced an IPv6 prefix under an IPv4 match, which made the whole ruleset
+    unloadable.
+  * Port forwards and 1:1 NAT follow the address family too, so an IPv6
+    redirection or an IPv6 static mapping now reaches the kernel.
+  * An address the generator cannot resolve is no longer passed to nft as a
+    host name, where it either got resolved behind our back or broke the load.
+    The rule is left out and named by the rule check.
+  * NAT options with no counterpart here, reflection, bitmask and source-hash
+    pools, firewall tags, translating to more than one address, are reported
+    rather than dropped in silence.
+
+ -- MurOS <dev@muros.org>  Mon, 31 Aug 2026 21:31:38 +0200
+
 muros (0.9.87) trixie; urgency=medium
 
   * Aliases whose content is not a list of addresses (GeoIP countries, URL
