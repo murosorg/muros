@@ -163,12 +163,24 @@ conntrackd_configure();
 /*
  * MurOS: the firewall input chain carries an automatic accept for VRRP adverts
  * (IP protocol 112) that is only emitted while at least one CARP VIP exists.
- * Reload the ruleset so adding or removing the last CARP VIP toggles that rule;
- * without it keepalived peers cannot hear each other and split brain occurs.
+ * Reload the ruleset so adding or removing the last CARP VIP toggles that
+ * rule; without it keepalived peers cannot hear each other and split brain
+ * occurs. Comparing against the state left by the previous run is what makes
+ * the removal side work: with nothing left in the configuration to iterate,
+ * a check that only looked at the current list never saw the transition and
+ * never reloaded, leaving the accept rule (and the split brain exposure it
+ * was closing) behind long after the last CARP VIP was gone.
  */
+$carp_present = false;
 foreach (config_read_array('virtualip', 'vip', false) as $vipent) {
     if (($vipent['mode'] ?? '') === 'carp') {
-        configd_run('filter reload');
+        $carp_present = true;
         break;
     }
+}
+$carp_state_file = '/var/run/carp_filter.state';
+$carp_was_present = trim((string)@file_get_contents($carp_state_file)) === '1';
+if ($carp_present !== $carp_was_present) {
+    configd_run('filter reload');
+    @file_put_contents($carp_state_file, $carp_present ? '1' : '0');
 }
