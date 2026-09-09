@@ -1,3 +1,14 @@
+muros (0.9.98) trixie; urgency=medium
+
+  * A manual IPsec security policy stayed installed after its tunnel went
+    down. The updown event only ever handled the up side, so a phase 2
+    carrying a manual policy left it steering traffic into a reqid nothing
+    negotiates once the child SA tears down, and a tunnel that is disabled,
+    removed or renumbered never reclaims it. The down event now withdraws
+    the same policy the up event installed.
+
+ -- MurOS <dev@muros.org>  Wed, 09 Sep 2026 14:05:00 +0200
+
 muros (0.9.97) trixie; urgency=medium
 
   * Blocking bogon networks blocked seven well known ranges written into the
