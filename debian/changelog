@@ -1,3 +1,15 @@
+muros (0.9.104) trixie; urgency=medium
+
+  * The ping/service watchdog script picked its ping command with a "=="
+    string comparison, which is not an operator the test builtin of dash (the
+    default /bin/sh on Debian) knows: it printed "unexpected operator" and
+    fell through to the else branch every time, regardless of the configured
+    address family. Every IPv6 monitored host was pinged with "ping -4" and
+    always reported down, running its failure script against a host that was
+    reachable all along. The comparison now uses the POSIX "=" operator.
+
+ -- MurOS <dev@muros.org>  Wed, 09 Sep 2026 18:10:00 +0200
+
 muros (0.9.103) trixie; urgency=medium
 
   * The GPS reference clock stanza of the generated chrony configuration
