@@ -1,3 +1,15 @@
+muros (0.9.99) trixie; urgency=medium
+
+  * The automatic rule accepting VRRP adverts was reloaded into the firewall
+    when the first CARP VIP was added, but removing the last one left the
+    configuration with nothing to iterate, so the same check never saw the
+    transition and never reloaded. The accept rule, and the exposure of
+    letting VRRP traffic in in unconditionally on every interface, stayed
+    behind for as long as nothing else happened to reload the firewall. The
+    reload now follows a change between the two states, in either direction.
+
+ -- MurOS <dev@muros.org>  Wed, 09 Sep 2026 15:40:00 +0200
+
 muros (0.9.98) trixie; urgency=medium
 
   * A manual IPsec security policy stayed installed after its tunnel went
