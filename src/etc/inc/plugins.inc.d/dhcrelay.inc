@@ -145,9 +145,14 @@ function dhcrelay_configure_id($verbose = false, $id_map = null)
     }
 
     foreach ($relays as $relay) {
+        /* fetched up front: a foreach does not clear $interface/$device between
+         * iterations, so a message logged before they are (re)computed for this
+         * relay would otherwise still carry the previous relay's values */
+        $interface = $relay->interface->getValue();
+
         $destination = $mdl->getNodeByReference("destinations.{$relay->destination}");
         if ($destination == null) {
-            log_msg("dhcrelay_configure_id() found no destination server for $interface($device)", LOG_WARNING);
+            log_msg("dhcrelay_configure_id() found no destination server for $interface", LOG_WARNING);
             continue;
         } elseif (
             !$relay->carp_depend_on->isEmpty() &&
@@ -158,7 +163,6 @@ function dhcrelay_configure_id($verbose = false, $id_map = null)
 
         $family = strpos($destination->server->getValue(), '.') !== false ? 'inet' : 'inet6';
 
-        $interface = $relay->interface->getValue();
         $device = get_real_interface($interface, $family);
 
         if (empty($device) || !isset($ifconfig_details[$device]) || $ifconfig_details[$device]['macaddr'] == '00:00:00:00:00:00') {
