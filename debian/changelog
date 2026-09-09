@@ -1,3 +1,15 @@
+muros (0.9.100) trixie; urgency=medium
+
+  * A DHCP relay with no destination server logged the warning naming the
+    interface and the device it could not find one for, except the two
+    variables were only set later, once a destination had been found. On the
+    very first relay checked this printed an empty name; on every relay
+    after the first it silently printed the previous relay's interface and
+    device, which is worse: a real problem was reported, against the wrong
+    relay. The interface is now read before the check that can skip it.
+
+ -- MurOS <dev@muros.org>  Wed, 09 Sep 2026 16:10:00 +0200
+
 muros (0.9.99) trixie; urgency=medium
 
   * The automatic rule accepting VRRP adverts was reloaded into the firewall
