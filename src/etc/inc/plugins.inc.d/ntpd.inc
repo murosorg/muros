@@ -228,7 +228,7 @@ function ntpd_configure_do($verbose = false)
         if (!empty($config['ntpd']['gps']['fudge1'])) {
             $line .= ' offset ' . $config['ntpd']['gps']['fudge1'];
         }
-        if (empty($config['ntpd']['gps']['prefer'])) {
+        if (!empty($config['ntpd']['gps']['prefer'])) {
             $line .= ' prefer';
         }
         if (!empty($config['ntpd']['gps']['noselect'])) {
