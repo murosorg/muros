@@ -1,3 +1,14 @@
+muros (0.9.103) trixie; urgency=medium
+
+  * The GPS reference clock stanza of the generated chrony configuration
+    tested the "prefer" setting inverted: chrony marked the GPS clock
+    preferred whenever the operator had left the checkbox unset, and left it
+    unpreferred when the checkbox was checked. The other source of the same
+    setting a few lines above, the "prefer" list for regular time servers,
+    was never affected, only the GPS refclock stanza carried the mistake.
+
+ -- MurOS <dev@muros.org>  Wed, 09 Sep 2026 17:50:00 +0200
+
 muros (0.9.102) trixie; urgency=medium
 
   * Entering CARP maintenance mode stopped keepalived directly instead of
