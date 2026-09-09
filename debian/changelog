@@ -1,3 +1,15 @@
+muros (0.9.105) trixie; urgency=medium
+
+  * The wireless status page triggered a fresh active radio scan on every
+    load, not only when the operator pressed "Rescan". An active scan takes
+    seconds and pulls a radio serving an access point off its channel while
+    it runs, so simply opening or refreshing the page, or the reload that
+    followed a rescan, disrupted an access point every time. Loading the
+    page now lists the last scan already found, as the FreeBSD "list scan"
+    it replaces always did, and only the explicit rescan action starts one.
+
+ -- MurOS <dev@muros.org>  Wed, 09 Sep 2026 18:20:00 +0200
+
 muros (0.9.104) trixie; urgency=medium
 
   * The ping/service watchdog script picked its ping command with a "=="
