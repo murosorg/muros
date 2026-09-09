@@ -53,8 +53,18 @@ if ($action == 'maintenance') {
     } else {
         $config['virtualip_carp_maintenancemode'] = true;
         write_config('Enter CARP maintenance mode');
-        /* vrrp_configure() reads the flag and stops keepalived */
+        /*
+         * vrrp_configure() reads the flag and stops keepalived, but killing
+         * it this way skips the notify hook a normal MASTER->BACKUP
+         * transition runs, so a node that was master never tells conntrackd
+         * to give up that role. conntrackd is restarted here for the same
+         * reason the "leave maintenance" branch restarts it: a fresh start
+         * carries no committed external cache, which is the safe default
+         * a demoted node should be left in instead of the stale primary role
+         * it had no chance to hand off.
+         */
         vrrp_configure();
+        conntrackd_configure();
         echo json_encode(['status' => 'ok', 'action' => 'enter_maintenance']);
     }
 } elseif ($action == 'disable') {
