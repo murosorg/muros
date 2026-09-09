@@ -1,3 +1,15 @@
+muros (0.9.102) trixie; urgency=medium
+
+  * Entering CARP maintenance mode stopped keepalived directly instead of
+    letting it run its normal MASTER to BACKUP transition, so a master node
+    put into maintenance never told conntrackd to give up that role.
+    conntrackd is now restarted alongside keepalived when maintenance mode
+    is entered, the same way it already is when it is left, leaving it in
+    the safe uncommitted state a demoted node should be in rather than the
+    stale primary role it had no chance to hand off.
+
+ -- MurOS <dev@muros.org>  Wed, 09 Sep 2026 17:45:00 +0200
+
 muros (0.9.101) trixie; urgency=medium
 
   * A DHCPv6 delegated prefix route was installed once its lease was handed
