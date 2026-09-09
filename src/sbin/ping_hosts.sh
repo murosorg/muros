@@ -74,7 +74,11 @@ for TOPING in $PINGHOSTS ; do
 	THRESHOLD=`echo $TOPING | cut -d"|" -f6`
 	WANTHRESHOLD=`echo $TOPING | cut -d"|" -f7`
 	AF=`echo $TOPING | cut -d"|" -f8`
-	if [ "$AF" == "inet6" ]; then
+	# MurOS: /bin/sh is dash on Debian, whose test builtin has no "=="
+	# operator; it printed "unexpected operator" and fell through to the
+	# else branch every time, so an IPv6 host was always pinged with
+	# "ping -4" and reported down regardless of its real reachability.
+	if [ "$AF" = "inet6" ]; then
 		PINGCMD="ping -6"
 	else
 		PINGCMD="ping -4"
