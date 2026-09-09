@@ -37,6 +37,12 @@ require_once("interfaces.inc");
  * as JSON. The columns follow what nl80211 reports: a Linux station has no
  * association id and no transmit sequence numbers, it has signal strength,
  * negotiated rates and traffic counters.
+ *
+ * Triggering a scan takes seconds and briefly pulls an access point off its
+ * channel, so it can only be warranted by the explicit "Rescan" action;
+ * loading (or reloading) the page otherwise lists what the last scan already
+ * found, the equivalent of the FreeBSD "list scan" that never scanned by
+ * itself either.
  */
 $scan = [];
 $peers = [];
@@ -55,7 +61,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         header(url_safe('Location: /status_wireless.php?if=%s', [$if]));
         exit;
     }
-    $scan = json_decode(configd_run(sprintf('interface wireless scan %s', $rwlif)), true) ?: [];
+    $scan = json_decode(configd_run(sprintf('interface wireless scandump %s', $rwlif)), true) ?: [];
     $peers = json_decode(configd_run(sprintf('interface wireless stations %s', $rwlif)), true) ?: [];
 }
 

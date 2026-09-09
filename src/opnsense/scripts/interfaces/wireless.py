@@ -120,12 +120,16 @@ def radio_info(device):
     return result
 
 
-def scan(device):
-    """ the access points and ad-hoc peers the radio can hear """
+def scan(device, trigger=True):
+    """ the access points and ad-hoc peers the radio can hear. Triggering a
+        scan takes seconds and, for a radio serving an access point, briefly
+        leaves the channel to visit others, so it is only warranted when the
+        caller means to start one; listing what a previous scan already found
+        (trigger=False) is what a page display should ask for instead. """
     if phy_of(device) is None:
         return []
 
-    output = run([IW, 'dev', device, 'scan'])
+    output = run([IW, 'dev', device, 'scan']) if trigger else ''
     if output == '':
         """ a scan needs the device up and fails while it serves an access point """
         output = run([IW, 'dev', device, 'scan', 'dump'])
@@ -234,7 +238,9 @@ if __name__ == '__main__':
         print(json.dumps(radio_info(target)))
     elif command == 'scan':
         print(json.dumps(scan(target)))
+    elif command == 'scandump':
+        print(json.dumps(scan(target, trigger=False)))
     elif command == 'stations':
         print(json.dumps(stations(target)))
     else:
-        print(json.dumps({'error': 'usage: wireless.py [info|scan|stations] <device>'}))
+        print(json.dumps({'error': 'usage: wireless.py [info|scan|scandump|stations] <device>'}))
