@@ -44,8 +44,16 @@ if __name__ == '__main__':
     parser.add_argument('--remote', default=os.environ.get('PLUTO_PEER'))
     parser.add_argument('--action', default=os.environ.get('PLUTO_VERB'))
     cmd_args = parser.parse_args()
-    # init spd's on up-host[-v6], up-client[-v6]
-    if cmd_args.action and cmd_args.action.startswith('up'):
+    # spd's are (re)installed on up-host[-v6], up-client[-v6] and withdrawn
+    # again on down-host[-v6], down-client[-v6]: charon calls updown once per
+    # child SA transition, so the down event is the only place left to remove
+    # a manual policy. Without it the policy outlives the SA it was tied to
+    # and keeps steering its traffic into a reqid nothing negotiates anymore,
+    # which on a tunnel that never comes back up (disabled, removed,
+    # renumbered) is silent and permanent.
+    is_up = cmd_args.action and cmd_args.action.startswith('up')
+    is_down = cmd_args.action and cmd_args.action.startswith('down')
+    if is_up or is_down:
         syslog.openlog('charon', facility=syslog.LOG_LOCAL4)
         syslog.syslog(syslog.LOG_NOTICE, '[UPDOWN] <%s> received %s event for reqid %s' % (cmd_args.connection_child, cmd_args.action, cmd_args.reqid))
         if os.path.exists(events_filename):
@@ -96,11 +104,19 @@ if __name__ == '__main__':
                 selector_src = spd['source']
                 selector_dst = spd['destination']
                 proto = spd.get('protocol', 'esp')
-                subprocess.run(
-                    ['/usr/sbin/ip', 'xfrm', 'policy', 'delete',
-                     'src', selector_src, 'dst', selector_dst, 'dir', 'out'],
-                    capture_output=True, text=True
-                )
+                delete_cmd = [
+                    '/usr/sbin/ip', 'xfrm', 'policy', 'delete',
+                    'src', selector_src, 'dst', selector_dst, 'dir', 'out'
+                ]
+                subprocess.run(delete_cmd, capture_output=True, text=True)
+
+                if is_down:
+                    syslog.syslog(
+                        syslog.LOG_NOTICE,
+                        '[UPDOWN] <%s> removed manual policy: %s' % (cmd_args.connection_child, ' '.join(delete_cmd[3:]))
+                    )
+                    continue
+
                 add_cmd = [
                     '/usr/sbin/ip', 'xfrm', 'policy', 'add',
                     'src', selector_src, 'dst', selector_dst, 'dir', 'out',
