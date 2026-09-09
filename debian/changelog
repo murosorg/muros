@@ -1,3 +1,15 @@
+muros (0.9.101) trixie; urgency=medium
+
+  * A DHCPv6 delegated prefix route was installed once its lease was handed
+    out and then never touched again: the watcher only ever acted on leases
+    in the default state, so a prefix that was released, declined or expired
+    kept its route pointing at a link local address that may no longer
+    answer, or may since have been reused by a different client than the one
+    it was routed for. The route is now withdrawn as soon as the lease
+    leaves the default state.
+
+ -- MurOS <dev@muros.org>  Wed, 09 Sep 2026 17:35:00 +0200
+
 muros (0.9.100) trixie; urgency=medium
 
   * A DHCP relay with no destination server logged the warning naming the
