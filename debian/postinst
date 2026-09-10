@@ -89,11 +89,19 @@ JRN
 
     # Kea DHCP is driven by MurOS: configd renders /etc/kea/*.conf from the
     # stored configuration and the kea_service.sh wrapper starts only the
-    # daemons enabled in the UI. Keep the stock units from auto-starting at
-    # boot with their packaged default configuration; MurOS owns their state.
-    for u in kea-dhcp4-server kea-dhcp6-server kea-ctrl-agent kea-dhcp-ddns-server; do
-      systemctl disable --now "$u" 2>/dev/null || true
-    done
+    # daemons enabled in the UI, under these same unit names. Keep the stock
+    # units from auto-starting at boot with their packaged default
+    # configuration; MurOS owns their state from here on. This only needs
+    # doing once, on a fresh install: postinst's "configure" also runs on
+    # every upgrade with $2 set to the previous version, and stopping these
+    # units unconditionally there would silently kill DHCP on a box where an
+    # operator had it running, on every single package upgrade, until the
+    # next reboot or manual re-apply from the UI noticed and brought it back.
+    if [ -z "$2" ]; then
+      for u in kea-dhcp4-server kea-dhcp6-server kea-ctrl-agent kea-dhcp-ddns-server; do
+        systemctl disable --now "$u" 2>/dev/null || true
+      done
+    fi
 
     # The packaged AppArmor profiles confine the Kea daemons to a fixed set of
     # paths and capabilities that do not match how MurOS drives Kea: configd
@@ -116,8 +124,14 @@ JRN
     # renders /var/unbound/unbound.conf and the unbound start.sh script launches
     # the daemon from there. Stop the stock unit so it does not hold port 53 with
     # its default /etc/unbound configuration, and keep it from starting at boot.
-    systemctl disable --now unbound 2>/dev/null || true
-    systemctl disable --now unbound-resolvconf 2>/dev/null || true
+    # Fresh install only, same reasoning as the Kea units above: MurOS's own
+    # unbound is a different unit and is left alone, but unconditionally
+    # stopping this one on every upgrade would flap DNS resolution on every
+    # update if anything had ever re-enabled the stock unit.
+    if [ -z "$2" ]; then
+      systemctl disable --now unbound 2>/dev/null || true
+      systemctl disable --now unbound-resolvconf 2>/dev/null || true
+    fi
     # The packaged AppArmor profile confines unbound to /etc/unbound and
     # /var/lib/unbound, which would deny the MurOS working directory
     # /var/unbound. Disable the profile so unbound can run from there.
@@ -147,15 +161,24 @@ STRONGSWAN
     # config.xml and start the services only when CARP virtual IPs and an HA
     # sync interface are configured. Keep both stock units from auto-starting at
     # boot with their empty default configuration, which would otherwise fail.
-    systemctl disable --now keepalived 2>/dev/null || true
-    systemctl disable --now conntrackd 2>/dev/null || true
+    # Fresh install only: these are the exact units MurOS itself starts once
+    # CARP/HA is configured, so redoing this unconditionally on every upgrade
+    # would silently drop a node out of an HA pair, and the accompanying
+    # firewall state sync with it, on every single package upgrade.
+    if [ -z "$2" ]; then
+      systemctl disable --now keepalived 2>/dev/null || true
+      systemctl disable --now conntrackd 2>/dev/null || true
+    fi
 
     # Monit is driven by MurOS as well: configd renders /usr/local/etc/monitrc
     # from the Services/Monit settings and starts the daemon with that control
     # file. The packaged unit would run a second instance on /etc/monit/monitrc,
     # which fights over /var/run/monit.pid and monitors nothing the operator
-    # configured, so keep it from starting at boot.
-    systemctl disable --now monit 2>/dev/null || true
+    # configured, so keep it from starting at boot. Fresh install only, same
+    # reasoning as above.
+    if [ -z "$2" ]; then
+      systemctl disable --now monit 2>/dev/null || true
+    fi
 
     # Console login: remove the legacy autologin drop-ins shipped by earlier
     # installers, which logged root straight into the operator menu without any
