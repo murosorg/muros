@@ -36,25 +36,36 @@ if [ -d "$ROOTDIR/contrib" ]; then
     ( cd "$ROOTDIR/contrib" && tar -cf - . ) | ( cd "$DEST/usr/local/opnsense/contrib" && tar -xf - )
 fi
 
-# MurOS: three tokens cannot be kept by hand in tokens.sed without drifting.
+# MurOS: four tokens cannot be kept by hand in tokens.sed without drifting.
 # CORE_VERSION had been left behind at 0.9.14 while the package moved on, and
 # the commit and the hash stayed at "dev", so the firmware page of a running
-# box could not tell which build it was carrying. They are derived here: the
-# version follows the package version, the commit and the hash come from the
-# checkout when the build runs inside one.
+# box could not tell which build it was carrying. That first fix overrode
+# CORE_VERSION, but core.in's own "product_version" field, the one
+# opnsense-version and the whole UI actually read the running version from,
+# is templated on CORE_PKGVERSION instead; that token kept coming from the
+# hardcoded literal in tokens.sed, last touched at 0.9.97 while the changelog
+# moved on release after release, so the displayed version silently fell
+# behind what was actually installed. All four are derived here, from the
+# same debian/changelog dpkg itself builds the .deb version from, so there is
+# a single place left for the version to come from instead of two.
 EFFECTIVE_TOKENS="$(mktemp)"
 trap 'rm -f "$EFFECTIVE_TOKENS"' EXIT
 
-PKGVERSION="$(sed -n 's|^s=%%CORE_PKGVERSION%%=\(.*\)=g$|\1|p' "$TOKENS")"
+PKGVERSION="$(dpkg-parsechangelog -l "$ROOTDIR/debian/changelog" -S Version 2> /dev/null || true)"
+if [ -z "$PKGVERSION" ]; then
+    PKGVERSION="$(sed -n 's|^s=%%CORE_PKGVERSION%%=\(.*\)=g$|\1|p' "$TOKENS")"
+fi
 COMMIT="dev"
 if [ -d "$ROOTDIR/.git" ] && command -v git > /dev/null 2>&1; then
     COMMIT="$(git -C "$ROOTDIR" rev-parse --short=11 HEAD 2> /dev/null || echo dev)"
 fi
 
-grep -v -e '^s=%%CORE_VERSION%%=' -e '^s=%%CORE_COMMIT%%=' -e '^s=%%CORE_HASH%%=' \
+grep -v -e '^s=%%CORE_VERSION%%=' -e '^s=%%CORE_PKGVERSION%%=' \
+        -e '^s=%%CORE_COMMIT%%=' -e '^s=%%CORE_HASH%%=' \
     "$TOKENS" > "$EFFECTIVE_TOKENS"
 {
     printf 's=%%%%CORE_VERSION%%%%=%s=g\n' "${PKGVERSION:-0.0.0}"
+    printf 's=%%%%CORE_PKGVERSION%%%%=%s=g\n' "${PKGVERSION:-0.0.0}"
     printf 's=%%%%CORE_COMMIT%%%%=%s=g\n' "$COMMIT"
     printf 's=%%%%CORE_HASH%%%%=%s=g\n' "$COMMIT"
 } >> "$EFFECTIVE_TOKENS"
