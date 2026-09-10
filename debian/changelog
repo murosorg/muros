@@ -1,3 +1,18 @@
+muros (0.9.110) trixie; urgency=medium
+
+  * postinst unconditionally stopped and disabled the stock kea-dhcp4-server,
+    kea-dhcp6-server, kea-ctrl-agent, kea-dhcp-ddns-server, unbound,
+    unbound-resolvconf, keepalived, conntrackd and monit units on every run,
+    including "configure" on a plain upgrade, not only on a fresh install.
+    Those are the exact units MurOS itself starts once DHCP, DNS resolution,
+    IPsec-independent HA or monitoring are configured, so every single
+    package upgrade silently stopped and disabled DHCP, DNS resolution, VRRP
+    and its firewall state sync, and service monitoring on a box that had
+    them running, until the next reboot or a manual re-apply from the UI
+    brought them back. All of it now only runs on a fresh install.
+
+ -- MurOS <dev@muros.org>  Thu, 10 Sep 2026 12:30:00 +0200
+
 muros (0.9.109) trixie; urgency=medium
 
   * The version shown throughout the running system (login page, console
