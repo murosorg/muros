@@ -216,12 +216,18 @@ class CPBackgroundProcess(object):
                     # but only do so if there is a change (to_add is not empty)
                     self._add_client(zoneid, session_ips)
 
-            # remove any address from pf that isn't expected
+            # remove any address from pf or accounting that isn't expected. A
+            # session torn down through disconnect.py only strips the pf side
+            # right away, on the assumption that this loop would catch up and
+            # clear the matching accounting entry; scanning registered_addresses_pf
+            # alone missed exactly that address; once it stopped being a pf
+            # member there was nothing left pointing to it in the accounting
+            # sets it never actually left.
             expected_addresses = set()
             for db_client in expected_clients:
                 expected_addresses.update(self.db.list_session_ips(zoneid, db_client['sessionId']))
 
-            for registered_address in registered_addresses_pf:
+            for registered_address in registered_addresses_pf | registered_addresses_ipfw:
                 if registered_address not in expected_addresses:
                     self._remove_client(zoneid, registered_address)
 
