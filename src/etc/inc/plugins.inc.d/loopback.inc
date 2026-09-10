@@ -36,10 +36,21 @@ function loopback_configure()
 function loopback_interfaces()
 {
     return [
+        /*
+         * MurOS: the logical interface keeps the FreeBSD name "lo0" (it is
+         * part of the configuration schema and how other plugins refer to
+         * it), but the "if" below is what get_real_interface() hands back as
+         * the actual kernel device to query or bind to, and the kernel
+         * loopback here is "lo", not "lo0". Left at the FreeBSD name, every
+         * consumer that resolves this logical interface, sshd, the web GUI
+         * and unbound all restricting themselves to specific interfaces,
+         * silently failed to find a device called "lo0" and never bound to
+         * loopback at all.
+         */
         'lo0' => [
             'descr' => gettext('Loopback'),
             'enable' => true,
-            'if' => 'lo0',
+            'if' => 'lo',
             'ipaddr' => '127.0.0.1',
             'ipaddrv6' => '::1',
             'subnet' => '8',

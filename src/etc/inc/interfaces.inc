@@ -93,7 +93,8 @@ function interfaces_loopback_configure($verbose = false)
      * the device up (idempotent) and apply any loopback VIPs the user defined.
      */
     interfaces_vips_configure('lo0');
-    legacy_interface_flags('lo0', 'up');
+    /* MurOS: the real kernel device is "lo", not the logical "lo0" above */
+    legacy_interface_flags('lo', 'up');
 
     service_log("done.\n", $verbose);
 }
