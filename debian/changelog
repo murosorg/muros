@@ -1,3 +1,17 @@
+muros (0.9.109) trixie; urgency=medium
+
+  * The version shown throughout the running system (login page, console
+    banner, opnsense-version, the firmware page) came from core.in's
+    product_version field, templated on CORE_PKGVERSION. A previous fix
+    derived CORE_VERSION from the package build to stop it drifting from
+    debian/changelog, but product_version reads the other token, which kept
+    coming from a literal in debian/tokens.sed last touched at 0.9.97: every
+    release since then displayed the wrong version on a fully up to date
+    box. Both tokens are now derived from debian/changelog directly, the
+    same source dpkg itself builds the .deb version from.
+
+ -- MurOS <dev@muros.org>  Thu, 10 Sep 2026 11:45:00 +0200
+
 muros (0.9.108) trixie; urgency=medium
 
   * Reassigning network interfaces (from the console setup wizard or the
