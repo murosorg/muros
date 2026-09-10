@@ -35,9 +35,14 @@ require_once("system.inc");
 require_once("interfaces.inc");
 
 if (set_networking_interfaces_ports()) {
-    /* need to stop local servers to prevent faulty leases */
-    killbypid('/var/dhcpd/var/run/dhcpd.pid');
-    killbypid('/var/dhcpd/var/run/dhcpdv6.pid');
+    /*
+     * MurOS: need to stop local servers to prevent faulty leases. DHCP moved
+     * from FreeBSD dhcpd, killed here by its pidfile, to Kea, which is
+     * systemd managed and leaves no such pidfile; killbypid() on the old
+     * path was always a silent no-op, so a reassignment never actually
+     * stopped Kea before interfaces_configure() rebuilt the world under it.
+     */
+    configd_run('kea stop');
     killbypid('/var/run/radvd.pid');
 
     interfaces_configure(true);
