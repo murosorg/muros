@@ -1,3 +1,17 @@
+muros (0.9.111) trixie; urgency=medium
+
+  * The loopback pseudo-interface registered its kernel device under its
+    FreeBSD name, "lo0", instead of the real "lo". get_real_interface() and
+    every consumer that resolves this logical interface therefore looked for
+    a device that does not exist on Linux: sshd, the web GUI and unbound all
+    silently failed to bind to loopback whenever restricted to specific
+    interfaces, and bringing the interface up at boot logged a spurious
+    failure on a command aimed at the same nonexistent device. The
+    registration, and the one remaining direct reference to the FreeBSD
+    name, now point at "lo".
+
+ -- MurOS <dev@muros.org>  Thu, 10 Sep 2026 12:55:00 +0200
+
 muros (0.9.110) trixie; urgency=medium
 
   * postinst unconditionally stopped and disabled the stock kea-dhcp4-server,
