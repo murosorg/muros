@@ -95,10 +95,16 @@ function waitforpid($pidfile, $timeout = -1)
 
 function waitfordad($grace_period = 1)
 {
-    $dad_delay = (int)get_single_sysctl('net.inet6.ip6.dad_count');
-    if ($dad_delay) {
-        sleep($dad_delay + $grace_period);
-    }
+    /*
+     * MurOS: FreeBSD reported how long DAD needs via the net.inet6.ip6.dad_count
+     * sysctl; that OID does not exist on Linux, get_single_sysctl() silently
+     * returned nothing for it, $dad_delay was always 0, and the sleep below it
+     * was gated on was never reached at all. A freshly assigned IPv6 address was
+     * therefore never actually given time to leave the tentative state before a
+     * caller went on to depend on it. Sleep the caller's grace period
+     * unconditionally instead of on a value that could never be non-zero here.
+     */
+    sleep($grace_period);
 }
 
 function is_process_running($process)
