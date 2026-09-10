@@ -1,3 +1,16 @@
+muros (0.9.107) trixie; urgency=medium
+
+  * Disconnecting a captive portal client only ever stripped its pf
+    membership right away, relying on the background reconciliation loop to
+    catch up and clear the matching accounting entry a few seconds later.
+    That loop only ever scanned addresses still registered in pf, so an
+    address that had already lost its pf membership through the immediate
+    disconnect was never looked at again and its accounting set entry, and
+    the per client counters and last-accessed tracking built on it, stayed
+    behind for as long as the portal ran.
+
+ -- MurOS <dev@muros.org>  Thu, 10 Sep 2026 08:15:00 +0200
+
 muros (0.9.106) trixie; urgency=medium
 
   * A traffic shaper pipe left without a bandwidth is meant to be
