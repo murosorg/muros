@@ -1,3 +1,15 @@
+muros (0.9.106) trixie; urgency=medium
+
+  * A traffic shaper pipe left without a bandwidth is meant to be
+    unrestricted, and its own HTB class was correctly given a generous 1
+    Gbit/s ceiling for that. Its queues were not: the weighted share
+    computation used the pipe's literal 0bit/s rate with no such fallback,
+    so every queue of an unrestricted pipe was throttled down to the 8000
+    bit/s floor the computation clamps to, instead of sharing the same
+    effectively unlimited ceiling as the pipe carrying them.
+
+ -- MurOS <dev@muros.org>  Thu, 10 Sep 2026 08:05:00 +0200
+
 muros (0.9.105) trixie; urgency=medium
 
   * The wireless status page triggered a fresh active radio scan on every
