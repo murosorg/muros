@@ -1,3 +1,16 @@
+muros (0.9.108) trixie; urgency=medium
+
+  * Reassigning network interfaces (from the console setup wizard or the
+    operator menu) tried to stop the DHCP server first, by killing the
+    FreeBSD dhcpd pidfile it left behind. DHCP moved to Kea, which is
+    started by systemd and leaves no such pidfile, so that kill was always a
+    silent no-op: a reassignment never actually stopped Kea before the
+    interfaces it was bound to were rebuilt underneath it. It is now stopped
+    through its own service control script, the same one the Services page
+    uses.
+
+ -- MurOS <dev@muros.org>  Thu, 10 Sep 2026 09:20:00 +0200
+
 muros (0.9.107) trixie; urgency=medium
 
   * Disconnecting a captive portal client only ever stripped its pf
