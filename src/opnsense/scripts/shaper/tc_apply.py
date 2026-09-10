@@ -519,7 +519,10 @@ def apply_model():
              'htb', 'default', DEFAULT_CLASS], quiet=False)
 
     for uuid, pipe in model['pipes'].items():
-        rate = '%dbit' % pipe['rate'] if pipe['rate'] > 0 else '1000000000bit'
+        # a pipe left without a bandwidth is unrestricted, represented here as
+        # a generous ceiling rather than a literal 0bit class
+        effective_rate = pipe['rate'] if pipe['rate'] > 0 else 1000000000
+        rate = '%dbit' % effective_rate
         for device in sorted(devices_for_pipe.get(uuid, [])):
             classid = '%s%x' % (ROOT_HANDLE, pipe['number'])
             run(['class', 'replace', 'dev', device, 'parent', ROOT_HANDLE,
@@ -539,16 +542,20 @@ def apply_model():
 
     # queues share the bandwidth of their pipe proportionally to their weight
     for pipe_uuid, pipe in model['pipes'].items():
+        # same unrestricted fallback as the pipe's own class above: without it
+        # every queue of an unrestricted pipe was capped at the 8000bit/s
+        # floor instead of sharing the same generous ceiling
+        effective_rate = pipe['rate'] if pipe['rate'] > 0 else 1000000000
         queues = [q for q in model['queues'].values() if q['pipe'] == pipe_uuid]
         total = sum([q['weight'] for q in queues]) or 1
         for queue in queues:
-            share = max(int(pipe['rate'] * queue['weight'] / total), 8000)
+            share = max(int(effective_rate * queue['weight'] / total), 8000)
             for device in sorted(devices_for_pipe.get(pipe_uuid, [])):
                 run(['class', 'replace', 'dev', device,
                      'parent', '%s%x' % (ROOT_HANDLE, pipe['number']),
                      'classid', '%s%x' % (ROOT_HANDLE, queue['number']),
                      'htb', 'rate', '%dbit' % share,
-                     'ceil', '%dbit' % (pipe['rate'] or share)], quiet=False)
+                     'ceil', '%dbit' % effective_rate], quiet=False)
                 run(['qdisc', 'del', 'dev', device,
                      'parent', '%s%x' % (ROOT_HANDLE, queue['number'])])
                 leaf = ['qdisc', 'replace', 'dev', device,
