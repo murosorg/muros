@@ -1,3 +1,14 @@
+muros (0.9.112) trixie; urgency=medium
+
+  * waitfordad() read a FreeBSD-only sysctl to size the pause given to a
+    freshly assigned IPv6 address before something else depends on it. On
+    Linux that sysctl does not exist, the value came back empty, and the
+    sleep it was meant to size was skipped entirely rather than falling back
+    to any default, so callers never actually waited out DAD at all. It now
+    always sleeps the caller's grace period.
+
+ -- MurOS <dev@muros.org>  Thu, 10 Sep 2026 13:30:00 +0200
+
 muros (0.9.111) trixie; urgency=medium
 
   * The loopback pseudo-interface registered its kernel device under its
