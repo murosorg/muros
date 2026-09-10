@@ -1,3 +1,17 @@
+muros (0.9.109) trixie; urgency=medium
+
+  * The System > Firmware page was left wired to its upstream OPNsense
+    backend, which manages FreeBSD's "pkg" tool through configd. pkg does
+    not exist on this platform, so checking for updates, applying them,
+    running the connection/health/security checks, or any other action on
+    that page silently ran into a missing binary somewhere inside configd,
+    surfacing as a stuck spinner or a confusing internal error rather than
+    an explanation. Those entry points now return immediately with a clear
+    message pointing at apt instead. A real apt-based replacement for this
+    page is a separate, larger piece of work still to be done.
+
+ -- MurOS <dev@muros.org>  Thu, 10 Sep 2026 11:30:00 +0200
+
 muros (0.9.108) trixie; urgency=medium
 
   * Reassigning network interfaces (from the console setup wizard or the
