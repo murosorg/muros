@@ -42,29 +42,6 @@ use OPNsense\Core\Shell;
  */
 class FirmwareController extends ApiMutableModelControllerBase
 {
-    /*
-     * MurOS: every action below this point still shells out to the FreeBSD
-     * "pkg" tooling through configd, which does not exist on Debian. Rather
-     * than let each of them fail deep inside a configd call with a confusing
-     * timeout or parse error, the entry points a user is actually likely to
-     * hit from the Firmware status page return a clear, immediate message
-     * instead. Package management here goes through the muros apt repository
-     * (see debian/control, packaging/download), not this controller; a real
-     * apt/dpkg equivalent of this page is a separate, larger piece of work.
-     */
-    private function notSupportedResponse()
-    {
-        return [
-            'status' => 'error',
-            'status_msg' => gettext(
-                'This platform installs and updates through apt, not pkg. ' .
-                'Use "apt update && apt upgrade" or your usual configuration ' .
-                'management tooling instead of this page.'
-            ),
-        ];
-    }
-
-
     protected static $internalModelName = 'firmware';
     protected static $internalModelClass = 'OPNsense\Core\Firmware';
 
@@ -100,11 +77,17 @@ class FirmwareController extends ApiMutableModelControllerBase
      */
     public function checkAction()
     {
+        $response = [];
+
         if ($this->request->isPost()) {
-            return $this->notSupportedResponse();
+            $backend = new Backend();
+            $response['msg_uuid'] = trim($backend->configdRun('firmware check', true));
+            $response['status'] = 'ok';
+        } else {
+            $response['status'] = 'failure';
         }
 
-        return ['status' => 'failure'];
+        return $response;
     }
 
     /**
@@ -113,9 +96,6 @@ class FirmwareController extends ApiMutableModelControllerBase
      */
     public function statusAction()
     {
-        return $this->notSupportedResponse();
-
-        // phpcs:disable
         $active_array = [];
         $active_count = 0;
         $active_size = '';
@@ -481,11 +461,18 @@ class FirmwareController extends ApiMutableModelControllerBase
      */
     public function updateAction()
     {
+        $backend = new Backend();
+        $response = [];
         if ($this->request->isPost()) {
-            return $this->notSupportedResponse();
+            $this->getLogger('audit')->notice(sprintf("[Firmware] User %s executed a firmware update", $this->getUserName()));
+            $backend->configdRun('firmware flush');
+            $response['msg_uuid'] = trim($backend->configdRun('firmware update', true));
+            $response['status'] = 'ok';
+        } else {
+            $response['status'] = 'failure';
         }
 
-        return ['status' => 'failure'];
+        return $response;
     }
 
     /**
@@ -495,11 +482,18 @@ class FirmwareController extends ApiMutableModelControllerBase
      */
     public function upgradeAction()
     {
+        $backend = new Backend();
+        $response = [];
         if ($this->request->isPost()) {
-            return $this->notSupportedResponse();
+            $this->getLogger('audit')->notice(sprintf("[Firmware] User %s executed a firmware upgrade", $this->getUserName()));
+            $backend->configdRun('firmware flush');
+            $response['msg_uuid'] = trim($backend->configdRun('firmware upgrade', true));
+            $response['status'] = 'ok';
+        } else {
+            $response['status'] = 'failure';
         }
 
-        return ['status' => 'failure'];
+        return $response;
     }
 
     /**
@@ -509,11 +503,17 @@ class FirmwareController extends ApiMutableModelControllerBase
      */
     private function auditHelper(string $audit): array
     {
+        $backend = new Backend();
+        $response = [];
+
         if ($this->request->isPost()) {
-            return $this->notSupportedResponse();
+            $response['status'] = 'ok';
+            $response['msg_uuid'] = trim($backend->configdRun("firmware $audit", true));
+        } else {
+            $response['status'] = 'failure';
         }
 
-        return ['status' => 'failure'];
+        return $response;
     }
 
     /**
